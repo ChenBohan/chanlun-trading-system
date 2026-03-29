@@ -1,0 +1,10 @@
+# PDF files (too large for git, keep locally)
+*.pdf
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db

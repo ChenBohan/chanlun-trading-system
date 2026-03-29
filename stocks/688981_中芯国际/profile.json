@@ -1,0 +1,28 @@
+{
+  "symbol": "688981",
+  "name": "中芯国际",
+  "market": "SH",
+  "industry": "半导体",
+  "notes": "",
+  "fundamental": {
+    "symbol": "688981",
+    "name": "中芯国际",
+    "latest_price": 97.5,
+    "total_market_cap": 780141981060.0,
+    "float_market_cap": 194957348527.5,
+    "pb": 3.4,
+    "pe_ttm": 108.22,
+    "revenue": 67323192000.0,
+    "revenue_yoy": 16.4850385592,
+    "gross_margin": 36.285227237395,
+    "operating_margin": 21.6241514514,
+    "net_margin": 10.7079147406,
+    "roe": 33.0023994788,
+    "main_inflow": 1275310336.0,
+    "main_outflow": 1355366464.0,
+    "main_net": -80056128.0,
+    "fetch_time": "2026-03-28T17:02:24.048231"
+  },
+  "created": "2026-03-28T17:02:24.048253",
+  "last_updated": "2026-03-28T17:02:24.048257"
+}

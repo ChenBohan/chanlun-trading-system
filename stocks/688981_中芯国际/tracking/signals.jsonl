@@ -1,0 +1,4 @@
+{"timestamp": "2026-03-28T16:57:10.758992", "date": "2026-03-24", "signal": "1B", "price": 97.25, "level": "日线", "confidence": "high", "description": "下跌趋势背驰：c段MACD面积(8.2) < a段(105.1)，力度衰减比=0.08", "status": "active", "outcome": null}
+{"timestamp": "2026-03-28T16:57:10.759071", "date": "2025-11-12", "signal": "3B", "price": 115.74, "level": "日线", "confidence": "high", "description": "向上离开中枢1后回试，低点(115.74)不破ZG(89.98)", "status": "active", "outcome": null}
+{"timestamp": "2026-03-28T16:57:10.759124", "date": "2025-12-08", "signal": "3S", "price": 118.0, "level": "日线", "confidence": "high", "description": "向下离开中枢2后回抽，高点(118.00)不破ZD(120.87)", "status": "active", "outcome": null}
+{"timestamp": "2026-03-28T16:57:10.759179", "date": "2026-03-16 13:30", "signal": "3S", "price": 110.32, "level": "30分钟", "confidence": "high", "description": "向下离开中枢1后回抽，高点(110.32)不破ZD(114.88)", "status": "active", "outcome": null}

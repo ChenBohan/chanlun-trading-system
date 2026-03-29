@@ -1,0 +1,18 @@
+{
+  "watchlist": [
+    {
+      "symbol": "688981",
+      "name": "中芯国际",
+      "market": "SH",
+      "industry": "半导体",
+      "operate_level": "daily",
+      "data_start": "20250620",
+      "notes": "国内芯片龙头，科创板"
+    }
+  ],
+  "default_settings": {
+    "operate_level": "daily",
+    "data_periods": ["101", "30"],
+    "macd_params": {"short": 12, "long": 26, "signal": 9}
+  }
+}
