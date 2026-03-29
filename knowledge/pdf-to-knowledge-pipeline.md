@@ -369,7 +369,7 @@ books/缠论108课/
 └── cleanup.py                        # 清洗脚本
 
 knowledge/
-└── 股票交易系统.md                    # L1 操作框架（391行）
+└── 缠论108课操作框架.md                # L1 操作框架（391行）
 
 .cursor/rules/
 └── stock-chanlun-analysis.mdc        # Cursor 规则（含分层查阅表）
