@@ -1,0 +1,71 @@
+{
+  "indices": [
+    {
+      "index_code": "000300",
+      "index_name": "沪深300",
+      "etf_code": "510300",
+      "etf_name": "沪深300ETF",
+      "market": "SH",
+      "category": "大盘价值",
+      "weight": 1.0,
+      "notes": "A股核心蓝筹，市场基准"
+    },
+    {
+      "index_code": "000016",
+      "index_name": "上证50",
+      "etf_code": "510050",
+      "etf_name": "上证50ETF",
+      "market": "SH",
+      "category": "大盘价值",
+      "weight": 0.8,
+      "notes": "超大蓝筹，金融权重高"
+    },
+    {
+      "index_code": "000905",
+      "index_name": "中证500",
+      "etf_code": "510500",
+      "etf_name": "中证500ETF",
+      "market": "SH",
+      "category": "中盘成长",
+      "weight": 1.0,
+      "notes": "中盘成长核心，经济弹性"
+    },
+    {
+      "index_code": "000852",
+      "index_name": "中证1000",
+      "etf_code": "512100",
+      "etf_name": "中证1000ETF",
+      "market": "SH",
+      "category": "小盘成长",
+      "weight": 0.8,
+      "notes": "小盘高弹性"
+    },
+    {
+      "index_code": "399006",
+      "index_name": "创业板指",
+      "etf_code": "159915",
+      "etf_name": "创业板ETF",
+      "market": "SZ",
+      "category": "成长创新",
+      "weight": 1.0,
+      "notes": "科技成长龙头"
+    },
+    {
+      "index_code": "000688",
+      "index_name": "科创50",
+      "etf_code": "588000",
+      "etf_name": "科创50ETF",
+      "market": "SH",
+      "category": "科技创新",
+      "weight": 0.8,
+      "notes": "硬科技，半导体为主"
+    }
+  ],
+  "settings": {
+    "operate_level": "daily",
+    "data_periods": ["101", "30"],
+    "data_start": "20250101",
+    "rotation_window_days": 20,
+    "macd_params": {"short": 12, "long": 26, "signal": 9}
+  }
+}

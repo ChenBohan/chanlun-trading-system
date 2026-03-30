@@ -1,0 +1,4 @@
+{"timestamp": "2026-03-29T23:54:33.212101", "date": "2025-09-10", "signal": "3B", "price": 6.889, "level": "日线", "confidence": "high", "description": "向上离开中枢1后回试，低点(6.89)不破ZG(6.01)", "status": "active", "outcome": null}
+{"timestamp": "2026-03-29T23:54:33.212161", "date": "2025-10-17", "signal": "3B", "price": 7.04, "level": "日线", "confidence": "high", "description": "向上离开中枢2后回试，低点(7.04)不破ZG(5.62)", "status": "active", "outcome": null}
+{"timestamp": "2026-03-29T23:54:33.212207", "date": "2026-03-24", "signal": "3B", "price": 7.437, "level": "日线", "confidence": "high", "description": "向上离开中枢3后回试，低点(7.44)不破ZG(7.15)", "status": "active", "outcome": null}
+{"timestamp": "2026-03-29T23:54:33.212249", "date": "2026-03-25 10:00", "signal": "3S", "price": 7.879, "level": "30分钟", "confidence": "high", "description": "向下离开中枢1后回抽，高点(7.88)不破ZD(8.40)", "status": "active", "outcome": null}

@@ -1,5 +1,5 @@
 """
-Fetch SMIC (688981.SH) daily and 30-min K-line data from East Money API.
+Fetch K-line data from East Money API for stocks, indices, and ETFs.
 Output: markdown files for Chanlun technical analysis.
 """
 
@@ -11,19 +11,38 @@ from urllib.request import urlopen, Request
 from urllib.parse import urlencode
 
 
-def fetch_kline(symbol: str, period: str, beg: str, end: str) -> list:
+def _resolve_secid(symbol: str) -> str:
+    """Resolve symbol to East Money secid format.
+    
+    - SH stocks (6xxxxx): 1.symbol
+    - SZ stocks (0xxxxx, 3xxxxx): 0.symbol
+    - SH indices (000xxx with SH context): 1.symbol
+    - SZ indices (399xxx): 0.symbol
+    - SH ETFs (51xxxx, 58xxxx): 1.symbol
+    - SZ ETFs (15xxxx): 0.symbol
+    """
+    if symbol.startswith("6") or symbol.startswith("5"):
+        return f"1.{symbol}"
+    if symbol.startswith("0") or symbol.startswith("3") or symbol.startswith("1"):
+        return f"0.{symbol}"
+    return f"1.{symbol}"
+
+
+def fetch_kline(symbol: str, period: str, beg: str, end: str,
+                secid_override: str = None) -> list:
     """
     Fetch K-line data from East Money API.
-    period: 101=daily, 30=30min
+    period: 101=daily, 30=30min, 60=60min, 5=5min
     beg/end: YYYYMMDD
+    secid_override: directly specify secid (e.g. "1.000300" for index)
     """
-    secid = f"1.{symbol}" if symbol.startswith("6") else f"0.{symbol}"
+    secid = secid_override or _resolve_secid(symbol)
 
     params = {
         "fields1": "f1,f2,f3,f4,f5,f6",
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
         "klt": period,
-        "fqt": "1",  # 前复权
+        "fqt": "1",
         "secid": secid,
         "beg": beg,
         "end": end,
@@ -38,7 +57,7 @@ def fetch_kline(symbol: str, period: str, beg: str, end: str) -> list:
         data = json.loads(resp.read().decode())
 
     if not data.get("data") or not data["data"].get("klines"):
-        print(f"Warning: no data returned for period={period}")
+        print(f"Warning: no data returned for {secid} period={period}")
         return []
 
     result = []
@@ -50,20 +69,29 @@ def fetch_kline(symbol: str, period: str, beg: str, end: str) -> list:
             "close": parts[2],
             "high": parts[3],
             "low": parts[4],
-            "volume": parts[5],       # 手
-            "amount": parts[6],       # 元
-            "amplitude": parts[7],    # 振幅%
-            "change_pct": parts[8],   # 涨跌幅%
-            "change": parts[9],       # 涨跌额
-            "turnover": parts[10],    # 换手率%
+            "volume": parts[5],
+            "amount": parts[6],
+            "amplitude": parts[7],
+            "change_pct": parts[8],
+            "change": parts[9],
+            "turnover": parts[10],
         })
 
     return result
 
 
-def daily_to_md(rows: list) -> str:
+def fetch_index_kline(index_code: str, period: str, beg: str, end: str) -> list:
+    """Fetch index K-line data. Handles SH/SZ index secid resolution."""
+    if index_code.startswith("399"):
+        secid = f"0.{index_code}"
+    else:
+        secid = f"1.{index_code}"
+    return fetch_kline(index_code, period, beg, end, secid_override=secid)
+
+
+def daily_to_md(rows: list, title: str = "中芯国际（688981.SH）") -> str:
     lines = [
-        "# 中芯国际（688981.SH）日线数据",
+        f"# {title} 日线数据",
         "",
         f"> 数据区间：{rows[0]['datetime']} ~ {rows[-1]['datetime']}，共 {len(rows)} 个交易日",
         f"> 数据来源：东方财富 | 复权方式：前复权 | 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
@@ -89,9 +117,9 @@ def daily_to_md(rows: list) -> str:
     return "\n".join(lines)
 
 
-def min30_to_md(rows: list) -> str:
+def min30_to_md(rows: list, title: str = "中芯国际（688981.SH）") -> str:
     lines = [
-        "# 中芯国际（688981.SH）30分钟线数据",
+        f"# {title} 30分钟线数据",
         "",
         f"> 数据区间：{rows[0]['datetime']} ~ {rows[-1]['datetime']}，共 {len(rows)} 根K线",
         f"> 数据来源：东方财富 | 复权方式：前复权 | 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",

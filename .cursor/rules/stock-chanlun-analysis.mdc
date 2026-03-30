@@ -12,12 +12,16 @@ alwaysApply: true
 - "今天行情怎样"、"现在能买吗"、"该卖吗"、"持仓怎么操作"
 - "更新分析"、"最新走势"、"MACD"、"背驰"、"中枢"
 - 任何 A 股股票代码（如 688981、600519 等）
+- "指数"、"宽基"、"轮动"、"ETF"、"大盘"
+- "沪深300"、"上证50"、"中证500"、"中证1000"、"创业板"、"科创50"
+- "510300"、"510050"、"510500"、"512100"、"159915"、"588000"
+- "指数分析"、"轮动排名"、"哪个指数好"、"买哪个ETF"
 
 ## 自动执行流程
 
-### 1. 运行统一交易系统管理器
+### A. 个股分析流程（提到具体股票代码或股票名称时）
 
-旧流程已废弃（不再分别运行 `fetch_smic_data.py` 与 `chanlun_full_analysis.py`）。新流程只需执行：
+#### 1. 运行统一交易系统管理器
 
 ```bash
 cd /home/chenbohan/github/chanlun-trading-system/scripts && python3 trading_system.py
@@ -25,11 +29,11 @@ cd /home/chenbohan/github/chanlun-trading-system/scripts && python3 trading_syst
 
 该脚本会自动完成：数据获取、基本面获取、资金面获取、缠论分析、信号记录、报告生成。
 
-### 2. 读取分析报告与相关产出
+#### 2. 读取分析报告与相关产出
 
 读取 `stocks/688981_中芯国际/analysis/缠论买卖点分析.md`，并按需读取 `tracking/`、`portfolio/`、`profile.json` 等路径下的最新内容（见「关键文件」），以便回答增强项。
 
-### 3. 给出简明结论
+#### 3. 给出简明结论
 
 回答必须包含：
 1. **当前价格和走势类型**
@@ -43,6 +47,36 @@ cd /home/chenbohan/github/chanlun-trading-system/scripts && python3 trading_syst
 9. **持仓状态**（如有持仓则显示成本、浮盈/亏）
 10. **信号跟踪**（活跃信号列表、历史信号统计）
 
+### B. 宽基指数分析流程（提到"指数"、"轮动"、"ETF"、"大盘"或具体指数名称时）
+
+#### 1. 运行指数交易系统
+
+```bash
+cd /home/chenbohan/github/chanlun-trading-system/scripts && python3 index_trading_system.py
+```
+
+该脚本会自动完成：6大宽基指数+ETF数据获取、缠论多级别分析、轮动评分、信号记录、报告生成。
+
+#### 2. 读取分析报告
+
+- 轮动总报告：`indices/reports/指数轮动分析报告.md`
+- 各指数缠论分析：`indices/{code}_{name}/analysis/缠论买卖点分析.md`
+- 各指数跟踪报告：`indices/{code}_{name}/tracking/daily_report.md`
+- 轮动历史：`indices/reports/rotation_history.jsonl`
+
+#### 3. 给出简明结论
+
+回答必须包含：
+1. **轮动排名**（6大指数的综合评分排序）
+2. **推荐配置**（哪些指数ETF值得关注/加仓/回避）
+3. **各指数走势类型**（缠论判断）
+4. **买卖点信号**（各指数的最新缠论信号）
+5. **操作建议**（具体ETF代码、仓位建议）
+6. **大小盘轮动判断**（大盘价值 vs 中小盘成长）
+7. **关键价格位**（各指数的中枢上下沿）
+8. **MACD状态**
+9. **风险提示**
+
 ## 用户画像
 
 - 上班族，不能盯盘
@@ -54,9 +88,11 @@ cd /home/chenbohan/github/chanlun-trading-system/scripts && python3 trading_syst
 ## 关键文件
 
 ### 脚本与引擎
-- 数据获取脚本：`scripts/fetch_data.py`
-- 缠论分析引擎：`scripts/chanlun_engine.py`
-- 交易系统管理器：`scripts/trading_system.py`
+- 数据获取脚本：`scripts/fetch_data.py`（支持股票/指数/ETF）
+- 缠论分析引擎：`scripts/chanlun_engine.py`（通用，支持任意标的）
+- 个股交易系统：`scripts/trading_system.py`
+- 指数交易系统：`scripts/index_trading_system.py`（宽基指数轮动+缠论分析）
+- 指数配置文件：`config/index_watchlist.json`（6大宽基指数+ETF映射）
 
 ### 知识库（分层查阅）
 
@@ -78,10 +114,10 @@ cd /home/chenbohan/github/chanlun-trading-system/scripts && python3 trading_syst
 | 层级 | 文件 | 行数 | 用途 |
 |------|------|------|------|
 | **L1 快速** | `knowledge/图解缠论操作框架.md` | ~216 | 买卖点速查、操作流程、MACD规范 |
-| **L2 中等** | `books/图解缠论/图解缠论总结.md` | ~1021 | 章节总结、图表引用、定理定义 |
-| **L3 索引** | `books/图解缠论/concept-index.md` | ~138 | 概念→章节→行号映射表 |
-| **L4 原文** | `books/图解缠论/图解缠论.md` | ~1463 | AI视觉转录全文（按L3行号读取） |
-| **图片** | `books/图解缠论/images/` | 158张 | 按需 Read 查看（p001-p158.jpg） |
+| **L2 中等** | `books/图解缠论-核心理论推导与实战演示/图解缠论总结.md` | ~1021 | 章节总结、图表引用、定理定义 |
+| **L3 索引** | `books/图解缠论-核心理论推导与实战演示/concept-index.md` | ~138 | 概念→章节→行号映射表 |
+| **L4 原文** | `books/图解缠论-核心理论推导与实战演示/图解缠论.md` | ~1463 | AI视觉转录全文（按L3行号读取） |
+| **图片** | `books/图解缠论-核心理论推导与实战演示/images/` | 158张 | 按需 Read 查看（p001-p158.jpg） |
 
 **书籍三：缠论解析（系统化解读与图解）**
 
@@ -98,10 +134,10 @@ cd /home/chenbohan/github/chanlun-trading-system/scripts && python3 trading_syst
 | 层级 | 文件 | 行数 | 用途 |
 |------|------|------|------|
 | **L1 快速** | `knowledge/土匪注解版操作框架.md` | ~275 | 匪注独到见解、买卖点实战补充、MACD实战、心态修炼 |
-| **L2 中等** | `books/土匪注解版/土匪注解版总结.md` | ~1131 | 108课逐课总结（含匪注要点） |
-| **L3 索引** | `books/土匪注解版/concept-index.md` | ~242 | 概念→课次→全文行号映射表 |
-| **L4 原文** | `books/土匪注解版/土匪注解版缠中说禅全集.md` | ~15902 | 全文（含原文+评论+匪注，按L3行号读取） |
-| **图片** | `books/土匪注解版/images/` | 3589张 | 股票图表缩略图（按需 Read 查看） |
+| **L2 中等** | `books/缠论-土匪整理版/土匪注解版总结.md` | ~1131 | 108课逐课总结（含匪注要点） |
+| **L3 索引** | `books/缠论-土匪整理版/concept-index.md` | ~242 | 概念→课次→全文行号映射表 |
+| **L4 原文** | `books/缠论-土匪整理版/土匪注解版缠中说禅全集.md` | ~15902 | 全文（含原文+评论+匪注，按L3行号读取） |
+| **图片** | `books/缠论-土匪整理版/images/` | 3589张 | 股票图表缩略图（按需 Read 查看） |
 
 **书籍五：缠论辅导（一）（二）（108课学习笔记与注解）**
 
@@ -138,22 +174,22 @@ cd /home/chenbohan/github/chanlun-trading-system/scripts && python3 trading_syst
 | 层级 | 文件 | 行数 | 用途 |
 |------|------|------|------|
 | **L1 快速** | `knowledge/图解缠论2操作框架.md` | ~215 | 买卖点逻辑深化、机械化操作系统 |
-| **L2 中等** | `books/图解缠论2/图解缠论2总结.md` | ~415 | 九章逐章总结+图片索引 |
-| **L3 索引** | `books/图解缠论2/concept-index.md` | ~95 | 概念→章节→全文行号映射表 |
-| **L4 原文** | `books/图解缠论2/图解缠论2.md` | ~4850 | epub全文（按L3行号读取） |
-| **图片** | `books/图解缠论2/images/` | 153张 | 走势图解（按需 Read 查看） |
+| **L2 中等** | `books/图解缠论2-买卖点逻辑与操作系统/图解缠论2总结.md` | ~415 | 九章逐章总结+图片索引 |
+| **L3 索引** | `books/图解缠论2-买卖点逻辑与操作系统/concept-index.md` | ~95 | 概念→章节→全文行号映射表 |
+| **L4 原文** | `books/图解缠论2-买卖点逻辑与操作系统/图解缠论2.md` | ~4850 | epub全文（按L3行号读取） |
+| **图片** | `books/图解缠论2-买卖点逻辑与操作系统/images/` | 153张 | 走势图解（按需 Read 查看） |
 
 **书籍九：图解缠论3——技术面、基本面、比价轮动的立体操盘（陈秋明）**
 
 | 层级 | 文件 | 行数 | 用途 |
 |------|------|------|------|
 | **L1 快速** | `knowledge/图解缠论3操作框架.md` | ~216 | 立体操盘体系（技术+基本面+轮动） |
-| **L2 中等** | `books/图解缠论3/图解缠论3总结.md` | ~432 | 九章逐章总结+图片索引 |
-| **L3 索引** | `books/图解缠论3/concept-index.md` | ~137 | 概念→章节→全文行号映射表 |
-| **L4 原文** | `books/图解缠论3/图解缠论3.md` | ~4458 | epub全文（按L3行号读取） |
-| **图片** | `books/图解缠论3/images/` | 121张 | 走势图解（按需 Read 查看） |
+| **L2 中等** | `books/图解缠论3-技术面、基本面、比价轮动的立体操盘/图解缠论3总结.md` | ~432 | 九章逐章总结+图片索引 |
+| **L3 索引** | `books/图解缠论3-技术面、基本面、比价轮动的立体操盘/concept-index.md` | ~137 | 概念→章节→全文行号映射表 |
+| **L4 原文** | `books/图解缠论3-技术面、基本面、比价轮动的立体操盘/图解缠论3.md` | ~4458 | epub全文（按L3行号读取） |
+| **图片** | `books/图解缠论3-技术面、基本面、比价轮动的立体操盘/images/` | 121张 | 走势图解（按需 Read 查看） |
 
-### 分析产出
+### 个股分析产出
 - 分析报告：`stocks/688981_中芯国际/analysis/缠论买卖点分析.md`
 - 分析图表：`stocks/688981_中芯国际/analysis/缠论分析图.html`
 - 持仓跟踪：`stocks/688981_中芯国际/tracking/position.json`
@@ -162,6 +198,26 @@ cd /home/chenbohan/github/chanlun-trading-system/scripts && python3 trading_syst
 - 每日跟踪报告：`stocks/688981_中芯国际/tracking/daily_report.md`
 - 组合持仓：`portfolio/holdings.json`
 - 个股画像：`stocks/688981_中芯国际/profile.json`
+
+### 指数分析产出
+- 轮动分析报告：`indices/reports/指数轮动分析报告.md`
+- 轮动评分数据：`indices/reports/rotation_scores.json`
+- 轮动历史记录：`indices/reports/rotation_history.jsonl`
+- 各指数缠论分析：`indices/{code}_{name}/analysis/缠论买卖点分析.md`
+- 各指数分析图表：`indices/{code}_{name}/analysis/缠论分析图.html`
+- 各指数K线数据：`indices/{code}_{name}/data/日线数据.md`
+- 各指数信号历史：`indices/{code}_{name}/tracking/signals.jsonl`
+- 各指数跟踪报告：`indices/{code}_{name}/tracking/daily_report.md`
+
+**覆盖指数（6只）：**
+| 指数 | 代码 | ETF | ETF代码 | 类别 |
+|------|------|-----|---------|------|
+| 沪深300 | 000300 | 沪深300ETF | 510300 | 大盘价值 |
+| 上证50 | 000016 | 上证50ETF | 510050 | 大盘价值 |
+| 中证500 | 000905 | 中证500ETF | 510500 | 中盘成长 |
+| 中证1000 | 000852 | 中证1000ETF | 512100 | 小盘成长 |
+| 创业板指 | 399006 | 创业板ETF | 159915 | 成长创新 |
+| 科创50 | 000688 | 科创50ETF | 588000 | 科技创新 |
 
 ## 持仓操作指令
 

@@ -647,7 +647,7 @@ def analyze_level(filepath: str, level_name: str) -> dict:
 
 # ─── Multi-Level Synthesis ───
 
-def synthesize_multilevel(daily: dict, min30: dict) -> str:
+def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际（688981.SH）") -> str:
     lines = []
     now = datetime.now().strftime('%Y-%m-%d %H:%M')
 
@@ -666,7 +666,7 @@ def synthesize_multilevel(daily: dict, min30: dict) -> str:
     latest_date = daily_klines[-1].date if daily_klines else "N/A"
 
     lines.extend([
-        "# 中芯国际（688981.SH）缠论多级别买卖点分析报告",
+        f"# {title} 缠论多级别买卖点分析报告",
         "",
         f"> 分析时间：{now}",
         f"> 最新价格：**{latest_price:.2f}**（{latest_date}）",
@@ -1058,7 +1058,7 @@ def synthesize_multilevel(daily: dict, min30: dict) -> str:
 
 # ─── HTML Chart Generation ───
 
-def generate_html_chart(daily: dict, min30: dict) -> str:
+def generate_html_chart(daily: dict, min30: dict, title: str = "688981.SH 中芯国际") -> str:
     daily_klines = daily.get('klines', [])
     daily_strokes = daily.get('strokes', [])
     daily_hubs = daily.get('hubs', [])
@@ -1099,7 +1099,7 @@ def generate_html_chart(daily: dict, min30: dict) -> str:
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>中芯国际 缠论多级别分析图</title>
+<title>{title} 缠论多级别分析图</title>
 <style>
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 body {{ background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }}
@@ -1135,7 +1135,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 6px; 
 </head>
 <body>
 <div class="header">
-  <h1>688981.SH 中芯国际 — 缠论多级别买卖点分析</h1>
+  <h1>{title} — 缠论多级别买卖点分析</h1>
   <div class="meta">分析时间：{datetime.now().strftime('%Y-%m-%d %H:%M')} | 日线 {len(daily_klines)} 根 | 30分钟 {len(min30_klines)} 根</div>
 </div>
 
