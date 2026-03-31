@@ -1,7 +1,44 @@
-# Python cache
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+
+# Regenerated data (run scripts to recreate)
+indices/*/data/*.md
+stocks/*/data/*.md
+
+# Regenerated analysis artifacts (run scripts to recreate)
+indices/*/analysis/20*/
+stocks/*/analysis/20*/
+indices/reports/20*/
+indices/reports/rotation_scores.json
+indices/reports/rotation_history.jsonl
+
+# Latest symlinks (regenerated from dated dirs)
+indices/reports/指数轮动分析报告.md
+indices/reports/指数轮动分析图.html
+indices/reports/指数轮动分析报告-移动版.html
+indices/*/analysis/缠论买卖点分析.md
+indices/*/analysis/缠论分析图.html
+
+# Signal tracking (append-only, may contain personal data)
+indices/*/tracking/signals.jsonl
+stocks/*/tracking/signals.jsonl
+
+# Fundamental data
+stocks/*/fundamental/

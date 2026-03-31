@@ -542,7 +542,7 @@ def full_update(symbol: str = "688981", name: str = "中芯国际"):
         with open(os.path.join(stock_dir, "data", "日线数据.md"), 'w', encoding='utf-8') as f:
             f.write(md)
 
-    min30_raw = fetch_kline(symbol, "30", beg, end)
+    min30_raw = fetch_kline(symbol, "30", beg, end, datalen=1023)
     print(f"    30-min: {len(min30_raw)} records")
     if min30_raw:
         md = min30_to_md(min30_raw)

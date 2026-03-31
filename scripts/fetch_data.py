@@ -1,26 +1,34 @@
 """
-Fetch K-line data from East Money API for stocks, indices, and ETFs.
+Fetch K-line data for stocks, indices, and ETFs.
+Primary source: Sina Finance API (no IP restrictions, supports up to 2000 bars)
+Fallback: East Money API (may be blocked from cloud server IPs)
 Output: markdown files for Chanlun technical analysis.
 """
 
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from urllib.request import urlopen, Request
 from urllib.parse import urlencode
 
 
+# ─── Symbol Resolution ───
+
+def _resolve_sina_symbol(symbol: str, market: str = None) -> str:
+    """Resolve symbol to Sina format: sh/sz + code."""
+    if market:
+        return f"{market.lower()}{symbol}"
+    if symbol.startswith("6") or symbol.startswith("5"):
+        return f"sh{symbol}"
+    if symbol.startswith("0") or symbol.startswith("3") or symbol.startswith("1"):
+        return f"sz{symbol}"
+    return f"sh{symbol}"
+
+
 def _resolve_secid(symbol: str) -> str:
-    """Resolve symbol to East Money secid format.
-    
-    - SH stocks (6xxxxx): 1.symbol
-    - SZ stocks (0xxxxx, 3xxxxx): 0.symbol
-    - SH indices (000xxx with SH context): 1.symbol
-    - SZ indices (399xxx): 0.symbol
-    - SH ETFs (51xxxx, 58xxxx): 1.symbol
-    - SZ ETFs (15xxxx): 0.symbol
-    """
+    """Resolve symbol to East Money secid format (fallback)."""
     if symbol.startswith("6") or symbol.startswith("5"):
         return f"1.{symbol}"
     if symbol.startswith("0") or symbol.startswith("3") or symbol.startswith("1"):
@@ -28,16 +36,86 @@ def _resolve_secid(symbol: str) -> str:
     return f"1.{symbol}"
 
 
-def fetch_kline(symbol: str, period: str, beg: str, end: str,
-                secid_override: str = None) -> list:
-    """
-    Fetch K-line data from East Money API.
-    period: 101=daily, 30=30min, 60=60min, 5=5min
-    beg/end: YYYYMMDD
-    secid_override: directly specify secid (e.g. "1.000300" for index)
-    """
-    secid = secid_override or _resolve_secid(symbol)
+_PERIOD_TO_SINA_SCALE = {"101": "240", "30": "30", "60": "60", "15": "15", "5": "5"}
 
+
+# ─── Sina Finance API (Primary) ───
+
+def _fetch_sina(sina_symbol: str, scale: str, datalen: int = 1000,
+                max_retries: int = 3) -> list:
+    """Fetch K-line data from Sina Finance API.
+
+    Returns list of dicts with keys matching the East Money format for
+    downstream compatibility: datetime, open, close, high, low, volume,
+    amount, amplitude, change_pct, change, turnover.
+    """
+    url = (
+        "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+        "CN_MarketData.getKLineData?"
+        f"symbol={sina_symbol}&scale={scale}&ma=no&datalen={datalen}"
+    )
+
+    for attempt in range(max_retries):
+        try:
+            req = Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                              "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            })
+            with urlopen(req, timeout=30) as resp:
+                raw = json.loads(resp.read().decode())
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"  Sina retry {attempt+1}/{max_retries} after {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                print(f"  Sina ERROR: Failed after {max_retries} attempts: {e}")
+                return []
+
+    if not raw:
+        return []
+
+    result = []
+    prev_close = None
+    for bar in raw:
+        o = float(bar["open"])
+        c = float(bar["close"])
+        h = float(bar["high"])
+        l = float(bar["low"])
+        v = int(bar["volume"])
+
+        amplitude = ((h - l) / prev_close * 100) if prev_close else 0.0
+        change = (c - prev_close) if prev_close else 0.0
+        change_pct = (change / prev_close * 100) if prev_close else 0.0
+
+        dt_str = bar["day"]
+        if scale == "240":
+            dt_str = dt_str.split(" ")[0] if " " in dt_str else dt_str
+
+        result.append({
+            "datetime": dt_str,
+            "open": bar["open"],
+            "close": bar["close"],
+            "high": bar["high"],
+            "low": bar["low"],
+            "volume": str(v),
+            "amount": "0",
+            "amplitude": f"{amplitude:.2f}",
+            "change_pct": f"{change_pct:.2f}",
+            "change": f"{change:.4f}",
+            "turnover": "0",
+        })
+        prev_close = c
+
+    return result
+
+
+# ─── East Money API (Fallback) ───
+
+def _fetch_eastmoney(secid: str, period: str, beg: str, end: str,
+                     max_retries: int = 3) -> list:
+    """Fetch K-line data from East Money API with retry."""
     params = {
         "fields1": "f1,f2,f3,f4,f5,f6",
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
@@ -51,13 +129,27 @@ def fetch_kline(symbol: str, period: str, beg: str, end: str,
     }
 
     url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{urlencode(params)}"
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
 
-    with urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read().decode())
+    for attempt in range(max_retries):
+        try:
+            req = Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                              "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://quote.eastmoney.com",
+            })
+            with urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode())
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"  EastMoney retry {attempt+1}/{max_retries} after {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                print(f"  EastMoney ERROR: Failed after {max_retries} attempts: {e}")
+                return []
 
     if not data.get("data") or not data["data"].get("klines"):
-        print(f"Warning: no data returned for {secid} period={period}")
         return []
 
     result = []
@@ -80,21 +172,64 @@ def fetch_kline(symbol: str, period: str, beg: str, end: str,
     return result
 
 
-def fetch_index_kline(index_code: str, period: str, beg: str, end: str) -> list:
-    """Fetch index K-line data. Handles SH/SZ index secid resolution."""
+# ─── Unified Public API ───
+
+def fetch_kline(symbol: str, period: str, beg: str, end: str,
+                secid_override: str = None, datalen: int = 1000) -> list:
+    """Fetch K-line data. Tries Sina first, falls back to East Money.
+
+    period: 101=daily, 30=30min, 60=60min, 5=5min
+    beg/end: YYYYMMDD
+    datalen: max number of bars for Sina API (default 1000)
+    """
+    sina_scale = _PERIOD_TO_SINA_SCALE.get(period)
+    sina_symbol = _resolve_sina_symbol(symbol)
+
+    if sina_scale:
+        rows = _fetch_sina(sina_symbol, sina_scale, datalen=datalen)
+        if rows:
+            if beg:
+                beg_dt = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}"
+                rows = [r for r in rows if r["datetime"] >= beg_dt]
+            return rows
+        print(f"  Sina returned no data for {sina_symbol}, trying EastMoney...")
+
+    secid = secid_override or _resolve_secid(symbol)
+    return _fetch_eastmoney(secid, period, beg, end)
+
+
+def fetch_index_kline(index_code: str, period: str, beg: str, end: str,
+                      datalen: int = 1000) -> list:
+    """Fetch index K-line data."""
     if index_code.startswith("399"):
+        sina_sym = f"sz{index_code}"
         secid = f"0.{index_code}"
     else:
+        sina_sym = f"sh{index_code}"
         secid = f"1.{index_code}"
-    return fetch_kline(index_code, period, beg, end, secid_override=secid)
 
+    sina_scale = _PERIOD_TO_SINA_SCALE.get(period)
+    if sina_scale:
+        rows = _fetch_sina(sina_sym, sina_scale, datalen=datalen)
+        if rows:
+            if beg:
+                beg_dt = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}"
+                rows = [r for r in rows if r["datetime"] >= beg_dt]
+            return rows
+        print(f"  Sina returned no data for {sina_sym}, trying EastMoney...")
+
+    return _fetch_eastmoney(secid, period, beg, end)
+
+
+# ─── Markdown Output ───
 
 def daily_to_md(rows: list, title: str = "中芯国际（688981.SH）") -> str:
+    source = "新浪财经/东方财富"
     lines = [
         f"# {title} 日线数据",
         "",
         f"> 数据区间：{rows[0]['datetime']} ~ {rows[-1]['datetime']}，共 {len(rows)} 个交易日",
-        f"> 数据来源：东方财富 | 复权方式：前复权 | 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"> 数据来源：{source} | 复权方式：前复权 | 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "",
         "## 数据总览",
         "",
@@ -118,11 +253,12 @@ def daily_to_md(rows: list, title: str = "中芯国际（688981.SH）") -> str:
 
 
 def min30_to_md(rows: list, title: str = "中芯国际（688981.SH）") -> str:
+    source = "新浪财经/东方财富"
     lines = [
         f"# {title} 30分钟线数据",
         "",
         f"> 数据区间：{rows[0]['datetime']} ~ {rows[-1]['datetime']}，共 {len(rows)} 根K线",
-        f"> 数据来源：东方财富 | 复权方式：前复权 | 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"> 数据来源：{source} | 复权方式：前复权 | 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "",
         "## 数据总览",
         "",
@@ -233,39 +369,6 @@ def main():
         with open(path, "w", encoding="utf-8") as f:
             f.write(md)
         print(f"  -> Written to {path}")
-
-    readme = os.path.join(base_dir, "README.md")
-    with open(readme, "w", encoding="utf-8") as f:
-        f.write("\n".join([
-            "# 中芯国际（688981.SH）缠论分析工作区",
-            "",
-            "## 文件结构",
-            "",
-            f"- `日线数据.md` — 日线K线数据（{len(daily)} 条）",
-            f"- `30分钟线数据.md` — 30分钟K线数据（{len(min30)} 条）",
-            "",
-            "## 数据信息",
-            "",
-            f"- **股票代码**：688981.SH（科创板）",
-            f"- **数据区间**：2025-06-20 ~ {datetime.now().strftime('%Y-%m-%d')}",
-            f"- **复权方式**：前复权",
-            f"- **数据来源**：东方财富",
-            "",
-            "## 缠论分析计划",
-            "",
-            "1. **日线级别**：确定大级别走势类型（趋势/盘整）",
-            "2. **30分钟级别**：精确标注分型、笔、线段、中枢",
-            "3. **多级别联立**：日线定方向，30分钟找买卖点",
-            "",
-            "## 分析步骤",
-            "",
-            "1. 顶底分型识别",
-            "2. 笔的划分（相邻分型间无包含关系的K线 ≥1）",
-            "3. 线段的划分（至少3笔）",
-            "4. 中枢的确定（至少3段重叠区间）",
-            "5. 背驰判断（MACD面积 / 成交量配合）",
-            "6. 买卖点标注",
-        ]))
 
     print(f"\nDone! All files written to {base_dir}/")
 

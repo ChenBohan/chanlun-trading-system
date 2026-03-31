@@ -342,6 +342,10 @@ def check_trend_divergence(strokes: List[Stroke], hubs: List[Hub]) -> List[dict]
     """
     Detect trend divergence: in a+A+b+B+c structure,
     if MACD area of c < MACD area of a, divergence is present.
+
+    Key fix: use hub-pair direction (not last stroke direction) to determine
+    signal type. Downtrend (hubs descending) → only 一买; Uptrend (hubs
+    ascending) → only 一卖. Compare only same-direction strokes' MACD areas.
     """
     divergences = []
     if len(hubs) < 2:
@@ -351,25 +355,35 @@ def check_trend_divergence(strokes: List[Stroke], hubs: List[Hub]) -> List[dict]
         prev_hub = hubs[hi - 1]
         curr_hub = hubs[hi]
 
-        prev_hub_end_idx = prev_hub.strokes[-1].idx
-        curr_hub_start_idx = curr_hub.strokes[0].idx
-        curr_hub_end_idx = curr_hub.strokes[-1].idx
+        is_downtrend = curr_hub.zd < prev_hub.zd and curr_hub.zg < prev_hub.zg
+        is_uptrend = curr_hub.zd > prev_hub.zd and curr_hub.zg > prev_hub.zg
+        if not is_downtrend and not is_uptrend:
+            continue
 
+        trend_dir = -1 if is_downtrend else 1
+
+        curr_hub_end_idx = curr_hub.strokes[-1].idx
         seg_a_strokes = [s for s in strokes if s.idx <= prev_hub.strokes[0].idx]
         seg_c_strokes = [s for s in strokes if s.idx > curr_hub_end_idx]
 
         if not seg_a_strokes or not seg_c_strokes:
             continue
 
-        a_area = sum(s.macd_area for s in seg_a_strokes)
-        c_area = sum(s.macd_area for s in seg_c_strokes)
+        a_dir_strokes = [s for s in seg_a_strokes if s.direction == trend_dir]
+        c_dir_strokes = [s for s in seg_c_strokes if s.direction == trend_dir]
+
+        if not a_dir_strokes or not c_dir_strokes:
+            continue
+
+        a_area = sum(s.macd_area for s in a_dir_strokes)
+        c_area = sum(s.macd_area for s in c_dir_strokes)
 
         if a_area > 0 and c_area < a_area:
-            last_c = seg_c_strokes[-1]
+            trigger_stroke = c_dir_strokes[-1]
             divergences.append({
                 'type': 'trend',
-                'direction': last_c.direction,
-                'date': last_c.end.date,
+                'direction': trend_dir,
+                'date': trigger_stroke.end.date,
                 'a_area': a_area,
                 'c_area': c_area,
                 'ratio': c_area / a_area if a_area > 0 else 0,
@@ -1125,8 +1139,8 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 6px; 
 .bsp-item {{ display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 6px; margin-bottom: 4px; }}
 .bsp-item:hover {{ background: #161b22; }}
 .bsp-badge {{ padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }}
-.bsp-badge.buy {{ background: rgba(63,185,80,0.2); color: #3fb950; }}
-.bsp-badge.sell {{ background: rgba(248,81,73,0.2); color: #f85149; }}
+.bsp-badge.buy {{ background: rgba(248,81,73,0.2); color: #f85149; }}
+.bsp-badge.sell {{ background: rgba(63,185,80,0.2); color: #3fb950; }}
 .bsp-date {{ color: #8b949e; font-size: 13px; width: 120px; }}
 .bsp-price {{ font-weight: 600; width: 80px; }}
 .bsp-desc {{ color: #8b949e; font-size: 12px; flex: 1; }}
@@ -1158,8 +1172,8 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 6px; 
   <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>阴线/下降笔</div>
   <div class="legend-item"><div class="legend-color" style="background:rgba(88,166,255,0.2);border:1px solid #58a6ff"></div>中枢区间</div>
   <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div>笔连线</div>
-  <div class="legend-item"><div class="legend-color" style="background:#ffd33d;border-radius:50%"></div>买点</div>
-  <div class="legend-item"><div class="legend-color" style="background:#da3633;border-radius:50%"></div>卖点</div>
+  <div class="legend-item"><div class="legend-color" style="background:#f85149;border-radius:50%"></div>买点</div>
+  <div class="legend-item"><div class="legend-color" style="background:#3fb950;border-radius:50%"></div>卖点</div>
 </div>
 
 <h3 style="padding:10px 30px;color:#58a6ff;font-size:16px" id="bspTitle">买卖点列表</h3>
@@ -1311,12 +1325,12 @@ function renderKline(data) {{
     ctx.beginPath();
     if (isBuy) {{
       ctx.moveTo(x, y+12); ctx.lineTo(x-7, y+22); ctx.lineTo(x+7, y+22); ctx.closePath();
-      ctx.fillStyle = '#ffd33d'; ctx.fill();
+      ctx.fillStyle = '#f85149'; ctx.fill();
     }} else {{
       ctx.moveTo(x, y-12); ctx.lineTo(x-7, y-22); ctx.lineTo(x+7, y-22); ctx.closePath();
-      ctx.fillStyle = '#da3633'; ctx.fill();
+      ctx.fillStyle = '#3fb950'; ctx.fill();
     }}
-    ctx.fillStyle = isBuy ? '#ffd33d' : '#da3633';
+    ctx.fillStyle = isBuy ? '#f85149' : '#3fb950';
     ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(p.label.substring(0,2), x, isBuy ? y+34 : y-24);
   }});
@@ -1411,7 +1425,7 @@ function renderBSP(data) {{
     return `<div class="bsp-item">
       <span class="bsp-badge ${{cls}}">${{p.label.substring(0,2)}}</span>
       <span class="bsp-date">${{p.date}}</span>
-      <span class="bsp-price" style="color:${{isBuy?'#3fb950':'#f85149'}}">${{p.price.toFixed(2)}}</span>
+      <span class="bsp-price" style="color:${{isBuy?'#f85149':'#3fb950'}}">${{p.price.toFixed(2)}}</span>
       <span class="bsp-desc">${{p.desc}}</span>
       <span class="bsp-conf">${{stars}}</span>
     </div>`;

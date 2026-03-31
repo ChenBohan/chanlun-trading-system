@@ -95,7 +95,7 @@ def fetch_all_index_data(config: dict) -> Dict[str, dict]:
         print(f"    -> {len(etf_daily)} daily records")
 
         print(f"  Fetching ETF 30min data...")
-        etf_30min = fetch_kline(etf_code, "30", beg, end)
+        etf_30min = fetch_kline(etf_code, "30", beg, end, datalen=1023)
         print(f"    -> {len(etf_30min)} 30min records")
 
         if etf_daily:
@@ -139,20 +139,27 @@ def analyze_single_index(code: str, name: str, etf_code: str, etf_name: str) -> 
     min30_result = analyze_level(min30_path, "30分钟") if os.path.exists(min30_path) else {}
 
     md_report = synthesize_multilevel(daily_result, min30_result, title=title)
-    md_path = os.path.join(idx_dir, "analysis", "缠论买卖点分析.md")
-    with open(md_path, 'w', encoding='utf-8') as f:
-        f.write(md_report)
-
     html_chart = generate_html_chart(daily_result, min30_result, title=title)
-    html_path = os.path.join(idx_dir, "analysis", "缠论分析图.html")
-    with open(html_path, 'w', encoding='utf-8') as f:
-        f.write(html_chart)
+
+    today_str = datetime.now().strftime('%Y%m%d')
+    analysis_dir = os.path.join(idx_dir, "analysis")
+    history_dir = os.path.join(analysis_dir, today_str)
+    os.makedirs(history_dir, exist_ok=True)
+
+    for fpath, content in [
+        (os.path.join(analysis_dir, "缠论买卖点分析.md"), md_report),
+        (os.path.join(analysis_dir, "缠论分析图.html"), html_chart),
+        (os.path.join(history_dir, "缠论买卖点分析.md"), md_report),
+        (os.path.join(history_dir, "缠论分析图.html"), html_chart),
+    ]:
+        with open(fpath, 'w', encoding='utf-8') as f:
+            f.write(content)
 
     return {
         "daily": daily_result,
         "min30": min30_result,
-        "md_path": md_path,
-        "html_path": html_path,
+        "md_path": os.path.join(analysis_dir, "缠论买卖点分析.md"),
+        "html_path": os.path.join(analysis_dir, "缠论分析图.html"),
     }
 
 
@@ -225,140 +232,226 @@ def record_index_signals(config: dict, analysis_results: Dict[str, dict]):
                                           p.level, p.confidence, p.description)
 
 
-# ─── Rotation Analysis ───
+# ─── Pure Chanlun Rotation Scoring ───
 
-def compute_rotation_scores(config: dict, data_results: Dict[str, dict]) -> List[dict]:
+def _trend_score(trend: str) -> float:
+    """Map trend classification to score. Pure Chanlun: 走势类型判定."""
+    if "上涨" in trend:
+        return 10.0
+    if "下跌" in trend:
+        return -10.0
+    if "上方" in trend:
+        return 5.0
+    if "下方" in trend:
+        return -5.0
+    return 0.0
+
+
+def _signal_score(buy_sell_points: list) -> float:
+    """Score based on buy/sell point types. Pure Chanlun: 三类买卖点."""
+    TYPE_WEIGHT = {
+        "1B": 10, "1S": -10,
+        "2B": 7,  "2S": -7,
+        "3B": 5,  "3S": -5,
+    }
+    total = 0.0
+    for p in buy_sell_points:
+        bsp_type = p.type if hasattr(p, 'type') else p.get('type', '')
+        w = TYPE_WEIGHT.get(bsp_type, 0)
+        if "盘整" in (p.label if hasattr(p, 'label') else p.get('label', '')):
+            w = int(w * 0.6)
+        total += w
+    return max(min(total, 20), -20)
+
+
+def _macd_dynamics_score(klines: list) -> float:
+    """MACD-based scoring using Chanlun's 防狼术 and bar direction.
+
+    Per 108课 §三 and 土匪注解版: DIF above/below 0-axis determines
+    the macro trend direction; bar expansion/contraction indicates
+    momentum acceleration.
     """
-    Score each index for rotation ranking based on:
-    1. Short-term momentum (20-day return)
-    2. MACD trend strength
-    3. Chanlun trend alignment
-    4. Volume trend
+    if not klines:
+        return 0.0
+    last = klines[-1]
+    dif = last.dif if hasattr(last, 'dif') else 0.0
+    bar = last.macd if hasattr(last, 'macd') else 0.0
+
+    score = 0.0
+    score += 5.0 if dif > 0 else -5.0
+
+    if len(klines) >= 2:
+        prev_bar = klines[-2].macd if hasattr(klines[-2], 'macd') else 0.0
+        if bar > 0 and bar > prev_bar:
+            score += 3.0
+        elif bar < 0 and bar < prev_bar:
+            score -= 3.0
+    return score
+
+
+def _hub_structure_score(hubs: list, latest_price: float) -> float:
+    """Score based on price position relative to hubs and hub progression.
+
+    Pure Chanlun: 中枢位置 + 中枢上移/下移 (§1.4-1.5).
     """
-    settings = config["settings"]
-    window = settings.get("rotation_window_days", 20)
+    if not hubs:
+        return 0.0
+    last_hub = hubs[-1]
+    score = 0.0
+
+    if latest_price > last_hub.zg:
+        score += 5.0
+    elif latest_price < last_hub.zd:
+        score -= 5.0
+
+    if len(hubs) >= 2:
+        prev = hubs[-2]
+        if last_hub.zd > prev.zg:
+            score += 5.0
+        elif last_hub.zg < prev.zd:
+            score -= 5.0
+    return score
+
+
+def _resonance_score(daily_trend: str, min30_trend: str,
+                     min30_bsp: list) -> float:
+    """Multi-level resonance scoring.
+
+    Pure Chanlun: 级别共振 (图解缠论3, 缠论辅导).
+    Aligned levels amplify confidence; contradictions demand caution.
+    """
+    d_up = "上涨" in daily_trend
+    d_down = "下跌" in daily_trend
+    m_up = "上涨" in min30_trend
+    m_down = "下跌" in min30_trend
+
+    if d_up and m_up:
+        return 10.0
+    if d_down and m_down:
+        return -10.0
+    if d_up and m_down:
+        has_buy = any(("B" in (p.type if hasattr(p, 'type') else p.get('type', '')))
+                      for p in min30_bsp)
+        return 3.0 if has_buy else -2.0
+    if d_down and m_up:
+        return -3.0
+    if d_up:
+        return 5.0
+    if d_down:
+        return -5.0
+    return 0.0
+
+
+def compute_chanlun_scores(config: dict, data_results: Dict[str, dict],
+                           analysis_results: Dict[str, dict]) -> List[dict]:
+    """Pure Chanlun rotation scoring across 5 dimensions.
+
+    All dimensions derive from Chanlun theory:
+      1. 走势类型 (Trend Classification)   - weight 20%
+      2. 买卖点信号 (Signal Strength)      - weight 25%
+      3. MACD动力学 (防狼术+背驰)          - weight 20%
+      4. 中枢结构 (Hub Structure)          - weight 15%
+      5. 级别共振 (Multi-level Resonance)  - weight 20%
+    """
+    WEIGHTS = {
+        "trend": 0.20,
+        "signal": 0.25,
+        "macd": 0.20,
+        "hub": 0.15,
+        "resonance": 0.20,
+    }
     scores = []
 
     for idx_info in config["indices"]:
         code = idx_info["index_code"]
         name = idx_info["index_name"]
         data = data_results.get(code, {})
+        analysis = analysis_results.get(code, {})
         etf_daily = data.get("etf_daily", [])
 
-        if len(etf_daily) < window + 5:
+        daily = analysis.get("daily", {})
+        min30 = analysis.get("min30", {})
+
+        if not daily:
             scores.append({
                 "code": code, "name": name,
-                "total_score": 0, "rank": 0,
-                "momentum": 0, "macd_score": 0,
-                "volume_score": 0, "category": idx_info["category"],
-                "latest_price": 0, "change_pct_window": 0,
-                "reason": "insufficient data",
+                "final_score": 0, "rank": 0,
+                "d1_trend": 0, "d2_signal": 0, "d3_macd": 0,
+                "d4_hub": 0, "d5_resonance": 0,
+                "category": idx_info["category"],
+                "latest_price": 0, "reason": "insufficient data",
             })
             continue
 
-        recent = etf_daily[-window:]
-        closes = [float(r["close"]) for r in recent]
-        volumes = [int(r["volume"]) for r in recent]
+        latest_price = 0.0
+        if daily.get("klines"):
+            latest_price = daily["klines"][-1].close
+        elif etf_daily:
+            latest_price = float(etf_daily[-1]["close"])
 
-        window_return = (closes[-1] - closes[0]) / closes[0] * 100
-        momentum_score = min(max(window_return * 2, -20), 20)
+        daily_trend = daily.get("trend", "N/A")
+        min30_trend = min30.get("trend", "N/A")
+        daily_bsp = daily.get("buy_sell_points", [])
+        min30_bsp = min30.get("buy_sell_points", [])
+        all_bsp = daily_bsp + min30_bsp
 
-        mid = window // 2
-        vol_recent = sum(volumes[mid:]) / len(volumes[mid:])
-        vol_early = sum(volumes[:mid]) / len(volumes[:mid])
-        vol_ratio = vol_recent / vol_early if vol_early > 0 else 1.0
-        volume_score = min((vol_ratio - 1.0) * 10, 10) if vol_ratio > 1.0 else max((vol_ratio - 1.0) * 10, -10)
+        d1 = _trend_score(daily_trend) * 0.6 + _trend_score(min30_trend) * 0.4
+        d2 = _signal_score(all_bsp)
+        d3 = (_macd_dynamics_score(daily.get("klines", [])) * 0.6 +
+              _macd_dynamics_score(min30.get("klines", [])) * 0.4)
+        d4 = _hub_structure_score(daily.get("hubs", []), latest_price)
+        d5 = _resonance_score(daily_trend, min30_trend, min30_bsp)
 
-        ema12 = closes[0]
-        ema26 = closes[0]
-        dif_vals = []
-        for c in closes:
-            ema12 = ema12 * (1 - 2/13) + c * 2/13
-            ema26 = ema26 * (1 - 2/27) + c * 2/27
-            dif_vals.append(ema12 - ema26)
+        raw_score = (d1 * WEIGHTS["trend"] +
+                     d2 * WEIGHTS["signal"] +
+                     d3 * WEIGHTS["macd"] +
+                     d4 * WEIGHTS["hub"] +
+                     d5 * WEIGHTS["resonance"])
+        final = round(raw_score * idx_info["weight"], 2)
 
-        macd_score = 0
-        if dif_vals[-1] > 0:
-            macd_score += 5
-        if len(dif_vals) >= 2 and dif_vals[-1] > dif_vals[-2]:
-            macd_score += 5
-        if dif_vals[-1] < 0:
-            macd_score -= 5
-        if len(dif_vals) >= 2 and dif_vals[-1] < dif_vals[-2]:
-            macd_score -= 3
+        hubs = daily.get("hubs", [])
+        hub_position = ""
+        if hubs and latest_price:
+            if latest_price > hubs[-1].zg:
+                hub_position = "above"
+            elif latest_price < hubs[-1].zd:
+                hub_position = "below"
+            else:
+                hub_position = "inside"
 
-        total = (momentum_score * 0.4 + macd_score * 0.3 + volume_score * 0.3) * idx_info["weight"]
-
-        scores.append({
+        entry = {
             "code": code, "name": name,
-            "total_score": round(total, 2),
-            "momentum": round(momentum_score, 2),
-            "macd_score": round(macd_score, 2),
-            "volume_score": round(volume_score, 2),
+            "final_score": final,
+            "d1_trend": round(d1, 2),
+            "d2_signal": round(d2, 2),
+            "d3_macd": round(d3, 2),
+            "d4_hub": round(d4, 2),
+            "d5_resonance": round(d5, 2),
             "category": idx_info["category"],
-            "latest_price": closes[-1],
-            "change_pct_window": round(window_return, 2),
-            "dif_latest": round(dif_vals[-1], 4) if dif_vals else 0,
+            "latest_price": round(latest_price, 4),
+            "trend": daily_trend,
+            "min30_trend": min30_trend,
+            "hub_count": len(hubs),
+            "stroke_count": len(daily.get("strokes", [])),
+            "buy_signals": [p.type for p in daily_bsp if "B" in p.type],
+            "sell_signals": [p.type for p in daily_bsp if "S" in p.type],
+            "min30_buy_signals": [p.type for p in min30_bsp if "B" in p.type],
+            "min30_sell_signals": [p.type for p in min30_bsp if "S" in p.type],
+            "hub_position": hub_position,
             "reason": "ok",
-        })
-
-    scores.sort(key=lambda x: x["total_score"], reverse=True)
-    for i, s in enumerate(scores):
-        s["rank"] = i + 1
-
-    return scores
-
-
-def enrich_with_chanlun(scores: List[dict], analysis_results: Dict[str, dict]) -> List[dict]:
-    """Add Chanlun analysis summary to rotation scores."""
-    for s in scores:
-        code = s["code"]
-        result = analysis_results.get(code, {})
-        daily = result.get("daily", {})
-
-        s["trend"] = daily.get("trend", "N/A")
-        s["hub_count"] = len(daily.get("hubs", []))
-        s["stroke_count"] = len(daily.get("strokes", []))
-
-        bsp = daily.get("buy_sell_points", [])
-        s["buy_signals"] = [p.type for p in bsp if "B" in p.type]
-        s["sell_signals"] = [p.type for p in bsp if "S" in p.type]
+        }
 
         if daily.get("klines"):
             lk = daily["klines"][-1]
-            s["macd_dif"] = round(lk.dif, 4)
-            s["macd_dea"] = round(lk.dea, 4)
-            s["macd_bar"] = round(lk.macd, 4)
+            entry["macd_dif"] = round(lk.dif, 4)
+            entry["macd_dea"] = round(lk.dea, 4)
+            entry["macd_bar"] = round(lk.macd, 4)
 
-        hubs = daily.get("hubs", [])
         if hubs:
-            last_hub = hubs[-1]
-            s["last_hub_zg"] = round(last_hub.zg, 2)
-            s["last_hub_zd"] = round(last_hub.zd, 2)
-            if s.get("latest_price"):
-                if s["latest_price"] > last_hub.zg:
-                    s["hub_position"] = "above"
-                elif s["latest_price"] < last_hub.zd:
-                    s["hub_position"] = "below"
-                else:
-                    s["hub_position"] = "inside"
+            entry["last_hub_zg"] = round(hubs[-1].zg, 2)
+            entry["last_hub_zd"] = round(hubs[-1].zd, 2)
 
-        chanlun_bonus = 0
-        if s.get("buy_signals"):
-            chanlun_bonus += 3 * len(s["buy_signals"])
-        if s.get("sell_signals"):
-            chanlun_bonus -= 3 * len(s["sell_signals"])
-        if s.get("hub_position") == "above":
-            chanlun_bonus += 2
-        elif s.get("hub_position") == "below":
-            chanlun_bonus -= 2
-        if "上涨" in s.get("trend", ""):
-            chanlun_bonus += 3
-        elif "下跌" in s.get("trend", ""):
-            chanlun_bonus -= 3
-
-        s["chanlun_bonus"] = chanlun_bonus
-        s["final_score"] = round(s["total_score"] + chanlun_bonus, 2)
+        scores.append(entry)
 
     scores.sort(key=lambda x: x["final_score"], reverse=True)
     for i, s in enumerate(scores):
@@ -371,34 +464,41 @@ def enrich_with_chanlun(scores: List[dict], analysis_results: Dict[str, dict]) -
 
 def generate_rotation_report(scores: List[dict], config: dict) -> str:
     now = datetime.now().strftime('%Y-%m-%d %H:%M')
-    settings = config["settings"]
-    window = settings.get("rotation_window_days", 20)
 
     lines = [
         "# A股宽基指数轮动分析报告",
         "",
         f"> 生成时间：{now}",
-        f"> 动量窗口：{window} 个交易日",
+        f"> 评分体系：纯缠论五维度（走势类型·买卖点·MACD动力学·中枢结构·级别共振）",
         f"> 覆盖指数：{len(scores)} 只宽基指数及对应ETF",
+        f"> 理论基础：缠论（缠中说禅技术分析理论），详见 [`docs/指数轮动交易系统逻辑.md`](../../docs/指数轮动交易系统逻辑.md)",
         "",
         "---",
         "",
         "## 一、轮动排名总表",
         "",
-        "| 排名 | 指数 | 类别 | 最新价 | 窗口涨幅 | 动量分 | MACD分 | 量能分 | 缠论加分 | 综合分 | 走势类型 |",
-        "|------|------|------|--------|----------|--------|--------|--------|----------|--------|----------|",
+        "| 排名 | 指数 | 类别 | 最新价 | 走势类型 | 信号分 | MACD分 | 中枢分 | 共振分 | 综合分 | 日线走势 |",
+        "|------|------|------|--------|----------|--------|--------|--------|--------|--------|----------|",
     ]
 
     for s in scores:
         trend = s.get("trend", "N/A")
         lines.append(
             f"| {s['final_rank']} | {s['name']} | {s['category']} "
-            f"| {s['latest_price']:.3f} | {s['change_pct_window']:+.2f}% "
-            f"| {s['momentum']:.1f} | {s['macd_score']:.1f} | {s['volume_score']:.1f} "
-            f"| {s.get('chanlun_bonus', 0):+.1f} | **{s['final_score']:.1f}** | {trend} |"
+            f"| {s['latest_price']:.3f} | {s['d1_trend']:+.1f} "
+            f"| {s['d2_signal']:+.1f} | {s['d3_macd']:+.1f} | {s['d4_hub']:+.1f} "
+            f"| {s['d5_resonance']:+.1f} | **{s['final_score']:.1f}** | {trend} |"
         )
 
-    lines.extend(["", "---", ""])
+    lines.extend([
+        "",
+        "> **评分维度说明**：走势类型(20%) — 日线+30分钟趋势判定 | "
+        "信号分(25%) — 三类买卖点强度 | MACD分(20%) — 防狼术+柱状体方向 | "
+        "中枢分(15%) — 价格相对中枢位置+中枢上移 | 共振分(20%) — 多级别共振/矛盾",
+        "",
+        "---",
+        "",
+    ])
 
     lines.extend([
         "## 二、各指数缠论摘要",
@@ -408,28 +508,52 @@ def generate_rotation_report(scores: List[dict], config: dict) -> str:
     for s in scores:
         emoji = "🟢" if s["final_score"] > 0 else "🔴" if s["final_score"] < -5 else "🟡"
         hub_pos = {"above": "中枢上方", "below": "中枢下方", "inside": "中枢内部"}.get(s.get("hub_position", ""), "N/A")
+        min30_trend = s.get("min30_trend", "N/A")
 
         lines.extend([
             f"### {emoji} {s['name']}（{s['code']}）",
             "",
-            f"- **走势类型**：{s.get('trend', 'N/A')}",
-            f"- **中枢数**：{s.get('hub_count', 0)}，笔数：{s.get('stroke_count', 0)}",
+            f"- **日线走势**：{s.get('trend', 'N/A')}（中枢{s.get('hub_count', 0)}个，笔{s.get('stroke_count', 0)}根）",
+            f"- **30分钟走势**：{min30_trend}",
             f"- **价格位置**：{hub_pos}",
         ])
 
         if s.get("last_hub_zg"):
             lines.append(f"- **最近中枢**：ZD={s.get('last_hub_zd', 0):.2f} ~ ZG={s.get('last_hub_zg', 0):.2f}")
         if s.get("macd_dif") is not None:
-            lines.append(f"- **MACD**：DIF={s.get('macd_dif', 0):.4f}，DEA={s.get('macd_dea', 0):.4f}，柱={'红' if s.get('macd_bar', 0) > 0 else '绿'}柱")
+            bar_str = "红" if s.get("macd_bar", 0) > 0 else "绿"
+            wolf_str = "✅ 0轴上方" if s.get("macd_dif", 0) > 0 else "⚠️ 0轴下方（防狼术警告）"
+            lines.append(f"- **MACD**：DIF={s.get('macd_dif', 0):.4f}，DEA={s.get('macd_dea', 0):.4f}，{bar_str}柱 | {wolf_str}")
 
         buys = s.get("buy_signals", [])
         sells = s.get("sell_signals", [])
-        if buys:
-            lines.append(f"- **买点信号**：{', '.join(buys)}")
-        if sells:
-            lines.append(f"- **卖点信号**：{', '.join(sells)}")
-        if not buys and not sells:
+        m_buys = s.get("min30_buy_signals", [])
+        m_sells = s.get("min30_sell_signals", [])
+
+        if buys or m_buys:
+            parts = []
+            if buys:
+                parts.append(f"日线 {', '.join(buys)}")
+            if m_buys:
+                parts.append(f"30分钟 {', '.join(m_buys)}")
+            lines.append(f"- **买点信号**：{' | '.join(parts)}")
+        if sells or m_sells:
+            parts = []
+            if sells:
+                parts.append(f"日线 {', '.join(sells)}")
+            if m_sells:
+                parts.append(f"30分钟 {', '.join(m_sells)}")
+            lines.append(f"- **卖点信号**：{' | '.join(parts)}")
+        if not buys and not sells and not m_buys and not m_sells:
             lines.append("- **买卖点**：无新信号")
+
+        d_up = "上涨" in s.get("trend", "")
+        m_up = "上涨" in min30_trend
+        m_down = "下跌" in min30_trend
+        if d_up and m_up:
+            lines.append("- **级别共振**：✅ 日线+30分钟同向上涨")
+        elif d_up and m_down:
+            lines.append("- **级别共振**：⚠️ 日线上涨 vs 30分钟下跌（级别矛盾）")
 
         lines.append("")
 
@@ -450,14 +574,15 @@ def generate_rotation_report(scores: List[dict], config: dict) -> str:
             idx_info = next((i for i in config["indices"] if i["index_code"] == s["code"]), {})
             etf_info = f"{idx_info.get('etf_name', '')}（{idx_info.get('etf_code', '')}）"
             lines.append(f"- **{s['name']}** → 对应ETF：{etf_info}")
-            if "上涨" in s.get("trend", ""):
-                lines.append(f"  - 处于上涨趋势，可持仓或择机加仓")
-            elif s.get("buy_signals"):
-                lines.append(f"  - 出现买点信号 {s['buy_signals']}，可考虑建仓")
+            if "上涨" in s.get("trend", "") and "上涨" in s.get("min30_trend", ""):
+                lines.append(f"  - ✅ 双级别上涨共振，可持仓或择机加仓")
+            elif s.get("buy_signals") or s.get("min30_buy_signals"):
+                all_buys = s.get("buy_signals", []) + s.get("min30_buy_signals", [])
+                lines.append(f"  - 出现买点信号 {all_buys}，可考虑建仓")
             elif s.get("hub_position") == "above":
                 lines.append(f"  - 价格在中枢上方运行，关注回试确认（三买）")
             else:
-                lines.append(f"  - 动量向上，关注缠论买点确认后介入")
+                lines.append(f"  - 缠论结构偏多，关注买卖点确认后介入")
         lines.append("")
 
     if bottom_indices:
@@ -468,21 +593,24 @@ def generate_rotation_report(scores: List[dict], config: dict) -> str:
         lines.append("")
 
     lines.extend([
-        "### 3.3 轮动策略要点",
+        "### 3.3 缠论轮动策略要点",
         "",
-        "1. **核心原则**：选择处于上涨趋势且动量最强的指数ETF配置",
-        "2. **缠论确认**：单纯动量不够，需要缠论买卖点确认",
-        "3. **大小盘轮动**：大盘价值（沪深300/上证50）与中小盘成长（中证500/1000）通常交替领涨",
-        "4. **仓位管理**：",
-        "   - 综合分 > 5 且有买点：可配置 40%~60%",
-        "   - 综合分 0~5：轻仓观察 20%~30%",
-        "   - 综合分 < 0：空仓观望",
-        "5. **调仓频率**：建议每周末分析一次，月度调仓",
-        "6. **止损规则**：跌破最近中枢下沿 ZD 减半仓，跌破前低清仓",
+        "1. **核心原则**：选择双级别走势共振且买点信号最强的指数ETF",
+        "2. **防狼术**：日线 MACD DIF 在 0 轴下方时不做多（空头主导）",
+        "3. **买卖点确认**：必须有明确的缠论买点（一买/二买/三买）才能建仓",
+        "4. **仓位管理**（基于缠论信号）：",
+        "   - 双级别共振 + 买点确认：40%~60%",
+        "   - 单级别买点 + 另一级别中性：20%~30%",
+        "   - 无买点或卖点出现：空仓观望",
+        "5. **止损规则**（基于中枢结构）：",
+        "   - 跌破最近中枢下沿 ZD → 减半仓",
+        "   - 三卖信号出现 → 必须清仓",
+        "   - 跌破前低 → 清仓",
+        "6. **调仓频率**：建议每周末分析一次，月度调仓",
         "",
         "---",
         "",
-        "> **重要声明**：本分析基于缠论技术方法和动量轮动模型，不构成投资建议。",
+        "> **重要声明**：本分析完全基于缠论技术方法，不构成投资建议。",
         "> 指数ETF投资也有风险，请根据自身风险承受能力做出决策。",
     ])
 
@@ -543,6 +671,113 @@ def generate_single_index_report(code: str, name: str, analysis: dict,
     return "\n".join(lines)
 
 
+# ─── Tracking Log ───
+
+def _update_tracking_log(scores: List[dict], config: dict,
+                         analysis_results: dict, daily_dir: str):
+    """Append today's summary to the persistent tracking.md file.
+
+    Same-day runs overwrite the day's section; different days append a new section.
+    Records: ranking, conclusions, key signals, and current status for trend tracking.
+    """
+    tracking_path = os.path.join(REPORT_DIR, "tracking.md")
+    now = datetime.now()
+    today_str = now.strftime('%Y-%m-%d')
+    date_header = f"## {today_str}"
+
+    ranking_lines = []
+    for s in scores:
+        emoji = "🟢" if s["final_score"] > 0 else "🔴" if s["final_score"] < -5 else "🟡"
+        ranking_lines.append(
+            f"| {s['final_rank']} | {emoji} {s['name']} | {s['latest_price']:.3f} "
+            f"| {s['final_score']:.1f} | {s.get('trend', 'N/A')} |"
+        )
+
+    signals_summary = []
+    for s in scores:
+        buys = s.get("buy_signals", [])
+        sells = s.get("sell_signals", [])
+        if buys or sells:
+            parts = []
+            if buys:
+                parts.append(f"买: {','.join(buys)}")
+            if sells:
+                parts.append(f"卖: {','.join(sells)}")
+            signals_summary.append(f"- **{s['name']}**：{' | '.join(parts)}")
+
+    level_resonance = []
+    for s in scores:
+        code = s["code"]
+        analysis = analysis_results.get(code, {})
+        daily_trend = s.get("trend", "N/A")
+        min30_trend = analysis.get("min30", {}).get("trend", "N/A")
+        if "上涨" in daily_trend and "上涨" in min30_trend:
+            level_resonance.append(f"- **{s['name']}** ✅ 日线+30分钟同向上涨")
+        elif "上涨" in daily_trend and "下跌" in min30_trend:
+            level_resonance.append(f"- **{s['name']}** ⚠️ 日线上涨 vs 30分钟下跌")
+
+    section = [
+        date_header,
+        "",
+        f"> 更新时间：{now.strftime('%H:%M')}",
+        "",
+        "### 排名",
+        "",
+        "| 排名 | 指数 | 价格 | 综合分 | 走势类型 |",
+        "|------|------|------|--------|---------|",
+    ] + ranking_lines + [
+        "",
+        "### 关键信号",
+        "",
+    ] + (signals_summary if signals_summary else ["- 无新信号"]) + [
+        "",
+        "### 级别共振",
+        "",
+    ] + (level_resonance if level_resonance else ["- 无共振数据"]) + [
+        "",
+        "### 结论与计划",
+        "",
+        "<!-- 请在此处补充当日分析结论、操作计划和走势推演 -->",
+        "",
+        "---",
+        "",
+    ]
+
+    new_section = "\n".join(section)
+
+    if os.path.exists(tracking_path):
+        with open(tracking_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        if date_header in content:
+            start = content.index(date_header)
+            next_h2 = content.find("\n## ", start + len(date_header))
+            if next_h2 == -1:
+                content = content[:start] + new_section
+            else:
+                content = content[:start] + new_section + content[next_h2 + 1:]
+            with open(tracking_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        else:
+            with open(tracking_path, 'a', encoding='utf-8') as f:
+                f.write(new_section)
+    else:
+        header = "\n".join([
+            "# 指数轮动交易跟踪日志",
+            "",
+            "> 持续记录每日分析结论、操作计划和走势推演",
+            "> 每次运行 `index_trading_system.py` 自动更新排名和信号",
+            "> 结论和计划部分由人工或AI补充",
+            "",
+            "---",
+            "",
+        ])
+        with open(tracking_path, 'w', encoding='utf-8') as f:
+            f.write(header + new_section)
+
+    print(f"  Tracking log updated: {tracking_path}")
+
+
 # ─── Main Orchestrator ───
 
 def full_update():
@@ -563,9 +798,8 @@ def full_update():
     print("\n[3/5] Recording buy/sell point signals...")
     record_index_signals(config, analysis_results)
 
-    print("\n[4/5] Computing rotation scores...")
-    scores = compute_rotation_scores(config, data_results)
-    scores = enrich_with_chanlun(scores, analysis_results)
+    print("\n[4/5] Computing pure Chanlun rotation scores...")
+    scores = compute_chanlun_scores(config, data_results, analysis_results)
 
     rotation_path = os.path.join(REPORT_DIR, "rotation_scores.json")
     _save_json(rotation_path, {
@@ -573,16 +807,27 @@ def full_update():
         "scores": scores,
     })
 
-    print("\n  Rotation ranking:")
+    print("\n  Rotation ranking (pure Chanlun):")
     for s in scores:
         emoji = "🟢" if s["final_score"] > 0 else "🔴" if s["final_score"] < -5 else "🟡"
         print(f"    {emoji} #{s['final_rank']} {s['name']}: score={s['final_score']:.1f}, "
-              f"momentum={s['change_pct_window']:+.2f}%, trend={s.get('trend', 'N/A')}")
+              f"trend={s.get('trend', 'N/A')}, "
+              f"[走势={s['d1_trend']:.1f} 信号={s['d2_signal']:.1f} "
+              f"MACD={s['d3_macd']:.1f} 中枢={s['d4_hub']:.1f} 共振={s['d5_resonance']:.1f}]")
 
     print("\n[5/5] Generating reports...")
+
+    today_str = datetime.now().strftime('%Y%m%d')
+    daily_dir = os.path.join(REPORT_DIR, today_str)
+    os.makedirs(daily_dir, exist_ok=True)
+
     rotation_report = generate_rotation_report(scores, config)
-    rotation_md_path = os.path.join(REPORT_DIR, "指数轮动分析报告.md")
-    with open(rotation_md_path, 'w', encoding='utf-8') as f:
+    daily_report_path = os.path.join(daily_dir, "指数轮动分析报告.md")
+    with open(daily_report_path, 'w', encoding='utf-8') as f:
+        f.write(rotation_report)
+
+    latest_link = os.path.join(REPORT_DIR, "指数轮动分析报告.md")
+    with open(latest_link, 'w', encoding='utf-8') as f:
         f.write(rotation_report)
 
     for idx_info in config["indices"]:
@@ -605,10 +850,15 @@ def full_update():
                      for s in scores],
     })
 
+    _update_tracking_log(scores, config, analysis_results, daily_dir)
+
     print(f"\n{'='*70}")
     print("  Output files:")
-    print(f"  - Rotation report:  {rotation_md_path}")
+    print(f"  - Daily report dir: {daily_dir}/")
+    print(f"  - Rotation report:  {daily_report_path}")
+    print(f"  - Latest link:      {latest_link}")
     print(f"  - Rotation scores:  {rotation_path}")
+    print(f"  - Tracking log:     {os.path.join(REPORT_DIR, 'tracking.md')}")
     for idx_info in config["indices"]:
         code = idx_info["index_code"]
         name = idx_info["index_name"]
