@@ -822,10 +822,14 @@ def compute_chanlun_scores(config: dict, data_results: Dict[str, dict],
             entry["macd_dif"] = round(lk.dif, 4)
             entry["macd_dea"] = round(lk.dea, 4)
             entry["macd_bar"] = round(lk.macd, 4)
+            entry["latest_daily_date"] = lk.date
 
         if min120.get("klines"):
             lk120 = min120["klines"][-1]
             entry["min120_macd_dif"] = round(lk120.dif, 4)
+
+        if min30.get("klines"):
+            entry["latest_30min_date"] = min30["klines"][-1].date
 
         if hubs:
             entry["last_hub_zg"] = round(hubs[-1].zg, 2)
@@ -958,10 +962,16 @@ def generate_rotation_report(scores: List[dict], config: dict,
 
     executive_summary = _generate_executive_summary(scores, config, market_regime)
 
+    daily_dates = [s.get("latest_daily_date", "") for s in scores if s.get("latest_daily_date")]
+    min30_dates = [s.get("latest_30min_date", "") for s in scores if s.get("latest_30min_date")]
+    latest_daily = max(daily_dates) if daily_dates else "N/A"
+    latest_30min = max(min30_dates) if min30_dates else "N/A"
+
     lines = [
         "# A股宽基指数轮动分析报告",
         "",
         f"> 生成时间：{now}",
+        f"> 数据截止：日线 {latest_daily} ｜ 30分钟线 {latest_30min}",
         f"> 评分体系：纯缠论九维度 v3（三级联立：日线→120分钟→30分钟）",
         f"> 覆盖指数：{len(scores)} 只指数及对应ETF",
         f"> 理论基础：缠论（缠中说禅技术分析理论），详见 [`docs/指数轮动交易系统逻辑.md`](../../docs/指数轮动交易系统逻辑.md)",
@@ -1223,10 +1233,14 @@ def generate_single_index_report(code: str, name: str, analysis: dict,
     signals = tracker.get_signals()
     active_signals = [s for s in signals if s.get("status") == "active"]
 
+    daily_date = score.get("latest_daily_date", "N/A")
+    min30_date = score.get("latest_30min_date", "N/A")
+
     lines = [
         f"# {name}（{code}）每日跟踪报告",
         "",
         f"> 生成时间：{now}",
+        f"> 数据截止：日线 {daily_date} ｜ 30分钟线 {min30_date}",
         f"> ETF：{idx_info.get('etf_name', '')}（{idx_info.get('etf_code', '')}）",
         "",
         "---",
