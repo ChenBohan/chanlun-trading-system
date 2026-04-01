@@ -74,7 +74,7 @@ class Hub:
 
 @dataclass
 class BuySellPoint:
-    type: str          # "1B", "2B", "3B", "1S", "2S", "3S"
+    type: str          # "1B", "2B", "3B", "1S", "2S", "3S", "PB" (consolidation buy), "PS" (consolidation sell)
     label: str
     date: str
     price: float
@@ -255,6 +255,12 @@ def find_strokes(fractals: List[Fractal], merged: List[MergedKline]) -> List[Str
 # ─── MACD Area for Strokes ───
 
 def compute_stroke_macd_areas(strokes: List[Stroke], klines: List[Kline], merged: List[MergedKline]):
+    """Sum MACD histogram area matching stroke direction only.
+
+    Up strokes (direction=1) accumulate red bars (MACD>0);
+    down strokes (direction=-1) accumulate green bars (MACD<0).
+    This avoids inflating the area with counter-direction bars.
+    """
     date_to_kidx = {k.date: k.idx for k in klines}
     for s in strokes:
         start_date = s.start.date
@@ -263,7 +269,9 @@ def compute_stroke_macd_areas(strokes: List[Stroke], klines: List[Kline], merged
         ei = date_to_kidx.get(end_date, len(klines) - 1)
         area = 0.0
         for ki in range(si, min(ei + 1, len(klines))):
-            area += abs(klines[ki].macd)
+            v = klines[ki].macd
+            if (s.direction == 1 and v > 0) or (s.direction == -1 and v < 0):
+                area += abs(v)
         s.macd_area = area
 
 
@@ -339,56 +347,61 @@ def determine_trend(hubs: List[Hub], strokes: List[Stroke]) -> str:
 # ─── Divergence Detection ───
 
 def check_trend_divergence(strokes: List[Stroke], hubs: List[Hub]) -> List[dict]:
-    """
-    Detect trend divergence: in a+A+b+B+c structure,
-    if MACD area of c < MACD area of a, divergence is present.
+    """Detect trend divergence using strict a+A+…+B+c structure.
 
-    Key fix: use hub-pair direction (not last stroke direction) to determine
-    signal type. Downtrend (hubs descending) → only 一买; Uptrend (hubs
-    ascending) → only 一卖. Compare only same-direction strokes' MACD areas.
+    Group consecutive same-direction hub shifts into one trend sequence,
+    then compare the segment *before* the first hub (a) with the segment
+    *after* the last hub (c).  This avoids the "rolling pair" problem
+    where intermediate hub boundaries produce spurious divergence signals.
     """
     divergences = []
     if len(hubs) < 2:
         return divergences
 
-    for hi in range(1, len(hubs)):
-        prev_hub = hubs[hi - 1]
-        curr_hub = hubs[hi]
-
-        is_downtrend = curr_hub.zd < prev_hub.zd and curr_hub.zg < prev_hub.zg
-        is_uptrend = curr_hub.zd > prev_hub.zd and curr_hub.zg > prev_hub.zg
-        if not is_downtrend and not is_uptrend:
+    i = 0
+    while i < len(hubs) - 1:
+        h0, h1 = hubs[i], hubs[i + 1]
+        is_down = h1.zd < h0.zd and h1.zg < h0.zg
+        is_up = h1.zd > h0.zd and h1.zg > h0.zg
+        if not is_down and not is_up:
+            i += 1
             continue
 
-        trend_dir = -1 if is_downtrend else 1
+        trend_dir = -1 if is_down else 1
+        j = i + 1
+        while j + 1 < len(hubs):
+            nxt = hubs[j + 1]
+            cur = hubs[j]
+            same = (nxt.zd < cur.zd and nxt.zg < cur.zg) if trend_dir == -1 \
+                else (nxt.zd > cur.zd and nxt.zg > cur.zg)
+            if same:
+                j += 1
+            else:
+                break
 
-        curr_hub_end_idx = curr_hub.strokes[-1].idx
-        seg_a_strokes = [s for s in strokes if s.idx <= prev_hub.strokes[0].idx]
-        seg_c_strokes = [s for s in strokes if s.idx > curr_hub_end_idx]
+        first_hub = hubs[i]
+        last_hub = hubs[j]
+        seg_a = [s for s in strokes if s.idx < first_hub.strokes[0].idx
+                 and s.direction == trend_dir]
+        seg_c = [s for s in strokes if s.idx > last_hub.strokes[-1].idx
+                 and s.direction == trend_dir]
 
-        if not seg_a_strokes or not seg_c_strokes:
-            continue
+        if seg_a and seg_c:
+            a_area = sum(s.macd_area for s in seg_a)
+            c_area = sum(s.macd_area for s in seg_c)
+            if a_area > 0 and c_area < a_area:
+                trigger = seg_c[-1]
+                divergences.append({
+                    'type': 'trend',
+                    'direction': trend_dir,
+                    'date': trigger.end.date,
+                    'a_area': a_area,
+                    'c_area': c_area,
+                    'ratio': c_area / a_area,
+                    'hub_idx': last_hub.idx,
+                })
 
-        a_dir_strokes = [s for s in seg_a_strokes if s.direction == trend_dir]
-        c_dir_strokes = [s for s in seg_c_strokes if s.direction == trend_dir]
-
-        if not a_dir_strokes or not c_dir_strokes:
-            continue
-
-        a_area = sum(s.macd_area for s in a_dir_strokes)
-        c_area = sum(s.macd_area for s in c_dir_strokes)
-
-        if a_area > 0 and c_area < a_area:
-            trigger_stroke = c_dir_strokes[-1]
-            divergences.append({
-                'type': 'trend',
-                'direction': trend_dir,
-                'date': trigger_stroke.end.date,
-                'a_area': a_area,
-                'c_area': c_area,
-                'ratio': c_area / a_area if a_area > 0 else 0,
-                'hub_idx': hi,
-            })
+        i = j + 1
 
     return divergences
 
@@ -396,20 +409,22 @@ def check_trend_divergence(strokes: List[Stroke], hubs: List[Hub]) -> List[dict]
 def check_consolidation_divergence(strokes: List[Stroke], hubs: List[Hub]) -> List[dict]:
     """
     Detect consolidation divergence: comparing consecutive exits from the same hub.
+    Only considers strokes up to the next hub's start to avoid mixing signals.
     """
     divergences = []
-    for hub in hubs:
+    for hi, hub in enumerate(hubs):
         exit_segments = []
         hub_stroke_idxs = set(s.idx for s in hub.strokes)
-        hub_end_idx = hub.strokes[-1].idx
+
+        next_hub_start_idx = hubs[hi + 1].strokes[0].idx if hi + 1 < len(hubs) else float('inf')
 
         for s in strokes:
             if s.idx in hub_stroke_idxs:
                 continue
-            sh = max(s.start.high, s.end.high)
-            sl = min(s.start.low, s.end.low)
-            if sh > hub.zg or sl < hub.zd:
-                if s.idx > hub.strokes[0].idx:
+            if s.idx > hub.strokes[0].idx and s.idx < next_hub_start_idx:
+                sh = max(s.start.high, s.end.high)
+                sl = min(s.start.low, s.end.low)
+                if sh > hub.zg or sl < hub.zd:
                     exit_segments.append(s)
 
         for i in range(1, len(exit_segments)):
@@ -461,13 +476,15 @@ def find_all_buy_sell_points(
                     hub_idx=div['hub_idx'],
                 ))
 
-    # --- Type 1 from consolidation divergence ---
+    # --- Consolidation divergence (盘整背驰 ≠ 趋势背驰一买/一卖) ---
+    # Per theory: "没有趋势就没有背驰", consolidation divergence only causes
+    # local pullback, not trend reversal. Use separate type PB/PS.
     for div in consol_divs:
         if div['direction'] == -1:
             stroke = next((s for s in strokes if s.end.date == div['date']), None)
             if stroke:
                 points.append(BuySellPoint(
-                    type="1B", label="一买（盘整背驰买点）",
+                    type="PB", label="盘整背驰买点",
                     date=div['date'], price=stroke.end.low,
                     description=f"盘整背驰：本次下离MACD面积({div['curr_area']:.1f}) < 前次({div['prev_area']:.1f})，比={div['ratio']:.2f}",
                     level=level, confidence="medium" if div['ratio'] < 0.7 else "low",
@@ -477,7 +494,7 @@ def find_all_buy_sell_points(
             stroke = next((s for s in strokes if s.end.date == div['date']), None)
             if stroke:
                 points.append(BuySellPoint(
-                    type="1S", label="一卖（盘整背驰卖点）",
+                    type="PS", label="盘整背驰卖点",
                     date=div['date'], price=stroke.end.high,
                     description=f"盘整背驰：本次上离MACD面积({div['curr_area']:.1f}) < 前次({div['prev_area']:.1f})，比={div['ratio']:.2f}",
                     level=level, confidence="medium" if div['ratio'] < 0.7 else "low",
@@ -531,6 +548,8 @@ def find_all_buy_sell_points(
                 break
 
     # --- Type 3 Buy/Sell (中枢回试) ---
+    # Check ALL breakout attempts per hub, not just the first one.
+    # A failed breakout means the hub extends; subsequent breakouts are valid candidates.
     for hub in hubs:
         hub_end_stroke = hub.strokes[-1]
 
@@ -550,9 +569,7 @@ def find_all_buy_sell_points(
                         level=level, confidence="high",
                         hub_idx=hub.idx,
                     ))
-                elif next_down and next_down.end.low <= hub.zg:
-                    pass
-                break
+                    break  # found valid 3B, stop for this hub
 
         for s in strokes:
             if s.idx <= hub_end_stroke.idx:
@@ -570,10 +587,9 @@ def find_all_buy_sell_points(
                         level=level, confidence="high",
                         hub_idx=hub.idx,
                     ))
-                break
+                    break  # found valid 3S, stop for this hub
 
     # --- MACD zero-axis check for Type 2 ---
-    macd_enhanced = []
     for p in points:
         if p.type in ("2B", "2S"):
             date_kline = next((k for k in klines if k.date == p.date), None)
@@ -585,7 +601,15 @@ def find_all_buy_sell_points(
                     p.description += "（MACD DIF已下穿0轴后回抽确认）"
                     p.confidence = "high"
 
-    return points
+    seen = set()
+    unique = []
+    for p in points:
+        key = (p.type, p.date, round(p.price, 4))
+        if key not in seen:
+            seen.add(key)
+            unique.append(p)
+
+    return unique
 
 
 # ─── Single Level Analysis ───
@@ -661,7 +685,8 @@ def analyze_level(filepath: str, level_name: str) -> dict:
 
 # ─── Multi-Level Synthesis ───
 
-def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际（688981.SH）") -> str:
+def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际（688981.SH）",
+                          min120: Optional[dict] = None) -> str:
     lines = []
     now = datetime.now().strftime('%Y-%m-%d %H:%M')
 
@@ -676,16 +701,37 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
     daily_trend = daily.get('trend', '无法判断')
     min30_trend = min30.get('trend', '无法判断')
 
+    min120 = min120 or {}
+    min120_klines = min120.get('klines', [])
+    min120_strokes = min120.get('strokes', [])
+    min120_hubs = min120.get('hubs', [])
+    min120_bsp = min120.get('buy_sell_points', [])
+    min120_trend = min120.get('trend', '无法判断')
+    has_120 = bool(min120_klines)
+
     latest_price = daily_klines[-1].close if daily_klines else 0
     latest_date = daily_klines[-1].date if daily_klines else "N/A"
 
+    data_lines = [
+        f"> 日线数据：{daily_klines[0].date} ~ {daily_klines[-1].date}（{len(daily_klines)} 根）" if daily_klines else "",
+    ]
+    if has_120:
+        data_lines.append(
+            f"> 120分钟数据：{min120_klines[0].date} ~ {min120_klines[-1].date}（{len(min120_klines)} 根）"
+        )
+    if min30_klines:
+        data_lines.append(
+            f"> 30分钟数据：{min30_klines[0].date} ~ {min30_klines[-1].date}（{len(min30_klines)} 根）"
+        )
+
+    level_desc = "三级联立（日线→120分钟→30分钟）" if has_120 else "两级联立（日线→30分钟）"
     lines.extend([
         f"# {title} 缠论多级别买卖点分析报告",
         "",
         f"> 分析时间：{now}",
         f"> 最新价格：**{latest_price:.2f}**（{latest_date}）",
-        f"> 日线数据：{daily_klines[0].date} ~ {daily_klines[-1].date}（{len(daily_klines)} 根）" if daily_klines else "",
-        f"> 30分钟数据：{min30_klines[0].date} ~ {min30_klines[-1].date}（{len(min30_klines)} 根）" if min30_klines else "",
+        f"> 分析模式：{level_desc}",
+    ] + [l for l in data_lines if l] + [
         "",
         "---",
         "",
@@ -778,9 +824,92 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
 
     lines.extend(["---", ""])
 
-    # === Section 2: 30-min Analysis ===
+    # === Section 1.5: 120-min Analysis (if available) ===
+    if has_120:
+        lines.extend([
+            "## 二、120分钟级别分析（操作级别）",
+            "",
+            f"### 2.1 走势结构",
+            "",
+            f"- **走势类型**：{min120_trend}",
+            f"- **笔数**：{len(min120_strokes)}",
+            f"- **中枢数**：{len(min120_hubs)}",
+            "",
+        ])
+
+        if min120_hubs:
+            lines.append("### 2.2 中枢一览")
+            lines.append("")
+            lines.append("| 中枢 | 时间范围 | ZD（下沿） | ZG（上沿） | 振幅 | 笔数 |")
+            lines.append("|------|----------|-----------|-----------|------|------|")
+            for h in min120_hubs:
+                lines.append(f"| {h.idx+1} | {h.start_date} ~ {h.end_date} | {h.zd:.2f} | {h.zg:.2f} | {h.zg-h.zd:.2f} | {len(h.strokes)} |")
+            lines.append("")
+
+        if min120_strokes:
+            lines.append("### 2.3 笔的划分")
+            lines.append("")
+            lines.append("| 笔 | 方向 | 起始 | 终止 | 价格变动 | MACD面积 |")
+            lines.append("|-----|------|------|------|----------|----------|")
+            for s in min120_strokes:
+                d = "↑" if s.direction == 1 else "↓"
+                if s.direction == 1:
+                    pc = f"{s.start.low:.2f} → {s.end.high:.2f}"
+                else:
+                    pc = f"{s.start.high:.2f} → {s.end.low:.2f}"
+                lines.append(f"| {s.idx+1} | {d} | {s.start.date} | {s.end.date} | {pc} | {s.macd_area:.1f} |")
+            lines.append("")
+
+        if min120_klines:
+            lk = min120_klines[-1]
+            lines.extend([
+                "### 2.4 MACD 状态",
+                "",
+                f"- **DIF**：{lk.dif:.3f}",
+                f"- **DEA**：{lk.dea:.3f}",
+                f"- **MACD柱**：{lk.macd:.3f}（{'红柱' if lk.macd > 0 else '绿柱'}）",
+                "",
+            ])
+
+        if min120.get('trend_divs') or min120.get('consol_divs'):
+            lines.append("### 2.5 背驰信号")
+            lines.append("")
+            for d in min120.get('trend_divs', []):
+                emoji = "📉" if d['direction'] == -1 else "📈"
+                lines.append(f"- {emoji} **趋势背驰**（{d['date']}）：c/a面积比 = {d['ratio']:.2f}")
+            for d in min120.get('consol_divs', []):
+                emoji = "📉" if d['direction'] == -1 else "📈"
+                lines.append(f"- {emoji} **盘整背驰**（{d['date']}）：面积比 = {d['ratio']:.2f}")
+            lines.append("")
+
+        if min120_bsp:
+            lines.append("### 2.6 120分钟买卖点（核心操作信号）")
+            lines.append("")
+            for p in min120_bsp:
+                emoji = "🟢" if "B" in p.type else "🔴"
+                conf = {"high": "⭐⭐⭐", "medium": "⭐⭐", "low": "⭐"}.get(p.confidence, "")
+                lines.extend([
+                    f"#### {emoji} {p.label}  {conf}",
+                    "",
+                    f"- **时间**：{p.date}",
+                    f"- **价格**：{p.price:.2f}",
+                    f"- **说明**：{p.description}",
+                    "",
+                ])
+        else:
+            lines.extend([
+                "### 2.6 120分钟买卖点",
+                "",
+                "当前120分钟级别未识别出标准买卖点。",
+                "",
+            ])
+
+        lines.extend(["---", ""])
+
+    # === Section 2/3: 30-min Analysis ===
+    sec_num = "三" if has_120 else "二"
     lines.extend([
-        "## 二、30分钟级别分析",
+        f"## {sec_num}、30分钟级别分析（精确择时）" if has_120 else "## 二、30分钟级别分析",
         "",
         f"### 2.1 走势结构",
         "",
@@ -859,19 +988,23 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
 
     lines.extend(["---", ""])
 
-    # === Section 3: Multi-Level Synthesis ===
+    # === Section N: Multi-Level Synthesis ===
+    syn_sec = "四" if has_120 else "三"
     lines.extend([
-        "## 三、多级别联立研判",
+        f"## {syn_sec}、多级别联立研判",
         "",
-        f"### 3.1 级别关系",
+        f"### {syn_sec}.1 级别关系",
         "",
-        f"- **日线走势**：{daily_trend}",
-        f"- **30分钟走势**：{min30_trend}",
+        f"- **日线走势**（定方向）：{daily_trend}",
+    ])
+    if has_120:
+        lines.append(f"- **120分钟走势**（定买卖点）：{min120_trend}")
+    lines.extend([
+        f"- **30分钟走势**（精确择时）：{min30_trend}",
         "",
     ])
 
-    # Position analysis
-    lines.append("### 3.2 当前位置分析")
+    lines.append(f"### {syn_sec}.2 当前位置分析")
     lines.append("")
     lines.append(f"**最新价格 {latest_price:.2f}（{latest_date}）**")
     lines.append("")
@@ -884,6 +1017,15 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
             lines.append(f"- 相对日线中枢（{last_dh.zd:.2f}~{last_dh.zg:.2f}）：**在下沿下方**，距下沿 {latest_price - last_dh.zd:.2f}")
         else:
             lines.append(f"- 相对日线中枢（{last_dh.zd:.2f}~{last_dh.zg:.2f}）：**在中枢内部**")
+
+    if min120_hubs:
+        last_120h = min120_hubs[-1]
+        if latest_price > last_120h.zg:
+            lines.append(f"- 相对120分钟中枢（{last_120h.zd:.2f}~{last_120h.zg:.2f}）：**在上沿上方**")
+        elif latest_price < last_120h.zd:
+            lines.append(f"- 相对120分钟中枢（{last_120h.zd:.2f}~{last_120h.zg:.2f}）：**在下沿下方**")
+        else:
+            lines.append(f"- 相对120分钟中枢（{last_120h.zd:.2f}~{last_120h.zg:.2f}）：**在中枢内部**")
 
     if min30_hubs:
         last_mh = min30_hubs[-1]
@@ -898,14 +1040,17 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
         ls = daily_strokes[-1]
         d = "上升笔" if ls.direction == 1 else "下降笔"
         lines.append(f"- 日线当前笔：第{ls.idx+1}笔（{d}），{ls.start.date} → {ls.end.date}")
+    if min120_strokes:
+        ls = min120_strokes[-1]
+        d = "上升笔" if ls.direction == 1 else "下降笔"
+        lines.append(f"- 120分钟当前笔：第{ls.idx+1}笔（{d}），{ls.start.date} → {ls.end.date}")
     if min30_strokes:
         ls = min30_strokes[-1]
         d = "上升笔" if ls.direction == 1 else "下降笔"
         lines.append(f"- 30分钟当前笔：第{ls.idx+1}笔（{d}），{ls.start.date} → {ls.end.date}")
     lines.append("")
 
-    # Key prices
-    lines.append("### 3.3 关键价格位")
+    lines.append(f"### {syn_sec}.3 关键价格位")
     lines.append("")
     lines.append("| 价格位 | 价格 | 含义 |")
     lines.append("|--------|------|------|")
@@ -914,6 +1059,9 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
     for h in daily_hubs:
         key_prices.append((h.zg, f"日线中枢{h.idx+1}上沿 ZG"))
         key_prices.append((h.zd, f"日线中枢{h.idx+1}下沿 ZD"))
+    for h in min120_hubs:
+        key_prices.append((h.zg, f"120分中枢{h.idx+1}上沿 ZG"))
+        key_prices.append((h.zd, f"120分中枢{h.idx+1}下沿 ZD"))
     for h in min30_hubs:
         key_prices.append((h.zg, f"30分中枢{h.idx+1}上沿 ZG"))
         key_prices.append((h.zd, f"30分中枢{h.idx+1}下沿 ZD"))
@@ -931,16 +1079,16 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
         lines.append(f"| {label} | {price:.2f} | {marker} |")
     lines.append("")
 
-    # === Section 4: Comprehensive Recommendation ===
-    all_bsp = daily_bsp + min30_bsp
+    all_bsp = daily_bsp + min120_bsp + min30_bsp
     buys = [p for p in all_bsp if "B" in p.type]
     sells = [p for p in all_bsp if "S" in p.type]
 
     recent_buys = sorted([p for p in buys], key=lambda p: p.date, reverse=True)
     recent_sells = sorted([p for p in sells], key=lambda p: p.date, reverse=True)
 
+    op_sec = "五" if has_120 else "四"
     lines.extend([
-        "### 3.4 综合买卖点汇总",
+        f"### {syn_sec}.4 综合买卖点汇总",
         "",
         "| 级别 | 类型 | 日期 | 价格 | 置信度 |",
         "|------|------|------|------|--------|",
@@ -951,9 +1099,8 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
         lines.append(f"| {p.level} | {emoji} {p.label} | {p.date} | {p.price:.2f} | {conf} |")
     lines.append("")
 
-    # === Section 5: Operation Strategy ===
     lines.extend([
-        "## 四、操作策略建议",
+        f"## {op_sec}、操作策略建议",
         "",
     ])
 
@@ -962,7 +1109,7 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
         lk = daily_klines[-1]
         is_bear_macd = lk.dif < 0 and lk.dea < 0
 
-        lines.append("### 4.1 当前市场状态判断")
+        lines.append(f"### {op_sec}.1 当前市场状态判断")
         lines.append("")
 
         if "下跌" in daily_trend:
@@ -995,7 +1142,7 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
             lines.append("> ⚠️ **防狼术**：MACD 黄白线均在0轴下方，空头主导。应保持谨慎，避免盲目抄底。")
             lines.append("")
 
-        lines.append("### 4.2 具体操作建议")
+        lines.append(f"### {op_sec}.2 具体操作建议")
         lines.append("")
 
         if recent_buys:
@@ -1014,7 +1161,7 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
             lines.append("")
 
         lines.extend([
-            "### 4.3 仓位参考（根据交易系统）",
+            f"### {op_sec}.3 仓位参考（根据交易系统）",
             "",
             "| 信号 | 建议仓位 |",
             "|------|---------|",
@@ -1027,13 +1174,15 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
         ])
 
         lines.extend([
-            "### 4.4 止损规则",
+            f"### {op_sec}.4 止损规则",
             "",
         ])
         if recent_buys:
             for b in recent_buys[:3]:
                 if b.type == "1B":
                     lines.append(f"- 一买（{b.date}，{b.price:.2f}）：若再出现同级别下跌缠绕则退出")
+                elif b.type == "PB":
+                    lines.append(f"- 盘整背驰买点（{b.date}，{b.price:.2f}）：仅局部反弹信号，非趋势转折，盘整突破失败则退出")
                 elif b.type == "2B":
                     lines.append(f"- 二买（{b.date}，{b.price:.2f}）：若跌破对应一买低点则反弹清仓")
                 elif b.type == "3B":
@@ -1048,9 +1197,8 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
 
         lines.append("")
 
-    # === Section 6: Follow-up ===
     lines.extend([
-        "### 4.5 后续关注事项",
+        f"### {op_sec}.5 后续关注事项",
         "",
         "1. **日线级别**：观察当前笔是否完成（需出现反向分型确认）",
         "2. **中枢突破方向**：关注价格是否有效突破中枢上沿/下沿",
@@ -1072,7 +1220,8 @@ def synthesize_multilevel(daily: dict, min30: dict, title: str = "中芯国际�
 
 # ─── HTML Chart Generation ───
 
-def generate_html_chart(daily: dict, min30: dict, title: str = "688981.SH 中芯国际") -> str:
+def generate_html_chart(daily: dict, min30: dict, title: str = "688981.SH 中芯国际",
+                        min120: Optional[dict] = None) -> str:
     daily_klines = daily.get('klines', [])
     daily_strokes = daily.get('strokes', [])
     daily_hubs = daily.get('hubs', [])
@@ -1081,6 +1230,13 @@ def generate_html_chart(daily: dict, min30: dict, title: str = "688981.SH 中芯
     min30_strokes = min30.get('strokes', [])
     min30_hubs = min30.get('hubs', [])
     min30_bsp = min30.get('buy_sell_points', [])
+
+    min120 = min120 or {}
+    min120_klines = min120.get('klines', [])
+    min120_strokes = min120.get('strokes', [])
+    min120_hubs = min120.get('hubs', [])
+    min120_bsp = min120.get('buy_sell_points', [])
+    has_120 = bool(min120_klines)
 
     def klines_to_js(klines):
         items = []
@@ -1150,10 +1306,10 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 6px; 
 <body>
 <div class="header">
   <h1>{title} — 缠论多级别买卖点分析</h1>
-  <div class="meta">分析时间：{datetime.now().strftime('%Y-%m-%d %H:%M')} | 日线 {len(daily_klines)} 根 | 30分钟 {len(min30_klines)} 根</div>
+  <div class="meta">分析时间：{datetime.now().strftime('%Y-%m-%d %H:%M')} | 日线 {len(daily_klines)} 根{f' | 120分钟 {len(min120_klines)} 根' if has_120 else ''} | 30分钟 {len(min30_klines)} 根</div>
 </div>
 
-<div class="tabs">
+<div class="tabs" id="levelTabs">
   <div class="tab active" onclick="switchTab('daily')">日线级别</div>
   <div class="tab" onclick="switchTab('min30')">30分钟级别</div>
 </div>
@@ -1194,17 +1350,35 @@ const min30Data = {{
   bsp: {bsp_to_js(min30_bsp)},
   trend: "{min30.get('trend', 'N/A')}"
 }};
+{"const min120Data = {" + chr(10) + f'  klines: {klines_to_js(min120_klines)},' + chr(10) + f'  strokes: {strokes_to_js(min120_strokes)},' + chr(10) + f'  hubs: {hubs_to_js(min120_hubs)},' + chr(10) + f'  bsp: {bsp_to_js(min120_bsp)},' + chr(10) + f'  trend: "{min120.get("trend", "N/A")}"' + chr(10) + "};" if has_120 else ""}
+
+const ALL_DATA = {{ daily: dailyData, min30: min30Data{', min120: min120Data' if has_120 else ''} }};
+const TAB_ORDER = ['daily'{", 'min120'" if has_120 else ""}, 'min30'];
+const TAB_LABELS = {{'daily': '日线级别'{", 'min120': '120分钟级别'" if has_120 else ""}, 'min30': '30分钟级别'}};
 
 let currentTab = 'daily';
+
+(function initTabs() {{
+  const container = document.getElementById('levelTabs');
+  container.innerHTML = '';
+  TAB_ORDER.forEach((t, i) => {{
+    const div = document.createElement('div');
+    div.className = 'tab' + (i === 0 ? ' active' : '');
+    div.textContent = TAB_LABELS[t];
+    div.onclick = () => switchTab(t);
+    container.appendChild(div);
+  }});
+}})();
 
 function switchTab(tab) {{
   currentTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelector(`.tab:nth-child(${{tab==='daily'?1:2}})`).classList.add('active');
+  const idx = TAB_ORDER.indexOf(tab);
+  document.querySelectorAll('.tab')[idx].classList.add('active');
   render();
 }}
 
-function getData() {{ return currentTab === 'daily' ? dailyData : min30Data; }}
+function getData() {{ return ALL_DATA[currentTab]; }}
 
 function render() {{
   const data = getData();
