@@ -59,11 +59,33 @@
       "category": "科技创新",
       "weight": 0.8,
       "notes": "硬科技，半导体为主"
+    },
+    {
+      "index_code": "HSTECH",
+      "index_name": "恒生科技",
+      "etf_code": "513180",
+      "etf_name": "恒生科技ETF",
+      "market": "SH",
+      "category": "跨市场科技",
+      "weight": 0.8,
+      "notes": "港股科技龙头（腾讯、美团、小米等），跨市场轮动"
+    },
+    {
+      "index_code": "NDX100",
+      "index_name": "纳斯达克100",
+      "etf_code": "513100",
+      "etf_name": "纳指100ETF",
+      "market": "SH",
+      "category": "跨市场成长",
+      "weight": 0.8,
+      "notes": "美股科技成长（苹果、微软、英伟达等），全球资产配置"
     }
   ],
   "settings": {
-    "operate_level": "daily",
-    "data_periods": ["101", "30"],
+    "direction_level": "daily",
+    "operate_level": "120min",
+    "precision_level": "30min",
+    "data_periods": ["101", "120", "30"],
     "data_start": "20250101",
     "rotation_window_days": 20,
     "macd_params": {"short": 12, "long": 26, "signal": 9}

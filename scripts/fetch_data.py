@@ -340,6 +340,90 @@ def _chanlun_prep_section(rows: list, freq: str) -> str:
     return "\n".join(lines)
 
 
+def _aggregate_to_120min(min60_data: list) -> list:
+    """Aggregate 60-minute K-lines into 120-minute K-lines.
+
+    A-share has 4 x 60min bars/day -> 2 x 120min bars/day (morning + afternoon).
+    Pairs consecutive bars within each trading day.
+    """
+    from collections import OrderedDict
+
+    daily_groups = OrderedDict()
+    for bar in min60_data:
+        dt = bar["datetime"]
+        date_part = dt.split(" ")[0] if " " in dt else dt[:10]
+        daily_groups.setdefault(date_part, []).append(bar)
+
+    result = []
+    for _date, bars in daily_groups.items():
+        i = 0
+        while i + 1 < len(bars):
+            bar1 = bars[i]
+            bar2 = bars[i + 1]
+            vol = int(bar1["volume"]) + int(bar2["volume"])
+            try:
+                amt = float(bar1["amount"]) + float(bar2["amount"])
+            except (ValueError, TypeError):
+                amt = 0
+            merged = {
+                "datetime": bar2["datetime"],
+                "open": bar1["open"],
+                "close": bar2["close"],
+                "high": str(max(float(bar1["high"]), float(bar2["high"]))),
+                "low": str(min(float(bar1["low"]), float(bar2["low"]))),
+                "volume": str(vol),
+                "amount": str(int(amt)),
+                "amplitude": "0",
+                "change_pct": "0",
+                "change": "0",
+                "turnover": "0",
+            }
+            result.append(merged)
+            i += 2
+
+    for j in range(len(result)):
+        if j > 0:
+            prev_c = float(result[j - 1]["close"])
+            c = float(result[j]["close"])
+            h = float(result[j]["high"])
+            l = float(result[j]["low"])
+            if prev_c > 0:
+                result[j]["amplitude"] = f"{(h - l) / prev_c * 100:.2f}"
+                result[j]["change"] = f"{c - prev_c:.4f}"
+                result[j]["change_pct"] = f"{(c - prev_c) / prev_c * 100:.2f}"
+
+    return result
+
+
+def min120_to_md(rows: list, title: str = "ETF") -> str:
+    source = "新浪财经/东方财富（由60分钟合成）"
+    lines = [
+        f"# {title} 120分钟线数据",
+        "",
+        f"> 数据区间：{rows[0]['datetime']} ~ {rows[-1]['datetime']}，共 {len(rows)} 根K线",
+        f"> 数据来源：{source} | 复权方式：前复权 | 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "## 数据总览",
+        "",
+        _compute_summary(rows),
+        "",
+        "## K线数据表",
+        "",
+        "| 时间 | 开盘 | 收盘 | 最高 | 最低 | 成交量(手) | 成交额(元) | 振幅% | 涨跌幅% | 涨跌额 | 换手率% |",
+        "|------|------|------|------|------|-----------|-----------|-------|---------|--------|---------|",
+    ]
+
+    for r in rows:
+        lines.append(
+            f"| {r['datetime']} | {r['open']} | {r['close']} | {r['high']} | {r['low']} "
+            f"| {r['volume']} | {r['amount']} | {r['amplitude']} | {r['change_pct']} | {r['change']} | {r['turnover']} |"
+        )
+
+    lines.append("")
+    lines.append(_chanlun_prep_section(rows, "120min"))
+    return "\n".join(lines)
+
+
 def main():
     symbol = "688981"
     beg = "20250620"
