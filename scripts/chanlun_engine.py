@@ -255,11 +255,12 @@ def find_strokes(fractals: List[Fractal], merged: List[MergedKline]) -> List[Str
 # ─── MACD Area for Strokes ───
 
 def compute_stroke_macd_areas(strokes: List[Stroke], klines: List[Kline], merged: List[MergedKline]):
-    """Sum MACD histogram area matching stroke direction only.
+    """Sum MACD histogram area for each stroke.
 
-    Up strokes (direction=1) accumulate red bars (MACD>0);
-    down strokes (direction=-1) accumulate green bars (MACD<0).
-    This avoids inflating the area with counter-direction bars.
+    Primary: accumulate only bars matching stroke direction
+    (up→red bars, down→green bars) per Chan Theory.
+    Fallback: if no same-direction bars exist (MACD in transition zone
+    near zero-axis), use total abs area to avoid silent zero.
     """
     date_to_kidx = {k.date: k.idx for k in klines}
     for s in strokes:
@@ -267,12 +268,14 @@ def compute_stroke_macd_areas(strokes: List[Stroke], klines: List[Kline], merged
         end_date = s.end.date
         si = date_to_kidx.get(start_date, 0)
         ei = date_to_kidx.get(end_date, len(klines) - 1)
-        area = 0.0
+        dir_area = 0.0
+        abs_area = 0.0
         for ki in range(si, min(ei + 1, len(klines))):
             v = klines[ki].macd
+            abs_area += abs(v)
             if (s.direction == 1 and v > 0) or (s.direction == -1 and v < 0):
-                area += abs(v)
-        s.macd_area = area
+                dir_area += abs(v)
+        s.macd_area = dir_area if dir_area > 0 else abs_area
 
 
 # ─── Hubs ───
@@ -407,38 +410,52 @@ def check_trend_divergence(strokes: List[Stroke], hubs: List[Hub]) -> List[dict]
 
 
 def check_consolidation_divergence(strokes: List[Stroke], hubs: List[Hub]) -> List[dict]:
-    """
-    Detect consolidation divergence: comparing consecutive exits from the same hub.
-    Only considers strokes up to the next hub's start to avoid mixing signals.
+    """Detect consolidation divergence within and around each hub.
+
+    Collects "boundary-touching" strokes—those whose extreme exceeds the
+    hub's ZG (upward attempt) or ZD (downward attempt).  This includes
+    partial breakout strokes captured by hub extension AND free strokes
+    after the hub, giving enough samples for meaningful comparison.
     """
     divergences = []
-    for hi, hub in enumerate(hubs):
-        exit_segments = []
-        hub_stroke_idxs = set(s.idx for s in hub.strokes)
+    all_hub_idxs = set()
+    for h in hubs:
+        for s in h.strokes:
+            all_hub_idxs.add(s.idx)
 
-        next_hub_start_idx = hubs[hi + 1].strokes[0].idx if hi + 1 < len(hubs) else float('inf')
-
+    for hub in hubs:
+        relevant = list(hub.strokes)
+        hub_end = hub.strokes[-1].idx
+        extra = 0
         for s in strokes:
-            if s.idx in hub_stroke_idxs:
-                continue
-            if s.idx > hub.strokes[0].idx and s.idx < next_hub_start_idx:
-                sh = max(s.start.high, s.end.high)
-                sl = min(s.start.low, s.end.low)
-                if sh > hub.zg or sl < hub.zd:
-                    exit_segments.append(s)
+            if s.idx > hub_end and s.idx not in all_hub_idxs:
+                relevant.append(s)
+                extra += 1
+                if extra >= 6:
+                    break
 
-        for i in range(1, len(exit_segments)):
-            prev_exit = exit_segments[i - 1]
-            curr_exit = exit_segments[i]
-            if prev_exit.direction == curr_exit.direction:
-                if curr_exit.macd_area < prev_exit.macd_area and prev_exit.macd_area > 0:
+        exit_up = sorted(
+            [s for s in relevant
+             if s.direction == 1 and max(s.start.high, s.end.high) > hub.zg],
+            key=lambda s: s.idx,
+        )
+        exit_down = sorted(
+            [s for s in relevant
+             if s.direction == -1 and min(s.start.low, s.end.low) < hub.zd],
+            key=lambda s: s.idx,
+        )
+
+        for exits in [exit_up, exit_down]:
+            for i in range(1, len(exits)):
+                prev_e, curr_e = exits[i - 1], exits[i]
+                if prev_e.macd_area > 0 and curr_e.macd_area < prev_e.macd_area:
                     divergences.append({
                         'type': 'consolidation',
-                        'direction': curr_exit.direction,
-                        'date': curr_exit.end.date,
-                        'prev_area': prev_exit.macd_area,
-                        'curr_area': curr_exit.macd_area,
-                        'ratio': curr_exit.macd_area / prev_exit.macd_area,
+                        'direction': curr_e.direction,
+                        'date': curr_e.end.date,
+                        'prev_area': prev_e.macd_area,
+                        'curr_area': curr_e.macd_area,
+                        'ratio': curr_e.macd_area / prev_e.macd_area,
                         'hub_idx': hub.idx,
                     })
 
