@@ -327,6 +327,8 @@ const INDEX_LIST = __INDEX_LIST_JSON__;
 const SYNTHESIS = __SYNTHESIS_JSON__;
 const GLOBAL_SIGNALS = __GLOBAL_SIGNALS_JSON__;
 
+function getChartData(key) { return DATA_CACHE[key] || null; }
+
 async function loadChartData(key) {
   if (DATA_CACHE[key]) return DATA_CACHE[key];
   try {
@@ -549,9 +551,12 @@ function selectLevel(level) {
 
 async function render() {
   const key = currentIndex + '_' + currentLevel;
-  chart.showLoading({text: '加载数据中...', color: '#58a6ff', textColor: '#c9d1d9',
-                     maskColor: 'rgba(13,17,23,0.8)', fontSize: 14});
-  const data = await loadChartData(key);
+  const cached = getChartData(key);
+  if (!cached) {
+    chart.showLoading({text: '加载数据中...', color: '#58a6ff', textColor: '#c9d1d9',
+                       maskColor: 'rgba(13,17,23,0.8)', fontSize: 14});
+  }
+  const data = cached || await loadChartData(key);
   chart.hideLoading();
   if (!data) { chart.clear(); return; }
 
@@ -1953,6 +1958,8 @@ const INDEX_LIST = {index_list_json};
 const SYNTHESIS = {synthesis_json};
 const GLOBAL_SIGNALS = {mobile_global_signals_json};
 
+function getChartData(key) {{ return DATA_CACHE[key] || null; }}
+
 async function loadChartData(key) {{
   if (DATA_CACHE[key]) return DATA_CACHE[key];
   try {{
@@ -2118,12 +2125,16 @@ function renderMobileOverview() {{
 renderMobileGlobalSignals();
 renderMobileOverview();
 
-async function getData() {{
+function getData() {{
+  const key = currentIndex + '_' + currentLevel;
+  return getChartData(key);
+}}
+async function ensureData() {{
   const key = currentIndex + '_' + currentLevel;
   return await loadChartData(key);
 }}
-async function resetView() {{
-  const d = await getData();
+function resetView() {{
+  const d = getData();
   if (!d) return;
   viewStart = 0; viewEnd = d.dates.length;
 }}
@@ -2138,7 +2149,7 @@ async function switchIndex(code) {{
   currentIndex = code;
   document.querySelectorAll('.idx-tab').forEach(t => t.classList.remove('active'));
   event.target.classList.add('active');
-  await resetView(); await render();
+  await loadAndRender();
 }}
 async function switchLevel(level) {{
   currentLevel = level;
@@ -2147,14 +2158,11 @@ async function switchLevel(level) {{
   const tabs = document.querySelectorAll('.level-tab');
   const i = order.indexOf(level);
   if (i >= 0 && tabs[i]) tabs[i].classList.add('active');
-  await resetView(); await render();
+  await loadAndRender();
 }}
 
-async function render() {{
-  const loadingEl = document.getElementById('loadingOverlay');
-  if (loadingEl) loadingEl.style.display = 'flex';
-  const d = await getData();
-  if (loadingEl) loadingEl.style.display = 'none';
+function render() {{
+  const d = getData();
   if (!d) return;
   if (viewEnd === 0) viewEnd = d.dates.length;
   updateInfoBar(d);
@@ -2162,6 +2170,15 @@ async function render() {{
   renderMACD(d);
   updateSynthesisPanel();
   updateSignalPanel(d);
+}}
+
+async function loadAndRender() {{
+  const loadingEl = document.getElementById('loadingOverlay');
+  if (loadingEl) loadingEl.style.display = 'flex';
+  await ensureData();
+  if (loadingEl) loadingEl.style.display = 'none';
+  resetView();
+  render();
 }}
 
 function updateInfoBar(data) {{
@@ -2610,10 +2627,10 @@ function setupInteraction() {{
   kCanvas.addEventListener('touchstart', handleTouchStart, {{passive: false}});
   kCanvas.addEventListener('touchmove', handleTouchMove, {{passive: false}});
   kCanvas.addEventListener('touchend', handleTouchEnd);
-  kCanvas.addEventListener('dblclick', async () => {{ await resetView(); await render(); }});
+  kCanvas.addEventListener('dblclick', () => {{ resetView(); render(); }});
 }}
 
-window.addEventListener('load', async () => {{ await resetView(); await render(); setupInteraction(); }});
+window.addEventListener('load', async () => {{ await loadAndRender(); setupInteraction(); }});
 window.addEventListener('resize', render);
 </script>
 </body>
