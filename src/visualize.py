@@ -875,7 +875,7 @@ function renderChart(data) {
       if (p.ranges && p.ranges.length >= 2) {
         const r0 = p.ranges[0], r1 = p.ranges[1];
         const ratio = r0.area > 0 ? Math.round(r1.area / r0.area * 100) : 0;
-        text += '\\n' + r0.label + '↔' + r1.label + ' 背驰 ' + ratio + '%';
+        text += '\n' + r0.label + '↔' + r1.label + ' 背驰 ' + ratio + '%';
       }
     } else {
       if (p.conf) text += (confShort[p.conf] || '');
@@ -900,7 +900,7 @@ function renderChart(data) {
       const baseDist = tier === 1 ? 10 : (tier === 2 ? 6 : 4);
       const dist = prevClose && (i % 2 === 1) ? baseDist + 18 : baseDist;
       const color = inv ? '#484f58' : (pending ? '#d29922' : baseColor);
-      const statusSuffix = inv ? '\\n❌失效' : (pending ? '\\n⏳待确认' : '');
+      const statusSuffix = inv ? '\n❌失效' : (pending ? '\n⏳待确认' : '');
       const labelText = bspLabel(p) + statusSuffix;
       return {
         coord: [data.dates[p.idx], p.price],
