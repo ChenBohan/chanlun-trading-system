@@ -340,9 +340,17 @@ function renderGlobalSignals() {
   levels.forEach(lv => {
     const items = GLOBAL_SIGNALS[lv]||[];
     const total = items.length;
-    const activeCount = items.filter(s => s.status !== 'invalidated').length;
-    const invCount = total - activeCount;
-    const cntLabel = invCount > 0 ? `${activeCount}✓ ${invCount}✗` : `${total}`;
+    const confirmedCnt = items.filter(s => s.status === 'confirmed').length;
+    const pendingCnt = items.filter(s => s.status === 'pending').length;
+    const invCnt = items.filter(s => s.status === 'invalidated').length;
+    let cntLabel = '' + total;
+    if (invCnt > 0 || pendingCnt > 0) {
+      const parts = [];
+      if (confirmedCnt > 0) parts.push(confirmedCnt + '✓');
+      if (pendingCnt > 0) parts.push(pendingCnt + '⏳');
+      if (invCnt > 0) parts.push(invCnt + '✗');
+      cntLabel = parts.join(' ');
+    }
     const active = lv === gsActiveTab;
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
@@ -373,15 +381,21 @@ function renderGlobalSignals() {
     const wolfClr = s.wolf ? '#d29922' : '#3fb950';
     const strStr = strengthMap[s.strength] || s.strength || '-';
     const inv = s.status === 'invalidated';
+    const pending = s.status === 'pending';
+    const confirmed = s.status === 'confirmed';
     const rowOpacity = inv ? 'opacity:0.45;' : '';
     const strike = inv ? 'text-decoration:line-through;' : '';
-    const statusBadge = inv ? '<span title="' + (s.inv_reason||'已失效').replace(/"/g,'&quot;') + '" style="display:inline-block;padding:1px 5px;font-size:10px;border-radius:3px;background:#da3633;color:#fff;margin-left:4px;cursor:help">已失效</span>' : '';
     h += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
     h += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
     h += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + s.etf_name + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + statusBadge + '</td>';
+    h += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
     h += '<td style="padding:6px 8px;text-align:right;font-family:monospace;' + strike + '">' + (s.price ? s.price.toFixed(3) : '-') + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center">' + (inv ? '<span title="' + (s.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌已失效</span>' : '<span style="color:#3fb950">✅有效</span>') + '</td>';
+    const statusHtml = inv
+      ? '<span title="' + (s.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌已失效</span>'
+      : pending
+        ? '<span style="color:#d29922">⏳待确认</span>'
+        : '<span style="color:#3fb950">✅已确认</span>';
+    h += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
     h += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
     h += '<td style="padding:6px 8px;font-size:12px">' + (s.area_cmp || '-') + '</td>';
     h += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
@@ -717,8 +731,14 @@ function updateSignalPanel(data) {
     const posStr = p.pos_advice ? p.pos_advice.split(' — ')[0] : '-';
     const posTitle = p.pos_advice || '';
     const inv = p.status === 'invalidated';
+    const pending = p.status === 'pending';
+    const confirmed = p.status === 'confirmed';
     const rowStyle = inv ? ' style="opacity:0.45;text-decoration:line-through"' : '';
-    const statusCell = inv ? '<td title="' + (p.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌失效</td>' : '<td style="color:#3fb950">✅有效</td>';
+    const statusCell = inv
+      ? '<td title="' + (p.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌失效</td>'
+      : pending
+        ? '<td style="color:#d29922">⏳待确认</td>'
+        : '<td style="color:#3fb950">✅已确认</td>';
     html += '<tr' + rowStyle + '>';
     html += '<td style="color:#484f58;font-weight:bold">#' + p.bsp_idx + '</td>';
     html += '<td class="' + cls + '" style="font-weight:bold">' + p.label + '</td>';
@@ -839,14 +859,16 @@ function renderChart(data) {
     return list.map((p, i) => {
       const tier = bspTier(p);
       const inv = p.status === 'invalidated';
+      const pending = p.status === 'pending';
       const sz = tier === 1 ? 12 : (tier === 2 ? 8 : 6);
       const fs = tier === 1 ? 10 : (tier === 2 ? 8 : 7);
       const lh = tier === 1 ? 13 : 10;
       const prevClose = i > 0 && (p.idx - list[i-1].idx) < 8;
       const baseDist = tier === 1 ? 10 : (tier === 2 ? 6 : 4);
       const dist = prevClose && (i % 2 === 1) ? baseDist + 18 : baseDist;
-      const color = inv ? '#484f58' : baseColor;
-      const labelText = inv ? bspLabel(p) + '\\n❌失效' : bspLabel(p);
+      const color = inv ? '#484f58' : (pending ? '#d29922' : baseColor);
+      const statusSuffix = inv ? '\\n❌失效' : (pending ? '\\n⏳待确认' : '');
+      const labelText = bspLabel(p) + statusSuffix;
       return {
         coord: [data.dates[p.idx], p.price],
         value: p.label,
@@ -1900,9 +1922,17 @@ function renderMobileGlobalSignals() {{
   levels.forEach(lv => {{
     const items = GLOBAL_SIGNALS[lv]||[];
     const total = items.length;
-    const activeCount = items.filter(s => s.status !== 'invalidated').length;
-    const invCount = total - activeCount;
-    const cntLabel = invCount > 0 ? `${{activeCount}}✓${{invCount}}✗` : `${{total}}`;
+    const confirmedCnt = items.filter(s => s.status === 'confirmed').length;
+    const pendingCnt = items.filter(s => s.status === 'pending').length;
+    const invCnt = items.filter(s => s.status === 'invalidated').length;
+    let cntLabel = '' + total;
+    if (invCnt > 0 || pendingCnt > 0) {{
+      const parts = [];
+      if (confirmedCnt > 0) parts.push(confirmedCnt + '✓');
+      if (pendingCnt > 0) parts.push(pendingCnt + '⏳');
+      if (invCnt > 0) parts.push(invCnt + '✗');
+      cntLabel = parts.join(' ');
+    }}
     const active = lv === mgsTab;
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
@@ -1928,9 +1958,10 @@ function renderMobileGlobalSignals() {{
     const confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
     const dtShort = s.dt ? s.dt.substring(5) : '-';
     const inv = s.status === 'invalidated';
+    const pending = s.status === 'pending';
     const rowOpacity = inv ? 'opacity:0.45;' : '';
     const strike = inv ? 'text-decoration:line-through;' : '';
-    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : '';
+    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:#3fb950;margin-left:2px">✓</span>');
     h += `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
     h += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     h += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{s.etf_name}}</td>`;
@@ -2228,20 +2259,28 @@ function renderKline(data) {{
     if (p.idx < viewStart || p.idx >= viewEnd) return;
     const x = scaleX(p.idx);
     const y = scaleY(p.price);
+    const mIsInv = p.status === 'invalidated';
+    const mIsPending = p.status === 'pending';
+    const triColor = mIsInv ? '#484f58' : (mIsPending ? '#d29922' : (p.is_buy ? '#f85149' : '#3fb950'));
+    ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
     ctx.beginPath();
     if (p.is_buy) {{
       ctx.moveTo(x, y + 10); ctx.lineTo(x - 6, y + 18); ctx.lineTo(x + 6, y + 18); ctx.closePath();
-      ctx.fillStyle = '#f85149'; ctx.fill();
+      ctx.fillStyle = triColor; ctx.fill();
     }} else {{
       ctx.moveTo(x, y - 10); ctx.lineTo(x - 6, y - 18); ctx.lineTo(x + 6, y - 18); ctx.closePath();
-      ctx.fillStyle = '#3fb950'; ctx.fill();
+      ctx.fillStyle = triColor; ctx.fill();
     }}
-    ctx.fillStyle = p.is_buy ? '#f85149' : '#3fb950';
+    ctx.fillStyle = mIsInv ? '#484f58' : (mIsPending ? '#d29922' : (p.is_buy ? '#f85149' : '#3fb950'));
+    ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
     ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mConfIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
     let bspText = '#' + p.bsp_idx + ' ' + p.label.substring(0, 2);
     if (p.conf) bspText += (mConfIcons[p.conf] || '');
+    if (mIsInv) bspText += '✗';
+    else if (mIsPending) bspText += '⏳';
     ctx.fillText(bspText, x, p.is_buy ? y + 28 : y - 20);
+    ctx.globalAlpha = 1.0;
     if (p.ranges && p.ranges.length >= 2) {{
       const r0 = p.ranges[0], r1 = p.ranges[1];
       const ratio = r0.area > 0 ? Math.round(r1.area / r0.area * 100) : 0;
@@ -2408,8 +2447,13 @@ function updateSignalPanel(data) {{
     }}
     const posStr = p.pos_advice ? p.pos_advice.split(' — ')[0] : '-';
     const mInv = p.status === 'invalidated';
+    const mPending = p.status === 'pending';
     const mRowStyle = mInv ? ' style="opacity:0.45"' : '';
-    const mStatusCell = mInv ? '<td style="color:#da3633;font-size:10px">✗</td>' : '<td style="color:#3fb950;font-size:10px">✓</td>';
+    const mStatusCell = mInv
+      ? '<td style="color:#da3633;font-size:10px">✗</td>'
+      : mPending
+        ? '<td style="color:#d29922;font-size:10px">⏳</td>'
+        : '<td style="color:#3fb950;font-size:10px">✓</td>';
     html += '<tr' + mRowStyle + '>';
     html += '<td style="color:#484f58;font-weight:bold">#' + p.bsp_idx + '</td>';
     html += '<td>' + data.dates[p.idx] + '</td>';

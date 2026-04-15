@@ -2113,55 +2113,89 @@ _INVALIDATION_REASONS = {
 }
 
 
-def _validate_signals(points: list[BuySellPoint], bars: list) -> None:
-    """Mark signals as invalidated when subsequent price action breaches
-    the invalidation level.
+def _validate_signals(points: list[BuySellPoint], bars: list,
+                      strokes: list[Stroke] | None = None) -> None:
+    """Classify each signal into one of three states:
+      - "pending"     (待确认): no confirming or invalidating price action yet
+      - "confirmed"   (已确认): follow-through in the predicted direction
+      - "invalidated" (已失效): price breached the invalidation level
 
-    Theory basis (108课 §7.2, 图解缠论2 §2.2):
-    - 3B: invalidated if close drops below ZG (hub not truly broken upward)
-    - 3S: invalidated if close rises above ZD (hub not truly broken downward)
-    - 1B/PB: invalidated if close drops below signal price (new low)
-    - 1S/PS: invalidated if close rises above signal price (new high)
-    - 2B: invalidated if close drops below 1B price
-    - 2S: invalidated if close rises above 1S price
+    Confirmation logic (stroke-based):
+      Buy signals  → confirmed when a subsequent upward stroke has high > signal price
+      Sell signals → confirmed when a subsequent downward stroke has low < signal price
+
+    Invalidation logic (bar-based, theory §7.2 / §2.2):
+      3B: close < ZG | 3S: close > ZD | others: close breaches signal/1B price
     """
     if not bars or not points:
         return
 
     bar_dts = [b.dt for b in bars]
+    strokes = strokes or []
 
     for p in points:
         if p.invalidation_price == 0.0:
             p.invalidation_price = p.price
 
         sig_dt = p.dt
-        start_idx = None
+
+        # Find the first bar after the signal
+        bar_start = None
         for i, dt in enumerate(bar_dts):
             if dt > sig_dt:
-                start_idx = i
+                bar_start = i
                 break
-        if start_idx is None:
+
+        # --- Invalidation check (bar-based) ---
+        invalidated = False
+        if bar_start is not None:
+            inv_price = p.invalidation_price
+            if p.type in _BUY_TYPES:
+                for b in bars[bar_start:]:
+                    if b.close < inv_price:
+                        p.status = "invalidated"
+                        p.invalidation_reason = (
+                            f"{_INVALIDATION_REASONS.get(p.type, '信号失效')}"
+                            f"（{b.dt} 收盘{b.close:.3f} < {inv_price:.3f}）"
+                        )
+                        invalidated = True
+                        break
+            elif p.type in _SELL_TYPES:
+                for b in bars[bar_start:]:
+                    if b.close > inv_price:
+                        p.status = "invalidated"
+                        p.invalidation_reason = (
+                            f"{_INVALIDATION_REASONS.get(p.type, '信号失效')}"
+                            f"（{b.dt} 收盘{b.close:.3f} > {inv_price:.3f}）"
+                        )
+                        invalidated = True
+                        break
+
+        if invalidated:
             continue
 
-        inv_price = p.invalidation_price
+        # --- Confirmation check (stroke-based) ---
+        if not strokes:
+            p.status = "pending"
+            continue
+
+        confirmed = False
         if p.type in _BUY_TYPES:
-            for b in bars[start_idx:]:
-                if b.close < inv_price:
-                    p.status = "invalidated"
-                    p.invalidation_reason = (
-                        f"{_INVALIDATION_REASONS.get(p.type, '信号失效')}"
-                        f"（{b.dt} 收盘{b.close:.3f} < {inv_price:.3f}）"
-                    )
+            for s in strokes:
+                if s.start.dt <= sig_dt:
+                    continue
+                if s.direction == 1 and s.end.high > p.price:
+                    confirmed = True
                     break
         elif p.type in _SELL_TYPES:
-            for b in bars[start_idx:]:
-                if b.close > inv_price:
-                    p.status = "invalidated"
-                    p.invalidation_reason = (
-                        f"{_INVALIDATION_REASONS.get(p.type, '信号失效')}"
-                        f"（{b.dt} 收盘{b.close:.3f} > {inv_price:.3f}）"
-                    )
+            for s in strokes:
+                if s.start.dt <= sig_dt:
+                    continue
+                if s.direction == -1 and s.end.low < p.price:
+                    confirmed = True
                     break
+
+        p.status = "confirmed" if confirmed else "pending"
 
 
 _POSITION_ADVICE = {
@@ -2897,7 +2931,7 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
     )
 
     # [10b] Validate signals against subsequent price action
-    _validate_signals(result.buy_sell_points, bars)
+    _validate_signals(result.buy_sell_points, bars, strokes)
 
     for i, p in enumerate(result.buy_sell_points):
         p.idx = i
