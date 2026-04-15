@@ -328,7 +328,7 @@ function renderGlobalSignals() {
   }
   const confIcons = {'high': '🔴高', 'medium': '🟡中', 'low': '⚪低'};
   const typeColors = {'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'};
-  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新一二三类买卖点（全标的 Top 10）</h3>';
+  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新一二三类买卖点（日线5 / 30分钟5 / 5分钟10）</h3>';
   h += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden">';
   h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
   h += '<th style="padding:8px;text-align:left">时间</th>';
@@ -1550,7 +1550,16 @@ def generate_dashboard(data_dir: str = None,
                 entry["area_cmp"] = ""
             global_signals.append(entry)
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    global_signals_top = global_signals[:10]
+    _LEVEL_TOP_N = {"日线": 5, "30分钟": 5, "5分钟": 10}
+    _level_counts: dict[str, int] = {}
+    global_signals_top = []
+    for s in global_signals:
+        lv = s["level"]
+        limit = _LEVEL_TOP_N.get(lv, 5)
+        cnt = _level_counts.get(lv, 0)
+        if cnt < limit:
+            global_signals_top.append(s)
+            _level_counts[lv] = cnt + 1
 
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -1687,7 +1696,16 @@ def generate_mobile_dashboard(data_dir: str = None,
                 entry_m["area_cmp"] = ""
             mobile_global_signals.append(entry_m)
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    mobile_global_signals_top = mobile_global_signals[:10]
+    _m_level_top = {"日线": 5, "30分钟": 5, "5分钟": 10}
+    _m_counts: dict[str, int] = {}
+    mobile_global_signals_top = []
+    for s in mobile_global_signals:
+        lv = s["level"]
+        limit = _m_level_top.get(lv, 5)
+        cnt = _m_counts.get(lv, 0)
+        if cnt < limit:
+            mobile_global_signals_top.append(s)
+            _m_counts[lv] = cnt + 1
     mobile_global_signals_json = json.dumps(mobile_global_signals_top, ensure_ascii=False)
 
     tab_parts = []
@@ -1837,7 +1855,7 @@ function renderMobileGlobalSignals() {{
   if (!GLOBAL_SIGNALS || GLOBAL_SIGNALS.length === 0) {{ el.innerHTML = ''; return; }}
   const confIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
   const tClrs = {{'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'}};
-  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点 (Top 10)</div>';
+  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点 (日线5/30分5/5分10)</div>';
   h += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
   h += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
   h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
