@@ -2139,14 +2139,38 @@ def _validate_signals(points: list[BuySellPoint], bars: list,
 
         sig_dt = p.dt
 
-        # Find the first bar after the signal
+        # --- 1. Confirmation check (stroke-based, takes priority) ---
+        # Use s.end.dt > sig_dt so that strokes originating at the signal
+        # point are included (sell signals sit at the start of a down-stroke,
+        # buy signals at the start of an up-stroke).
+        confirmed = False
+        if strokes:
+            if p.type in _BUY_TYPES:
+                for s in strokes:
+                    if s.end.dt <= sig_dt:
+                        continue
+                    if s.direction == 1 and s.end.high > p.price:
+                        confirmed = True
+                        break
+            elif p.type in _SELL_TYPES:
+                for s in strokes:
+                    if s.end.dt <= sig_dt:
+                        continue
+                    if s.direction == -1 and s.end.low < p.price:
+                        confirmed = True
+                        break
+
+        if confirmed:
+            p.status = "confirmed"
+            continue
+
+        # --- 2. Invalidation check (bar-based, only if not confirmed) ---
         bar_start = None
         for i, dt in enumerate(bar_dts):
             if dt > sig_dt:
                 bar_start = i
                 break
 
-        # --- Invalidation check (bar-based) ---
         invalidated = False
         if bar_start is not None:
             inv_price = p.invalidation_price
@@ -2171,31 +2195,8 @@ def _validate_signals(points: list[BuySellPoint], bars: list,
                         invalidated = True
                         break
 
-        if invalidated:
-            continue
-
-        # --- Confirmation check (stroke-based) ---
-        if not strokes:
+        if not invalidated:
             p.status = "pending"
-            continue
-
-        confirmed = False
-        if p.type in _BUY_TYPES:
-            for s in strokes:
-                if s.start.dt <= sig_dt:
-                    continue
-                if s.direction == 1 and s.end.high > p.price:
-                    confirmed = True
-                    break
-        elif p.type in _SELL_TYPES:
-            for s in strokes:
-                if s.start.dt <= sig_dt:
-                    continue
-                if s.direction == -1 and s.end.low < p.price:
-                    confirmed = True
-                    break
-
-        p.status = "confirmed" if confirmed else "pending"
 
 
 _POSITION_ADVICE = {
