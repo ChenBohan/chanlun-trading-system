@@ -874,11 +874,16 @@ function renderChart(data) {
       if (p.conf) text += ' [' + (confIcons[p.conf] || p.conf) + ']';
       if (p.ranges && p.ranges.length >= 2) {
         const r0 = p.ranges[0], r1 = p.ranges[1];
-        const ratio = r0.area > 0 ? Math.round(r1.area / r0.area * 100) : 0;
-        text += '\n' + r0.label + '↔' + r1.label + ' 背驰 ' + ratio + '%';
+        const ratio = r0.area > 0 ? (r1.area / r0.area).toFixed(2) : '-';
+        text += '\n' + r1.label + '/' + r0.label + '=' + ratio;
       }
     } else {
       if (p.conf) text += (confShort[p.conf] || '');
+      if (p.ranges && p.ranges.length >= 2) {
+        const r0 = p.ranges[0], r1 = p.ranges[1];
+        const ratio = r0.area > 0 ? (r1.area / r0.area).toFixed(2) : '-';
+        text += ' ' + r1.label + '/' + r0.label + '=' + ratio;
+      }
     }
     return text;
   }
@@ -1639,7 +1644,7 @@ def generate_dashboard(data_dir: str = None,
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
                 ratio = round(r1["area"] / r0["area"] * 100) if r0["area"] > 0 else 0
-                entry["area_cmp"] = f"{r0['label']}:{r0['area']} ↔ {r1['label']}:{r1['area']} ({ratio}%)"
+                entry["area_cmp"] = f"{r1['label']}/{r0['label']}={r1['area']/r0['area']:.2f}"
             else:
                 entry["area_cmp"] = ""
             global_signals.append(entry)
@@ -1809,7 +1814,7 @@ def generate_mobile_dashboard(data_dir: str = None,
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
                 ratio = round(r1["area"] / r0["area"] * 100) if r0["area"] > 0 else 0
-                entry_m["area_cmp"] = f"{r0['label']}↔{r1['label']} {ratio}%"
+                entry_m["area_cmp"] = f"{r1['label']}/{r0['label']}={r1['area']/r0['area']:.2f}"
             else:
                 entry_m["area_cmp"] = ""
             mobile_global_signals.append(entry_m)
