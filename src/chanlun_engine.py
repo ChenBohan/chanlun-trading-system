@@ -1413,12 +1413,12 @@ def check_consolidation_divergence(strokes: list[Stroke],
 
         exit_up = sorted(
             [s for s in relevant
-             if s.direction == 1 and max(s.start.high, s.end.high) > hub.zg],
+             if s.direction == 1 and max(s.start.high, s.end.high) >= hub.zg],
             key=lambda s: s.idx,
         )
         exit_down = sorted(
             [s for s in relevant
-             if s.direction == -1 and min(s.start.low, s.end.low) < hub.zd],
+             if s.direction == -1 and min(s.start.low, s.end.low) <= hub.zd],
             key=lambda s: s.idx,
         )
 
