@@ -320,8 +320,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 <div id="signal-panel" class="detail-panel"></div>
 
 <script>
-// ─── Data: lazy-loaded per index from separate JSON files ───
-const DATA_CACHE = {};
+// ─── Data: lazy-loaded per index via script injection ───
+var DATA_CACHE = {};
 const DATA_KEYS = __ALL_DATA_JSON__;
 const INDEX_LIST = __INDEX_LIST_JSON__;
 const SYNTHESIS = __SYNTHESIS_JSON__;
@@ -329,14 +329,15 @@ const GLOBAL_SIGNALS = __GLOBAL_SIGNALS_JSON__;
 
 function getChartData(key) { return DATA_CACHE[key] || null; }
 
-async function loadChartData(key) {
-  if (DATA_CACHE[key]) return DATA_CACHE[key];
-  try {
-    const resp = await fetch('data/' + key + '.json');
-    if (!resp.ok) return null;
-    DATA_CACHE[key] = await resp.json();
-    return DATA_CACHE[key];
-  } catch(e) { console.error('Load failed:', key, e); return null; }
+function loadChartData(key) {
+  return new Promise(resolve => {
+    if (DATA_CACHE[key]) { resolve(DATA_CACHE[key]); return; }
+    const s = document.createElement('script');
+    s.src = 'data/' + key + '.js';
+    s.onload = () => resolve(DATA_CACHE[key] || null);
+    s.onerror = () => resolve(null);
+    document.head.appendChild(s);
+  });
 }
 
 let currentIndex = INDEX_LIST[0].etf_code;
@@ -1653,17 +1654,18 @@ def generate_dashboard(data_dir: str = None,
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
     html = html.replace("__DATA_TIME__", latest_data_time or "-")
-    # Write per-index data files for lazy loading
+    # Write per-index data files for lazy loading (JS format for file:// compat)
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
     for key, chart_data in all_data.items():
-        fpath = os.path.join(data_out_dir, f"{key}.json")
+        fpath = os.path.join(data_out_dir, f"{key}.js")
+        json_str = json.dumps(chart_data, ensure_ascii=False, separators=(",", ":"))
         with open(fpath, "w", encoding="utf-8") as df:
-            json.dump(chart_data, df, ensure_ascii=False, separators=(",", ":"))
+            df.write(f'DATA_CACHE["{key}"]={json_str};\n')
 
     total_data_kb = sum(
         os.path.getsize(os.path.join(data_out_dir, f))
-        for f in os.listdir(data_out_dir) if f.endswith(".json")
+        for f in os.listdir(data_out_dir) if f.endswith(".js")
     ) / 1024
 
     html = html.replace("__ALL_DATA_JSON__",
@@ -1771,10 +1773,11 @@ def generate_mobile_dashboard(data_dir: str = None,
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
     for key, chart_data in all_data.items():
-        fpath = os.path.join(data_out_dir, f"{key}.json")
+        fpath = os.path.join(data_out_dir, f"{key}.js")
         if not os.path.exists(fpath):
+            json_str = json.dumps(chart_data, ensure_ascii=False, separators=(",", ":"))
             with open(fpath, "w", encoding="utf-8") as df:
-                json.dump(chart_data, df, ensure_ascii=False, separators=(",", ":"))
+                df.write(f'DATA_CACHE["{key}"]={json_str};\n')
 
     data_keys_json = json.dumps(sorted(all_data.keys()), ensure_ascii=False)
     index_list_json = json.dumps(index_list, ensure_ascii=False)
@@ -1952,7 +1955,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 </div>
 
 <script>
-const DATA_CACHE = {{}};
+var DATA_CACHE = {{}};
 const DATA_KEYS = {data_keys_json};
 const INDEX_LIST = {index_list_json};
 const SYNTHESIS = {synthesis_json};
@@ -1960,14 +1963,15 @@ const GLOBAL_SIGNALS = {mobile_global_signals_json};
 
 function getChartData(key) {{ return DATA_CACHE[key] || null; }}
 
-async function loadChartData(key) {{
-  if (DATA_CACHE[key]) return DATA_CACHE[key];
-  try {{
-    const resp = await fetch('data/' + key + '.json');
-    if (!resp.ok) return null;
-    DATA_CACHE[key] = await resp.json();
-    return DATA_CACHE[key];
-  }} catch(e) {{ return null; }}
+function loadChartData(key) {{
+  return new Promise(resolve => {{
+    if (DATA_CACHE[key]) {{ resolve(DATA_CACHE[key]); return; }}
+    const s = document.createElement('script');
+    s.src = 'data/' + key + '.js';
+    s.onload = () => resolve(DATA_CACHE[key] || null);
+    s.onerror = () => resolve(null);
+    document.head.appendChild(s);
+  }});
 }}
 
 let currentIndex = '{first_code}';
