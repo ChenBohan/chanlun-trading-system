@@ -19,7 +19,8 @@ Thumbs.db
 .idea/
 
 # Regenerated data (run scripts to recreate)
-data/
+/data/
+!reports/data/
 indices/*/data/*.md
 stocks/*/data/*.md
 

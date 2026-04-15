@@ -31,10 +31,17 @@ from .chanlun_engine import (
 # Data Serialization for ECharts
 # ════════════════════════════════════════════════════════════════════
 
-def _result_to_echarts_data(result: AnalysisResult) -> dict:
-    """Convert AnalysisResult to JSON-serializable dict for ECharts."""
+def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
+    """Convert AnalysisResult to JSON-serializable dict for ECharts.
 
-    # K-line data: [date, open, close, low, high]  (ECharts candlestick format)
+    Args:
+        max_bars: if > 0, only keep the most recent N bars for visualization.
+                  Strokes/hubs/BSP outside the visible window are excluded.
+    """
+    bars = result.raw_bars
+    if max_bars > 0 and len(bars) > max_bars:
+        bars = bars[-max_bars:]
+
     kline_data = []
     dates = []
     volumes = []
@@ -42,16 +49,16 @@ def _result_to_echarts_data(result: AnalysisResult) -> dict:
     dif_line = []
     dea_line = []
 
-    for b in result.raw_bars:
+    for b in bars:
         dates.append(b.dt)
-        kline_data.append([b.open, b.close, b.low, b.high])
+        kline_data.append([round(b.open, 3), round(b.close, 3),
+                           round(b.low, 3), round(b.high, 3)])
         volumes.append(b.volume)
         macd_hist.append(round(b.macd_hist, 4))
         dif_line.append(round(b.dif, 4))
         dea_line.append(round(b.dea, 4))
 
-    # Strokes as line segments (with index label)
-    dt_index = {b.dt: i for i, b in enumerate(result.raw_bars)}
+    dt_index = {b.dt: i for i, b in enumerate(bars)}
     stroke_lines = []
     for s in result.strokes:
         si = dt_index.get(s.start.dt)
@@ -176,7 +183,7 @@ def _result_to_echarts_data(result: AnalysisResult) -> dict:
         "hub_detail": result.hub_position_detail,
         "trend_completion": result.trend_completion,
         "stats": {
-            "bars": len(result.raw_bars),
+            "bars": len(bars),
             "merged": len(result.merged_bars),
             "fractals": len(result.fractals),
             "strokes": len(result.strokes),
@@ -313,11 +320,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 <div id="signal-panel" class="detail-panel"></div>
 
 <script>
-// ─── Embedded Analysis Data ───
-const ALL_DATA = __ALL_DATA_JSON__;
+// ─── Data: lazy-loaded per index from separate JSON files ───
+const DATA_CACHE = {};
+const DATA_KEYS = __ALL_DATA_JSON__;
 const INDEX_LIST = __INDEX_LIST_JSON__;
 const SYNTHESIS = __SYNTHESIS_JSON__;
 const GLOBAL_SIGNALS = __GLOBAL_SIGNALS_JSON__;
+
+async function loadChartData(key) {
+  if (DATA_CACHE[key]) return DATA_CACHE[key];
+  try {
+    const resp = await fetch('data/' + key + '.json');
+    if (!resp.ok) return null;
+    DATA_CACHE[key] = await resp.json();
+    return DATA_CACHE[key];
+  } catch(e) { console.error('Load failed:', key, e); return null; }
+}
 
 let currentIndex = INDEX_LIST[0].etf_code;
 let currentLevel = 'daily';
@@ -475,7 +493,7 @@ function renderOverview() {
 }
 
 // ─── Initialize ───
-function init() {
+async function init() {
   renderGlobalSignals();
   renderOverview();
 
@@ -514,7 +532,7 @@ function init() {
 
   chart = echarts.init(document.getElementById('chart-container'));
   window.addEventListener('resize', () => chart.resize());
-  render();
+  await render();
 }
 
 function selectIndex(code) {
@@ -529,9 +547,12 @@ function selectLevel(level) {
   render();
 }
 
-function render() {
+async function render() {
   const key = currentIndex + '_' + currentLevel;
-  const data = ALL_DATA[key];
+  chart.showLoading({text: '加载数据中...', color: '#58a6ff', textColor: '#c9d1d9',
+                     maskColor: 'rgba(13,17,23,0.8)', fontSize: 14});
+  const data = await loadChartData(key);
+  chart.hideLoading();
   if (!data) { chart.clear(); return; }
 
   updateConclusionBar(data);
@@ -1530,10 +1551,12 @@ def generate_dashboard(data_dir: str = None,
             bars = load_bars_from_csv(csv_path)
             result = analyze(bars, level_key)
             level_results[level_key] = result
-            echarts_data = _result_to_echarts_data(result)
+            mb = 500 if level_key in ("30min", "5min") else 0
+            echarts_data = _result_to_echarts_data(result, max_bars=mb)
             key = f"{idx.etf_code}_{level_key}"
             all_data[key] = echarts_data
             print(f"OK ({result.trend}, {len(result.buy_sell_points)} signals)")
+
 
         if "daily" in level_results:
             syn = synthesize_multi_level(
@@ -1627,7 +1650,21 @@ def generate_dashboard(data_dir: str = None,
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
     html = html.replace("__DATA_TIME__", latest_data_time or "-")
-    html = html.replace("__ALL_DATA_JSON__", json.dumps(all_data, ensure_ascii=False))
+    # Write per-index data files for lazy loading
+    data_out_dir = os.path.join(os.path.dirname(output_path), "data")
+    os.makedirs(data_out_dir, exist_ok=True)
+    for key, chart_data in all_data.items():
+        fpath = os.path.join(data_out_dir, f"{key}.json")
+        with open(fpath, "w", encoding="utf-8") as df:
+            json.dump(chart_data, df, ensure_ascii=False, separators=(",", ":"))
+
+    total_data_kb = sum(
+        os.path.getsize(os.path.join(data_out_dir, f))
+        for f in os.listdir(data_out_dir) if f.endswith(".json")
+    ) / 1024
+
+    html = html.replace("__ALL_DATA_JSON__",
+                         json.dumps(sorted(all_data.keys()), ensure_ascii=False))
     html = html.replace("__INDEX_LIST_JSON__", json.dumps(index_list, ensure_ascii=False))
     html = html.replace("__SYNTHESIS_JSON__", json.dumps(synthesis_data, ensure_ascii=False))
     html = html.replace("__GLOBAL_SIGNALS_JSON__", json.dumps(global_signals_top, ensure_ascii=False))
@@ -1635,9 +1672,9 @@ def generate_dashboard(data_dir: str = None,
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
 
+    size_kb = os.path.getsize(output_path) / 1024
     print(f"\nDashboard saved to: {output_path}")
-    size_mb = os.path.getsize(output_path) / 1024 / 1024
-    print(f"File size: {size_mb:.1f} MB")
+    print(f"HTML size: {size_kb:.0f} KB  |  Data files: {total_data_kb:.0f} KB ({len(all_data)} files)")
     return output_path
 
 
@@ -1677,7 +1714,8 @@ def generate_mobile_dashboard(data_dir: str = None,
                 continue
             result = analyze(load_bars_from_csv(csv_path), level_key)
             level_results[level_key] = result
-            echarts_data = _result_to_echarts_data(result)
+            mb = 500 if level_key in ("30min", "5min") else 0
+            echarts_data = _result_to_echarts_data(result, max_bars=mb)
             key = f"{idx.etf_code}_{level_key}"
             all_data[key] = echarts_data
             print(f"  [{idx.etf_name} {level_label}] {result.trend} | "
@@ -1726,7 +1764,17 @@ def generate_mobile_dashboard(data_dir: str = None,
 
     gen_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     data_time = latest_data_time or "-"
-    all_data_json = json.dumps(all_data, ensure_ascii=False)
+
+    # Write per-index data files for lazy loading (shared with desktop)
+    data_out_dir = os.path.join(os.path.dirname(output_path), "data")
+    os.makedirs(data_out_dir, exist_ok=True)
+    for key, chart_data in all_data.items():
+        fpath = os.path.join(data_out_dir, f"{key}.json")
+        if not os.path.exists(fpath):
+            with open(fpath, "w", encoding="utf-8") as df:
+                json.dump(chart_data, df, ensure_ascii=False, separators=(",", ":"))
+
+    data_keys_json = json.dumps(sorted(all_data.keys()), ensure_ascii=False)
     index_list_json = json.dumps(index_list, ensure_ascii=False)
     synthesis_json = json.dumps(synthesis_data, ensure_ascii=False)
 
@@ -1880,6 +1928,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     <div class="level-tab" onclick="switchLevel('5min')">5分钟</div>
   </div>
   <div class="info-bar" id="infoBar"></div>
+  <div id="loadingOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(13,17,23,0.7);z-index:999;align-items:center;justify-content:center"><span style="color:#58a6ff;font-size:15px">加载数据中...</span></div>
   <div class="chart-area"><canvas id="klineCanvas" height="320"></canvas></div>
   <div class="legend">
     <div class="legend-item"><div class="legend-color" style="background:#f85149"></div>阳线</div>
@@ -1901,10 +1950,21 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 </div>
 
 <script>
-const ALL_DATA = {all_data_json};
+const DATA_CACHE = {{}};
+const DATA_KEYS = {data_keys_json};
 const INDEX_LIST = {index_list_json};
 const SYNTHESIS = {synthesis_json};
 const GLOBAL_SIGNALS = {mobile_global_signals_json};
+
+async function loadChartData(key) {{
+  if (DATA_CACHE[key]) return DATA_CACHE[key];
+  try {{
+    const resp = await fetch('data/' + key + '.json');
+    if (!resp.ok) return null;
+    DATA_CACHE[key] = await resp.json();
+    return DATA_CACHE[key];
+  }} catch(e) {{ return null; }}
+}}
 
 let currentIndex = '{first_code}';
 let currentLevel = 'daily';
@@ -1912,6 +1972,7 @@ let viewStart = 0, viewEnd = 0;
 let isDragging = false, dragStartX = 0, dragStartView = 0;
 let pinchStartDist = 0, pinchStartRange = 0;
 const MIN_VIEW = 20;
+let dataLoading = false;
 
 let mgsTab = '日线';
 function renderMobileGlobalSignals() {{
@@ -2060,11 +2121,12 @@ function renderMobileOverview() {{
 renderMobileGlobalSignals();
 renderMobileOverview();
 
-function getData() {{
-  return ALL_DATA[currentIndex + '_' + currentLevel] || null;
+async function getData() {{
+  const key = currentIndex + '_' + currentLevel;
+  return await loadChartData(key);
 }}
-function resetView() {{
-  const d = getData();
+async function resetView() {{
+  const d = await getData();
   if (!d) return;
   viewStart = 0; viewEnd = d.dates.length;
 }}
@@ -2075,24 +2137,27 @@ function clampView(total) {{
   if (viewEnd > total) {{ viewEnd = total; viewStart = Math.max(0, total - (viewEnd - viewStart)); }}
 }}
 
-function switchIndex(code) {{
+async function switchIndex(code) {{
   currentIndex = code;
   document.querySelectorAll('.idx-tab').forEach(t => t.classList.remove('active'));
   event.target.classList.add('active');
-  resetView(); render();
+  await resetView(); await render();
 }}
-function switchLevel(level) {{
+async function switchLevel(level) {{
   currentLevel = level;
   document.querySelectorAll('.level-tab').forEach(t => t.classList.remove('active'));
   const order = ['daily', '30min', '5min'];
   const tabs = document.querySelectorAll('.level-tab');
   const i = order.indexOf(level);
   if (i >= 0 && tabs[i]) tabs[i].classList.add('active');
-  resetView(); render();
+  await resetView(); await render();
 }}
 
-function render() {{
-  const d = getData();
+async function render() {{
+  const loadingEl = document.getElementById('loadingOverlay');
+  if (loadingEl) loadingEl.style.display = 'flex';
+  const d = await getData();
+  if (loadingEl) loadingEl.style.display = 'none';
   if (!d) return;
   if (viewEnd === 0) viewEnd = d.dates.length;
   updateInfoBar(d);
@@ -2548,10 +2613,10 @@ function setupInteraction() {{
   kCanvas.addEventListener('touchstart', handleTouchStart, {{passive: false}});
   kCanvas.addEventListener('touchmove', handleTouchMove, {{passive: false}});
   kCanvas.addEventListener('touchend', handleTouchEnd);
-  kCanvas.addEventListener('dblclick', () => {{ resetView(); render(); }});
+  kCanvas.addEventListener('dblclick', async () => {{ await resetView(); await render(); }});
 }}
 
-window.addEventListener('load', () => {{ resetView(); render(); setupInteraction(); }});
+window.addEventListener('load', async () => {{ await resetView(); await render(); setupInteraction(); }});
 window.addEventListener('resize', render);
 </script>
 </body>
