@@ -1314,7 +1314,8 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
             a_area = sum(s.macd_area for s in seg_a)
             c_area = sum(s.macd_area for s in seg_c)
             if a_area > 0 and c_area < a_area:
-                area_diverged = True
+                area_ratio = c_area / a_area
+                area_diverged = area_ratio < 0.9
                 # DIF extreme comparison
                 if trend_dir == -1:
                     a_dif = min(s.dif_extreme for s in seg_a)
@@ -1330,7 +1331,10 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
                 hist_peak_diverged = c_peak < a_peak
 
                 dims = sum([area_diverged, dif_diverged, hist_peak_diverged])
-                div_confidence = "high" if dims == 3 else ("medium" if dims >= 2 else "low")
+                if dims < 2:
+                    i = j + 1
+                    continue
+                div_confidence = "high" if dims == 3 else "medium"
 
                 trigger = seg_c[-1]
                 structure = [
@@ -1421,8 +1425,14 @@ def check_consolidation_divergence(strokes: list[Stroke],
         for exits in [exit_up, exit_down]:
             for k in range(1, len(exits)):
                 prev_e, curr_e = exits[k - 1], exits[k]
-                if prev_e.macd_area > 0 and curr_e.macd_area < prev_e.macd_area:
+                area_ratio = (curr_e.macd_area / prev_e.macd_area
+                              if prev_e.macd_area > 0 else 1.0)
+                if prev_e.macd_area > 0 and area_ratio < 0.9:
                     area_diverged = True
+                elif prev_e.macd_area > 0 and curr_e.macd_area < prev_e.macd_area:
+                    area_diverged = False  # ratio 0.9~1.0: too weak
+
+                if prev_e.macd_area > 0 and curr_e.macd_area < prev_e.macd_area:
                     # DIF extreme comparison
                     if curr_e.direction == -1:
                         dif_diverged = curr_e.dif_extreme > prev_e.dif_extreme
@@ -1432,7 +1442,9 @@ def check_consolidation_divergence(strokes: list[Stroke],
                     hist_peak_diverged = curr_e.hist_peak < prev_e.hist_peak
 
                     dims = sum([area_diverged, dif_diverged, hist_peak_diverged])
-                    div_confidence = "high" if dims == 3 else ("medium" if dims >= 2 else "low")
+                    if dims < 2:
+                        continue
+                    div_confidence = "high" if dims == 3 else "medium"
 
                     divergences.append({
                         "type": "consolidation",
