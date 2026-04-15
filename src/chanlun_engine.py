@@ -2042,13 +2042,19 @@ _CONF_RANK = {"high": 0, "medium": 1, "low": 2}
 
 
 def _dedup_signals(points: list[BuySellPoint]) -> list[BuySellPoint]:
-    """Remove duplicate signals at the same stroke and type.
+    """Remove duplicate and theoretically redundant signals.
 
-    When multiple hubs produce the same type of signal at the same stroke,
-    keep only the one with the highest confidence (and most divergence
-    dimensions as tiebreaker). This avoids flooding the user with N copies
-    of the same structural event just because N hubs exist.
+    Two dedup passes:
+    1. Same-type dedup: when multiple hubs produce the same type at the same
+       stroke, keep only the highest-confidence one.
+    2. Cross-type suppression: PB/PS are suppressed when a higher-priority
+       signal (1B/1S, 2B/2S, 3B/3S) exists at the same stroke with the same
+       direction.  Theory basis (108课/图解缠论2): for a given hub, the exit
+       is either "hub continuation" (盘整背驰) or "hub destruction" (三买/三卖);
+       they are mutually exclusive.  When trend divergence (1B/1S) fires at
+       the same stroke, it subsumes the consolidation signal.
     """
+    # Pass 1: same-type dedup (keep best confidence per stroke+type)
     best: dict[tuple[int, str], BuySellPoint] = {}
     for p in points:
         key = (p.stroke_idx, p.type)
@@ -2063,7 +2069,26 @@ def _dedup_signals(points: list[BuySellPoint]) -> list[BuySellPoint]:
         elif p_rank == prev_rank and "(3/3维)" in p.description:
             best[key] = p
 
-    return sorted(best.values(), key=lambda p: p.dt)
+    # Pass 2: suppress PB/PS when a structural signal exists at the same stroke
+    _STRUCTURAL_BUY = {"1B", "2B", "3B"}
+    _STRUCTURAL_SELL = {"1S", "2S", "3S"}
+    strokes_with_structural_buy: set[int] = set()
+    strokes_with_structural_sell: set[int] = set()
+    for (si, tp) in best:
+        if tp in _STRUCTURAL_BUY:
+            strokes_with_structural_buy.add(si)
+        elif tp in _STRUCTURAL_SELL:
+            strokes_with_structural_sell.add(si)
+
+    suppressed = set()
+    for (si, tp) in best:
+        if tp == "PB" and si in strokes_with_structural_buy:
+            suppressed.add((si, tp))
+        elif tp == "PS" and si in strokes_with_structural_sell:
+            suppressed.add((si, tp))
+
+    result = [p for k, p in best.items() if k not in suppressed]
+    return sorted(result, key=lambda p: p.dt)
 
 
 _POSITION_ADVICE = {
