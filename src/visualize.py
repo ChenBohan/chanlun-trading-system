@@ -140,6 +140,8 @@ def _result_to_echarts_data(result: AnalysisResult) -> dict:
                 "zone": p.macd_zone,
                 "strength": p.strength,
                 "pos_advice": p.position_advice,
+                "status": p.status,
+                "inv_reason": p.invalidation_reason,
             }
             if ranges:
                 entry["ranges"] = ranges
@@ -336,12 +338,16 @@ function renderGlobalSignals() {
   let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新买卖点（每级别 Top 10）</h3>';
   h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
   levels.forEach(lv => {
-    const cnt = (GLOBAL_SIGNALS[lv]||[]).length;
+    const items = GLOBAL_SIGNALS[lv]||[];
+    const total = items.length;
+    const activeCount = items.filter(s => s.status !== 'invalidated').length;
+    const invCount = total - activeCount;
+    const cntLabel = invCount > 0 ? `${activeCount}✓ ${invCount}✗` : `${total}`;
     const active = lv === gsActiveTab;
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
     const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="gsActiveTab='${lv}';renderGlobalSignals()" style="padding:6px 16px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:13px;border-radius:6px 6px 0 0">${lv} (${cnt})</button>`;
+    h += `<button onclick="gsActiveTab='${lv}';renderGlobalSignals()" style="padding:6px 16px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:13px;border-radius:6px 6px 0 0">${lv} (${cntLabel})</button>`;
   });
   h += '</div>';
 
@@ -352,6 +358,7 @@ function renderGlobalSignals() {
   h += '<th style="padding:8px;text-align:left">标的</th>';
   h += '<th style="padding:8px;text-align:center">类型</th>';
   h += '<th style="padding:8px;text-align:right">价格</th>';
+  h += '<th style="padding:8px;text-align:center">状态</th>';
   h += '<th style="padding:8px;text-align:center">置信度</th>';
   h += '<th style="padding:8px;text-align:left">背驰段对比</th>';
   h += '<th style="padding:8px;text-align:center">强弱</th>';
@@ -365,11 +372,16 @@ function renderGlobalSignals() {
     const wolfStr = s.wolf ? '⚠' : '✓';
     const wolfClr = s.wolf ? '#d29922' : '#3fb950';
     const strStr = strengthMap[s.strength] || s.strength || '-';
-    h += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d">';
-    h += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px">' + (s.dt || '-') + '</td>';
-    h += '<td style="padding:6px 8px;font-weight:600">' + s.etf_name + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + '">' + s.label + '</td>';
-    h += '<td style="padding:6px 8px;text-align:right;font-family:monospace">' + (s.price ? s.price.toFixed(3) : '-') + '</td>';
+    const inv = s.status === 'invalidated';
+    const rowOpacity = inv ? 'opacity:0.45;' : '';
+    const strike = inv ? 'text-decoration:line-through;' : '';
+    const statusBadge = inv ? '<span title="' + (s.inv_reason||'已失效').replace(/"/g,'&quot;') + '" style="display:inline-block;padding:1px 5px;font-size:10px;border-radius:3px;background:#da3633;color:#fff;margin-left:4px;cursor:help">已失效</span>' : '';
+    h += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
+    h += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
+    h += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + s.etf_name + '</td>';
+    h += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + statusBadge + '</td>';
+    h += '<td style="padding:6px 8px;text-align:right;font-family:monospace;' + strike + '">' + (s.price ? s.price.toFixed(3) : '-') + '</td>';
+    h += '<td style="padding:6px 8px;text-align:center">' + (inv ? '<span title="' + (s.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌已失效</span>' : '<span style="color:#3fb950">✅有效</span>') + '</td>';
     h += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
     h += '<td style="padding:6px 8px;font-size:12px">' + (s.area_cmp || '-') + '</td>';
     h += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
@@ -378,7 +390,7 @@ function renderGlobalSignals() {
     h += '</tr>';
   });
   if (signals.length === 0) {
-    h += '<tr><td colspan="9" style="padding:16px;text-align:center;color:#484f58">暂无信号</td></tr>';
+    h += '<tr><td colspan="10" style="padding:16px;text-align:center;color:#484f58">暂无信号</td></tr>';
   }
   h += '</tbody></table>';
   el.innerHTML = h;
@@ -675,9 +687,12 @@ function updateSignalPanel(data) {
     return;
   }
   const sorted = [...data.bsp].sort((a, b) => b.idx - a.idx);
-  let html = '<h3>买卖点信号（共 ' + sorted.length + ' 个）</h3>';
+  const activeCount = sorted.filter(p => p.status !== 'invalidated').length;
+  const invCount = sorted.length - activeCount;
+  const countLabel = invCount > 0 ? sorted.length + ' 个，其中 ' + invCount + ' 个已失效' : sorted.length + ' 个';
+  let html = '<h3>买卖点信号（共 ' + countLabel + '）</h3>';
   html += '<table class="signal-table"><thead><tr>';
-  html += '<th>#</th><th>类型</th><th>日期</th><th>价格</th><th>位置</th><th>面积对比</th><th>强弱</th><th>仓位</th><th>置信</th><th>防狼</th><th>依据</th>';
+  html += '<th>#</th><th>类型</th><th>状态</th><th>日期</th><th>价格</th><th>位置</th><th>面积对比</th><th>强弱</th><th>仓位</th><th>置信</th><th>防狼</th><th>依据</th>';
   html += '</tr></thead><tbody>';
   sorted.forEach(p => {
     const cls = p.is_buy ? 'sig-buy' : 'sig-sell';
@@ -701,9 +716,13 @@ function updateSignalPanel(data) {
     }
     const posStr = p.pos_advice ? p.pos_advice.split(' — ')[0] : '-';
     const posTitle = p.pos_advice || '';
-    html += '<tr>';
+    const inv = p.status === 'invalidated';
+    const rowStyle = inv ? ' style="opacity:0.45;text-decoration:line-through"' : '';
+    const statusCell = inv ? '<td title="' + (p.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌失效</td>' : '<td style="color:#3fb950">✅有效</td>';
+    html += '<tr' + rowStyle + '>';
     html += '<td style="color:#484f58;font-weight:bold">#' + p.bsp_idx + '</td>';
     html += '<td class="' + cls + '" style="font-weight:bold">' + p.label + '</td>';
+    html += statusCell;
     html += '<td>' + data.dates[p.idx] + '</td>';
     html += '<td>' + p.price.toFixed(3) + '</td>';
     html += '<td style="color:#d2a8ff">' + locStr + '</td>';
@@ -819,22 +838,24 @@ function renderChart(data) {
     const rot = isBuy ? 0 : 180;
     return list.map((p, i) => {
       const tier = bspTier(p);
+      const inv = p.status === 'invalidated';
       const sz = tier === 1 ? 12 : (tier === 2 ? 8 : 6);
       const fs = tier === 1 ? 10 : (tier === 2 ? 8 : 7);
       const lh = tier === 1 ? 13 : 10;
-      // Alternate vertical distance when neighbor is within 8 bars
       const prevClose = i > 0 && (p.idx - list[i-1].idx) < 8;
       const baseDist = tier === 1 ? 10 : (tier === 2 ? 6 : 4);
       const dist = prevClose && (i % 2 === 1) ? baseDist + 18 : baseDist;
+      const color = inv ? '#484f58' : baseColor;
+      const labelText = inv ? bspLabel(p) + '\\n❌失效' : bspLabel(p);
       return {
         coord: [data.dates[p.idx], p.price],
         value: p.label,
         symbol: 'triangle',
-        symbolSize: sz,
+        symbolSize: inv ? Math.max(sz - 2, 4) : sz,
         symbolRotate: rot,
-        itemStyle: { color: baseColor },
-        label: { show: true, formatter: bspLabel(p), position: pos,
-                 fontSize: fs, color: baseColor,
+        itemStyle: { color: color, opacity: inv ? 0.4 : 1 },
+        label: { show: true, formatter: labelText, position: pos,
+                 fontSize: fs, color: color,
                  lineHeight: lh, align: 'center', distance: dist },
       };
     });
@@ -1557,6 +1578,8 @@ def generate_dashboard(data_dir: str = None,
                 "pos_advice": p.get("pos_advice", ""),
                 "desc": p.get("desc", ""),
                 "wolf": p.get("wolf", ""),
+                "status": p.get("status", "active"),
+                "inv_reason": p.get("inv_reason", ""),
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
@@ -1699,6 +1722,8 @@ def generate_mobile_dashboard(data_dir: str = None,
                 "dt": dt_str, "etf_name": etf_name, "level": level_cn,
                 "type": p["type"], "label": p["label"],
                 "price": p["price"], "conf": p.get("conf", ""),
+                "status": p.get("status", "active"),
+                "inv_reason": p.get("inv_reason", ""),
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
@@ -1873,12 +1898,16 @@ function renderMobileGlobalSignals() {{
   let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点 (每级别10)</div>';
   h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
   levels.forEach(lv => {{
-    const cnt = (GLOBAL_SIGNALS[lv]||[]).length;
+    const items = GLOBAL_SIGNALS[lv]||[];
+    const total = items.length;
+    const activeCount = items.filter(s => s.status !== 'invalidated').length;
+    const invCount = total - activeCount;
+    const cntLabel = invCount > 0 ? `${{activeCount}}✓${{invCount}}✗` : `${{total}}`;
     const active = lv === mgsTab;
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
     const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="mgsTab='${{lv}}';renderMobileGlobalSignals()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{cnt}})</button>`;
+    h += `<button onclick="mgsTab='${{lv}}';renderMobileGlobalSignals()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{cntLabel}})</button>`;
   }});
   h += '</div>';
 
@@ -1898,11 +1927,15 @@ function renderMobileGlobalSignals() {{
     const tc = tClrs[s.type] || '#c9d1d9';
     const confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
     const dtShort = s.dt ? s.dt.substring(5) : '-';
-    h += `<tr style="background:${{bg}};border-bottom:1px solid #21262d">`;
-    h += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap">${{dtShort}}</td>`;
-    h += `<td style="padding:3px 4px;font-weight:600">${{s.etf_name}}</td>`;
-    h += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}}">${{s.label}}</td>`;
-    h += `<td style="padding:3px 4px;text-align:right;font-family:monospace">${{s.price ? s.price.toFixed(3) : '-'}}</td>`;
+    const inv = s.status === 'invalidated';
+    const rowOpacity = inv ? 'opacity:0.45;' : '';
+    const strike = inv ? 'text-decoration:line-through;' : '';
+    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : '';
+    h += `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
+    h += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
+    h += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{s.etf_name}}</td>`;
+    h += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
+    h += `<td style="padding:3px 4px;text-align:right;font-family:monospace;${{strike}}">${{s.price ? s.price.toFixed(3) : '-'}}</td>`;
     h += `<td style="padding:3px 4px;text-align:center">${{confStr}}</td>`;
     h += `<td style="padding:3px 4px;font-size:10px">${{s.area_cmp || '-'}}</td>`;
     h += '</tr>';
@@ -2351,9 +2384,12 @@ function updateSignalPanel(data) {{
     return;
   }}
   const sorted = [...data.bsp].sort((a, b) => b.idx - a.idx);
-  let html = '<h3>买卖点信号（共 ' + sorted.length + ' 个）</h3>';
+  const mActiveCount = sorted.filter(p => p.status !== 'invalidated').length;
+  const mInvCount = sorted.length - mActiveCount;
+  const mCountLabel = mInvCount > 0 ? sorted.length + ' 个，' + mInvCount + ' 已失效' : sorted.length + ' 个';
+  let html = '<h3>买卖点信号（' + mCountLabel + '）</h3>';
   html += '<table class="signal-table"><thead><tr>';
-  html += '<th>#</th><th>日期</th><th>位</th><th>类型</th><th>价格</th><th>强弱</th><th>仓位</th><th>信心</th><th>狼</th><th>依据</th><th>面积</th>';
+  html += '<th>#</th><th>日期</th><th>位</th><th>类型</th><th>状态</th><th>价格</th><th>强弱</th><th>仓位</th><th>信心</th><th>狼</th><th>依据</th><th>面积</th>';
   html += '</tr></thead><tbody>';
   sorted.forEach(p => {{
     const cls = p.is_buy ? 'sig-buy' : 'sig-sell';
@@ -2371,11 +2407,15 @@ function updateSignalPanel(data) {{
       areaStr = r0.label + '=' + r0.area + ' vs ' + r1.label + '=' + r1.area + ' (' + ratio + '%)';
     }}
     const posStr = p.pos_advice ? p.pos_advice.split(' — ')[0] : '-';
-    html += '<tr>';
+    const mInv = p.status === 'invalidated';
+    const mRowStyle = mInv ? ' style="opacity:0.45"' : '';
+    const mStatusCell = mInv ? '<td style="color:#da3633;font-size:10px">✗</td>' : '<td style="color:#3fb950;font-size:10px">✓</td>';
+    html += '<tr' + mRowStyle + '>';
     html += '<td style="color:#484f58;font-weight:bold">#' + p.bsp_idx + '</td>';
     html += '<td>' + data.dates[p.idx] + '</td>';
     html += '<td style="color:#d2a8ff">' + locStr + '</td>';
     html += '<td class="' + cls + '">' + p.label + '</td>';
+    html += mStatusCell;
     html += '<td>' + p.price.toFixed(3) + '</td>';
     html += '<td>' + strStr + '</td>';
     html += `<td title="${{p.pos_advice||''}}" style="color:#f0883e">${{posStr}}</td>`;

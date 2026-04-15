@@ -144,6 +144,9 @@ class BuySellPoint:
     strength: str = ""      # "strongest"(二买三买合一) / "strong"(二买高于一买) / "standard"(标准二买)
     position_advice: str = ""  # position sizing advice (e.g. "轻仓试探1/3", "满仓")
     idx: int = -1  # sequential index, assigned in analyze()
+    invalidation_price: float = 0.0  # price that invalidates this signal
+    status: str = "active"  # "active" / "invalidated"
+    invalidation_reason: str = ""  # reason for invalidation
 
 
 @dataclass
@@ -1972,6 +1975,7 @@ def find_buy_sell_points(
                 hub_idx=t1.hub_idx,
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=strength,
+                invalidation_price=t1.price,
             ))
 
     for t1 in [p for p in points if p.type == "1S"]:
@@ -2013,6 +2017,7 @@ def find_buy_sell_points(
                 hub_idx=t1.hub_idx,
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=strength,
+                invalidation_price=t1.price,
             ))
 
     # ── Type 3: Hub breakout + pullback (三买/三卖) ──
@@ -2089,6 +2094,74 @@ def _dedup_signals(points: list[BuySellPoint]) -> list[BuySellPoint]:
 
     result = [p for k, p in best.items() if k not in suppressed]
     return sorted(result, key=lambda p: p.dt)
+
+
+# Buy types use "close < invalidation_price" to invalidate;
+# sell types use "close > invalidation_price" to invalidate.
+_BUY_TYPES = {"1B", "2B", "3B", "PB"}
+_SELL_TYPES = {"1S", "2S", "3S", "PS"}
+
+_INVALIDATION_REASONS = {
+    "3B": "价格跌破中枢上沿ZG，三买失败",
+    "3S": "价格突破中枢下沿ZD，三卖失败",
+    "1B": "价格创新低，跌破一买价",
+    "1S": "价格创新高，突破一卖价",
+    "2B": "价格跌破一买低点",
+    "2S": "价格突破一卖高点",
+    "PB": "价格跌破盘整买点",
+    "PS": "价格突破盘整卖点",
+}
+
+
+def _validate_signals(points: list[BuySellPoint], bars: list) -> None:
+    """Mark signals as invalidated when subsequent price action breaches
+    the invalidation level.
+
+    Theory basis (108课 §7.2, 图解缠论2 §2.2):
+    - 3B: invalidated if close drops below ZG (hub not truly broken upward)
+    - 3S: invalidated if close rises above ZD (hub not truly broken downward)
+    - 1B/PB: invalidated if close drops below signal price (new low)
+    - 1S/PS: invalidated if close rises above signal price (new high)
+    - 2B: invalidated if close drops below 1B price
+    - 2S: invalidated if close rises above 1S price
+    """
+    if not bars or not points:
+        return
+
+    bar_dts = [b.dt for b in bars]
+
+    for p in points:
+        if p.invalidation_price == 0.0:
+            p.invalidation_price = p.price
+
+        sig_dt = p.dt
+        start_idx = None
+        for i, dt in enumerate(bar_dts):
+            if dt > sig_dt:
+                start_idx = i
+                break
+        if start_idx is None:
+            continue
+
+        inv_price = p.invalidation_price
+        if p.type in _BUY_TYPES:
+            for b in bars[start_idx:]:
+                if b.close < inv_price:
+                    p.status = "invalidated"
+                    p.invalidation_reason = (
+                        f"{_INVALIDATION_REASONS.get(p.type, '信号失效')}"
+                        f"（{b.dt} 收盘{b.close:.3f} < {inv_price:.3f}）"
+                    )
+                    break
+        elif p.type in _SELL_TYPES:
+            for b in bars[start_idx:]:
+                if b.close > inv_price:
+                    p.status = "invalidated"
+                    p.invalidation_reason = (
+                        f"{_INVALIDATION_REASONS.get(p.type, '信号失效')}"
+                        f"（{b.dt} 收盘{b.close:.3f} > {inv_price:.3f}）"
+                    )
+                    break
 
 
 _POSITION_ADVICE = {
@@ -2200,6 +2273,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             ),
             level=level, confidence="high", hub_idx=hub.idx,
             stroke_idx=s_idx, seg_idx=d_idx,
+            invalidation_price=hub.zg,
         )
 
     if last_stroke.direction == 1 and last_stroke.end.high > hub.zg:
@@ -2238,6 +2312,7 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             ),
             level=level, confidence="high", hub_idx=hub.idx,
             stroke_idx=s_idx, seg_idx=d_idx,
+            invalidation_price=hub.zd,
         )
 
     if last_stroke.direction == -1 and last_stroke.end.low < hub.zd:
@@ -2820,6 +2895,10 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
         result.merged_hubs, strokes, bars, trend_divs, consol_divs, level,
         segments=segments,
     )
+
+    # [10b] Validate signals against subsequent price action
+    _validate_signals(result.buy_sell_points, bars)
+
     for i, p in enumerate(result.buy_sell_points):
         p.idx = i
 
