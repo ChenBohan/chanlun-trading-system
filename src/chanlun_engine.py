@@ -143,6 +143,7 @@ class BuySellPoint:
     macd_zone: str = ""     # "above_zero" / "below_zero" / "near_zero"
     strength: str = ""      # "strongest"(二买三买合一) / "strong"(二买高于一买) / "standard"(标准二买)
     position_advice: str = ""  # position sizing advice (e.g. "轻仓试探1/3", "满仓")
+    idx: int = -1  # sequential index, assigned in analyze()
 
 
 @dataclass
@@ -179,10 +180,8 @@ class AnalysisResult:
     strokes: list[Stroke] = field(default_factory=list)
     segments: list[Segment] = field(default_factory=list)
     hubs: list[Hub] = field(default_factory=list)
-    seg_hubs: list[SegHub] = field(default_factory=list)
     trend: str = ""
     merged_hubs: list[Hub] = field(default_factory=list)
-    merged_seg_hubs: list[SegHub] = field(default_factory=list)
     divergences: list[dict] = field(default_factory=list)
     buy_sell_points: list[BuySellPoint] = field(default_factory=list)
     position_vs_hub: str = ""
@@ -546,19 +545,24 @@ def _stroke_high_low(s: Stroke) -> tuple[float, float]:
 def _process_char_seq_inclusion(
     elements: list[tuple[float, float, Stroke]],
     seg_dir: int,
-) -> list[tuple[float, float, Stroke]]:
+) -> list[tuple[float, float, Stroke, Stroke]]:
     """Apply inclusion processing on characteristic sequence elements.
 
     Treats each element as a K-line with (high, low). When two adjacent
     elements have an inclusion relationship, merge following the local
     trend direction (same rule as K-line inclusion).
+
+    Returns 4-tuples: (high, low, first_stroke, last_stroke) where
+    first/last track the original stroke range of merged elements.
     """
     if len(elements) < 2:
-        return list(elements)
+        return [(h, l, s, s) for h, l, s in elements]
 
-    result = [elements[0]]
+    result: list[tuple[float, float, Stroke, Stroke]] = [
+        (elements[0][0], elements[0][1], elements[0][2], elements[0][2])
+    ]
     for i in range(1, len(elements)):
-        h_prev, l_prev, s_prev = result[-1]
+        h_prev, l_prev, s_first, s_last = result[-1]
         h_cur, l_cur, s_cur = elements[i]
 
         has_inclusion = ((h_prev >= h_cur and l_prev <= l_cur) or
@@ -566,37 +570,55 @@ def _process_char_seq_inclusion(
 
         if has_inclusion:
             if len(result) >= 2:
-                local_up = result[-1][0] > result[-2][0]
+                local_up = result[-1][0] >= result[-2][0]
             else:
                 local_up = (seg_dir == 1)
 
             if local_up:
-                merged = (max(h_prev, h_cur), max(l_prev, l_cur), s_prev)
+                merged = (max(h_prev, h_cur), max(l_prev, l_cur),
+                          s_first, s_cur)
             else:
-                merged = (min(h_prev, h_cur), min(l_prev, l_cur), s_prev)
+                merged = (min(h_prev, h_cur), min(l_prev, l_cur),
+                          s_first, s_cur)
             result[-1] = merged
         else:
-            result.append(elements[i])
+            result.append((h_cur, l_cur, s_cur, s_cur))
 
     return result
 
 
-def _has_char_gap(A: tuple[float, float, Stroke],
-                   B: tuple[float, float, Stroke]) -> bool:
-    """Check if two characteristic sequence elements have a gap (no overlap)."""
-    return A[1] > B[0] or B[1] > A[0]
+_CHAR_GAP_MIN_RATIO = 0.003  # 0.3% — ignore micro-gaps from inclusion merge
+
+
+def _has_char_gap(A: tuple[float, float, Stroke, Stroke],
+                   B: tuple[float, float, Stroke, Stroke]) -> bool:
+    """Check if two characteristic sequence elements have a meaningful gap.
+
+    Inclusion processing can create tiny artificial gaps when the merged
+    low/high barely exceeds the neighbor's high/low.  A 0.3% minimum
+    ensures only structurally significant gaps trigger type-2 handling.
+    """
+    ref = (A[0] + B[0]) / 2 if (A[0] + B[0]) > 0 else 1.0
+    threshold = ref * _CHAR_GAP_MIN_RATIO
+    if A[1] > B[0]:
+        return (A[1] - B[0]) > threshold
+    if B[1] > A[0]:
+        return (B[1] - A[0]) > threshold
+    return False
 
 
 def _find_char_fractal(
-    std_seq: list[tuple[float, float, Stroke]],
+    std_seq: list[tuple[float, float, Stroke, Stroke]],
     seg_dir: int,
     skip_ids: set[int] | None = None,
-) -> tuple[Stroke, bool] | None:
+) -> tuple[Stroke, Stroke, bool] | None:
     """Find the first top/bottom fractal in the standard char sequence.
 
-    Returns (stroke, has_gap) where stroke is the middle element and
-    has_gap indicates whether the fractal's first two elements have a gap
-    (67课第二种情况), or None if no fractal is found.
+    Returns (first_stroke, last_stroke, has_gap) where the strokes
+    define the range of the fractal's middle element (may span multiple
+    original strokes due to inclusion merge), and has_gap indicates
+    whether the first two elements have a gap (67课第二种情况).
+    Returns None if no fractal is found.
 
     skip_ids: object ids of strokes to skip (for rejected type-2 fractals).
     """
@@ -610,11 +632,11 @@ def _find_char_fractal(
         if seg_dir == 1:
             if (B[0] > A[0] and B[0] > C[0] and
                     B[1] > A[1] and B[1] > C[1]):
-                return (B[2], _has_char_gap(A, B))
+                return (B[2], B[3], _has_char_gap(A, B))
         else:
             if (B[1] < A[1] and B[1] < C[1] and
                     B[0] < A[0] and B[0] < C[0]):
-                return (B[2], _has_char_gap(A, B))
+                return (B[2], B[3], _has_char_gap(A, B))
     return None
 
 
@@ -650,6 +672,9 @@ def _check_reverse_fractal(
     return False
 
 
+_STRUCT_BREAK_RATIO = 0.03  # 3% — fallback when char sequence produces no fractal
+
+
 def find_segments(strokes: list[Stroke]) -> list[Segment]:
     """Build segments using the standard characteristic sequence method.
 
@@ -661,6 +686,12 @@ def find_segments(strokes: list[Stroke]) -> list[Segment]:
       Type 1: fractal's first two elements have no gap -> ends directly.
       Type 2: fractal's first two elements have a gap -> needs reverse
               sequence confirmation (opposite fractal must appear).
+
+    Fallback: when no fractal is found but the price exceeds the segment's
+    starting extreme by >3% in the counter direction, the segment is
+    truncated at the directional extreme.  This prevents runaway segments
+    where the char sequence method cannot produce a fractal due to
+    monotonic counter-moves.
     """
     if len(strokes) < 3:
         return []
@@ -687,9 +718,15 @@ def find_segments(strokes: list[Stroke]) -> list[Segment]:
             if s.direction == char_dir:
                 char_elements.append((*_stroke_high_low(s), s))
 
+        if seg_dir == -1:
+            seg_start_ref = max(s0.start.high, s0.end.high)
+        else:
+            seg_start_ref = min(s0.start.low, s0.end.low)
+
         found_end = False
         j = seg_start + 3
         rejected_ids: set[int] = set()
+        break_trunc_idx: int | None = None
 
         while j < len(strokes):
             cur = strokes[j]
@@ -702,24 +739,81 @@ def find_segments(strokes: list[Stroke]) -> list[Segment]:
             result = _find_char_fractal(std_seq, seg_dir, rejected_ids)
 
             if result is not None:
-                fractal_stroke, has_gap = result
+                frac_first, frac_last, has_gap = result
 
                 if has_gap:
                     if not _check_reverse_fractal(
-                            strokes, fractal_stroke.idx, seg_dir):
-                        rejected_ids.add(id(fractal_stroke))
+                            strokes, frac_first.idx, seg_dir):
+                        rejected_ids.add(id(frac_first))
                         j += 1
                         continue
 
-                try:
-                    b_pos = seg_strokes.index(fractal_stroke)
-                    seg_strokes = seg_strokes[:b_pos]
-                except ValueError:
-                    pass
+                # Truncate at the extreme within the fractal middle
+                # element's span.  When elements are merged by inclusion,
+                # the span covers frac_first..frac_last (and any
+                # connecting strokes in between).
+                first_pos = None
+                last_pos = None
+                for ki, s in enumerate(seg_strokes):
+                    if s is frac_first:
+                        first_pos = ki
+                    if s is frac_last:
+                        last_pos = ki
+
+                if first_pos is not None:
+                    if last_pos is not None and last_pos > first_pos:
+                        span = seg_strokes[first_pos:last_pos + 1]
+                        if seg_dir == -1:
+                            _, eidx = min(
+                                (min(s.start.low, s.end.low), ki)
+                                for ki, s in enumerate(span)
+                            )
+                        else:
+                            _, eidx = max(
+                                (max(s.start.high, s.end.high), ki)
+                                for ki, s in enumerate(span)
+                            )
+                        cut = first_pos + eidx + 1
+                    else:
+                        cut = first_pos
+                    seg_strokes = seg_strokes[:cut]
                 found_end = True
                 break
 
+            if break_trunc_idx is None and len(seg_strokes) > 3:
+                cur_h = max(cur.start.high, cur.end.high)
+                cur_l = min(cur.start.low, cur.end.low)
+                exceeded = (
+                    (seg_dir == -1 and cur_h > seg_start_ref * (1 + _STRUCT_BREAK_RATIO))
+                    or
+                    (seg_dir == 1 and cur_l < seg_start_ref * (1 - _STRUCT_BREAK_RATIO))
+                )
+                if exceeded:
+                    candidates = seg_strokes[:-1]
+                    if seg_dir == -1:
+                        _, eidx = min(
+                            (min(s.start.low, s.end.low), i)
+                            for i, s in enumerate(candidates)
+                        )
+                    else:
+                        _, eidx = max(
+                            (max(s.start.high, s.end.high), i)
+                            for i, s in enumerate(candidates)
+                        )
+                    eidx = max(eidx, 2)
+                    if eidx % 2 == 1:
+                        eidx = max(eidx - 1, 2)
+                    break_trunc_idx = eidx
+                    break
+
             j += 1
+
+        if break_trunc_idx is not None:
+            seg_strokes = seg_strokes[:break_trunc_idx + 1]
+
+        # 78课: segment must end on a same-direction stroke (odd count)
+        if len(seg_strokes) % 2 == 0:
+            seg_strokes = seg_strokes[:-1]
 
         if len(seg_strokes) >= 3:
             segments.append(Segment(
@@ -872,21 +966,19 @@ def classify_hub_evolution(hubs: list[Hub]):
     for i in range(1, len(hubs)):
         prev, curr = hubs[i - 1], hubs[i]
 
-        # Check if oscillation ranges [DD, GG] overlap → 扩展
-        osc_overlap = curr.dd <= prev.gg and curr.gg >= prev.dd
-        # Check if core ranges [ZD, ZG] overlap
+        # Use CORE range [ZD, ZG] for overlap — NOT oscillation [DD, GG].
+        # Chan Theory defines a trend as two hubs whose cores don't overlap.
+        # DD/GG includes extreme stroke excursions beyond the hub core, so
+        # using DD/GG would misclassify many valid trends as expansion.
         core_overlap = curr.zd <= prev.zg and curr.zg >= prev.zd
 
-        if osc_overlap and not core_overlap:
+        if core_overlap:
             curr.evolution_type = "扩展"
-        elif not osc_overlap:
-            if curr.zg > prev.zg:
+        else:
+            if curr.zd > prev.zg:
                 curr.evolution_type = "新生（上）"
             else:
                 curr.evolution_type = "新生（下）"
-        elif core_overlap:
-            curr.evolution_type = "扩展"
-        # First hub keeps its single-hub classification (延伸 or empty)
 
 
 def classify_seg_hub_evolution(seg_hubs: list[SegHub]):
@@ -1185,12 +1277,37 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
 
         first_hub = hubs[i]
         last_hub = hubs[j]
+
+        # Limit a-segment to strokes between the previous hub and the
+        # first hub of this trend group (not ALL historical strokes).
+        a_start_idx = hubs[i - 1].strokes[-1].idx if i > 0 else 0
         seg_a = [s for s in strokes
-                 if s.idx < first_hub.strokes[0].idx and s.direction == trend_dir]
+                 if a_start_idx <= s.idx < first_hub.strokes[0].idx
+                 and s.direction == trend_dir]
+
+        # Limit c-segment to strokes between the last hub and the next
+        # hub (or end of data).
+        c_end_idx = hubs[j + 1].strokes[0].idx if j + 1 < len(hubs) else strokes[-1].idx + 1
         seg_c = [s for s in strokes
-                 if s.idx > last_hub.strokes[-1].idx and s.direction == trend_dir]
+                 if s.idx > last_hub.strokes[-1].idx
+                 and s.idx < c_end_idx
+                 and s.direction == trend_dir]
 
         if seg_a and seg_c:
+            # c-segment must extend beyond last hub to confirm trend continuation.
+            # Downtrend: c's low must break below last_hub.zd;
+            # Uptrend: c's high must break above last_hub.zg.
+            if trend_dir == -1:
+                c_extreme = min(s.end.low for s in seg_c)
+                if c_extreme >= last_hub.zd:
+                    i = j + 1
+                    continue
+            else:
+                c_extreme = max(s.end.high for s in seg_c)
+                if c_extreme <= last_hub.zg:
+                    i = j + 1
+                    continue
+
             a_area = sum(s.macd_area for s in seg_a)
             c_area = sum(s.macd_area for s in seg_c)
             if a_area > 0 and c_area < a_area:
@@ -1252,8 +1369,10 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
                     "price": trigger.end.low if trend_dir == -1 else trigger.end.high,
                     "a_start_dt": seg_a[0].start.dt,
                     "a_end_dt": seg_a[-1].end.dt,
+                    "a_stroke_range": (seg_a[0].idx, seg_a[-1].idx),
                     "c_start_dt": seg_c[0].start.dt,
                     "c_end_dt": seg_c[-1].end.dt,
+                    "c_stroke_range": (seg_c[0].idx, seg_c[-1].idx),
                     "structure": structure,
                 })
 
@@ -1331,6 +1450,8 @@ def check_consolidation_divergence(strokes: list[Stroke],
                         "hub_idx": hub.idx,
                         "price": (curr_e.end.low if curr_e.direction == -1
                                   else curr_e.end.high),
+                        "prev_stroke_idx": prev_e.idx,
+                        "curr_stroke_idx": curr_e.idx,
                         "prev_start_dt": prev_e.start.dt,
                         "prev_end_dt": prev_e.end.dt,
                         "curr_start_dt": curr_e.start.dt,
@@ -1701,10 +1822,14 @@ def find_buy_sell_points(
             continue
         s_idx, d_idx = _stroke_seg(stroke)
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
+        a_range = div.get("a_stroke_range", ("?", "?"))
+        c_range = div.get("c_stroke_range", ("?", "?"))
+        a_tag = f"a(S{a_range[0]}-S{a_range[1]})" if a_range[0] != a_range[1] else f"a(S{a_range[0]})"
+        c_tag = f"c(S{c_range[0]}-S{c_range[1]})" if c_range[0] != c_range[1] else f"c(S{c_range[0]})"
         ranges = [
-            {"label": "a段", "start_dt": div["a_start_dt"],
+            {"label": a_tag, "start_dt": div["a_start_dt"],
              "end_dt": div["a_end_dt"], "area": div["a_area"]},
-            {"label": "c段", "start_dt": div["c_start_dt"],
+            {"label": c_tag, "start_dt": div["c_start_dt"],
              "end_dt": div["c_end_dt"], "area": div["c_area"]},
         ]
         struct = div.get("structure", [])
@@ -1749,12 +1874,24 @@ def find_buy_sell_points(
             continue
         s_idx, d_idx = _stroke_seg(stroke)
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
+        prev_si = div.get("prev_stroke_idx", "?")
+        curr_si = div.get("curr_stroke_idx", "?")
         ranges = [
-            {"label": "前次", "start_dt": div["prev_start_dt"],
+            {"label": f"S{prev_si}", "start_dt": div["prev_start_dt"],
              "end_dt": div["prev_end_dt"], "area": div["prev_area"]},
-            {"label": "当次", "start_dt": div["curr_start_dt"],
+            {"label": f"S{curr_si}", "start_dt": div["curr_start_dt"],
              "end_dt": div["curr_end_dt"], "area": div["curr_area"]},
         ]
+        hub = next((h for h in hubs if h.idx == div["hub_idx"]), None)
+        struct: list[dict] = []
+        if hub:
+            struct.append({"tag": "A", "start_dt": hub.strokes[0].start.dt,
+                           "end_dt": hub.strokes[-1].end.dt,
+                           "zg": hub.zg, "zd": hub.zd})
+        struct.append({"tag": "a", "start_dt": div["prev_start_dt"],
+                       "end_dt": div["prev_end_dt"]})
+        struct.append({"tag": "c", "start_dt": div["curr_start_dt"],
+                       "end_dt": div["curr_end_dt"]})
         dims = div.get("div_dims", 1)
         dim_tag = f" ({dims}/3维)" if dims > 0 else ""
         conf = div.get("div_confidence", "low")
@@ -1771,6 +1908,7 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 area_ranges=ranges,
+                structure=struct,
             ))
         else:
             points.append(BuySellPoint(
@@ -1785,6 +1923,7 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 area_ranges=ranges,
+                structure=struct,
             ))
 
     # ── Type 2: First pullback after Type 1 (二买/二卖) ──
@@ -2118,12 +2257,15 @@ def _compute_position_vs_hub(
     hubs: list[Hub],
     seg_hubs: list[SegHub],
 ) -> tuple[str, dict]:
-    """Determine current price position relative to the latest hubs.
+    """Determine current price position relative to the latest stroke-level hub.
+
+    ``seg_hubs`` is retained for call-site compatibility and ignored.
 
     Returns (label, detail_dict) where label is one of:
       "中枢上方运行" / "中枢区间震荡" / "中枢下方运行" / ""
     and detail_dict contains numeric info for display.
     """
+    _ = seg_hubs
     detail: dict = {}
     label = ""
 
@@ -2149,20 +2291,6 @@ def _compute_position_vs_hub(
             detail["distance_pct"] = round(
                 (price - h.zd) / span * 100, 2
             )
-
-    if seg_hubs:
-        sh = seg_hubs[-1]
-        detail["seg_hub"] = {
-            "idx": sh.idx, "zg": sh.zg, "zd": sh.zd,
-            "gg": sh.gg, "dd": sh.dd,
-            "start_dt": sh.start_dt, "end_dt": sh.end_dt,
-        }
-        if price > sh.zg:
-            detail["seg_position"] = "above"
-        elif price < sh.zd:
-            detail["seg_position"] = "below"
-        else:
-            detail["seg_position"] = "inside"
 
     return label, detail
 
@@ -2635,19 +2763,15 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
     segments = find_segments(strokes)
     result.segments = segments
 
-    # [7] Hub construction (stroke-level and segment-level)
+    # [7] Hub construction (stroke-level / 笔中枢)
     hubs = find_hubs(strokes)
     result.hubs = hubs
-    seg_hubs = find_seg_hubs(segments)
-    result.seg_hubs = seg_hubs
 
     # [7b] Hub evolution classification
     classify_hub_evolution(hubs)
-    classify_seg_hub_evolution(seg_hubs)
 
     # [7c] Merge expanded hubs for trend determination
     result.merged_hubs = merge_expanded_hubs(hubs)
-    result.merged_seg_hubs = merge_expanded_seg_hubs(seg_hubs)
 
     # [8] Trend determination (uses merged hubs to avoid
     #     "扩展" being misclassified as "趋势")
@@ -2656,18 +2780,23 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
     # [8b] Hub position annotation
     if bars:
         result.position_vs_hub, result.hub_position_detail = \
-            _compute_position_vs_hub(bars[-1].close, hubs, seg_hubs)
+            _compute_position_vs_hub(bars[-1].close, hubs, [])
 
-    # [9] Divergence detection
-    trend_divs = check_trend_divergence(strokes, hubs)
+    # [9] Divergence detection — use merged hubs for trend divergence
+    #     so that expanded hubs are already combined and the result is
+    #     consistent with determine_trend().
+    trend_divs = check_trend_divergence(strokes, result.merged_hubs)
     consol_divs = check_consolidation_divergence(strokes, hubs)
     result.divergences = trend_divs + consol_divs
 
-    # [10] Buy/sell points
+    # [10] Buy/sell points — use merged hubs so that hub references
+    #     (hub_idx, ZG/ZD for 2B/2S, 3B/3S) are consistent with trend detection.
     result.buy_sell_points = find_buy_sell_points(
-        hubs, strokes, bars, trend_divs, consol_divs, level,
+        result.merged_hubs, strokes, bars, trend_divs, consol_divs, level,
         segments=segments,
     )
+    for i, p in enumerate(result.buy_sell_points):
+        p.idx = i
 
     # [11] Trend completion assessment (uses merged hubs for consistency)
     result.trend_completion = assess_trend_completion(
@@ -2677,14 +2806,14 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
 
     # [12] Advanced MACD diagnostics
     diag: dict = {}
-    area_est = estimate_area_2x(strokes, hubs)
+    area_est = estimate_area_2x(strokes, result.merged_hubs)
     if area_est:
         diag["area_2x_estimates"] = area_est
     compute_ma(bars)
-    ma_divs = compute_ma_area_divergence(strokes, hubs, bars)
+    ma_divs = compute_ma_area_divergence(strokes, result.merged_hubs, bars)
     if ma_divs:
         diag["ma_area_divergences"] = ma_divs
-    alt_divs = compute_doubled_macd_area(strokes, hubs, bars)
+    alt_divs = compute_doubled_macd_area(strokes, result.merged_hubs, bars)
     if alt_divs:
         diag["doubled_macd_divergences"] = alt_divs
     dp_warnings = detect_double_pullback_zero(bars)
@@ -2776,12 +2905,6 @@ def format_report(result: AnalysisResult) -> str:
                 lines.append(f"- 当前价低于中枢下沿 {pct}%，空仓等待买点")
             else:
                 lines.append(f"- 中枢区间内位置 {pct}%，可高抛低吸做差价")
-        seg_hub = d.get("seg_hub")
-        if seg_hub:
-            seg_pos_map = {"above": "上方", "below": "下方", "inside": "区间内"}
-            seg_pos = seg_pos_map.get(d.get("seg_position", ""), "")
-            lines.append(f"- 线段中枢{seg_hub['idx']+1}：ZG={seg_hub['zg']:.3f} "
-                         f"ZD={seg_hub['zd']:.3f} → 价格在{seg_pos}")
         lines.append("")
 
     if result.hubs:

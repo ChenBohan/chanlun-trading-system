@@ -565,46 +565,85 @@ def find_all_buy_sell_points(
                 break
 
     # --- Type 3 Buy/Sell (中枢回试) ---
-    # Check ALL breakout attempts per hub, not just the first one.
-    # A failed breakout means the hub extends; subsequent breakouts are valid candidates.
+    # Two patterns per hub:
+    #   Pattern A: post-hub breakout stroke + post-hub pullback stroke
+    #   Pattern B: hub's last stroke IS the breakout, first post-hub stroke is the pullback
     for hub in hubs:
         hub_end_stroke = hub.strokes[-1]
+        found_3b = False
+        found_3s = False
 
-        for s in strokes:
-            if s.idx <= hub_end_stroke.idx:
-                continue
-            if s.direction == 1 and s.end.high > hub.zg:
-                next_down = next(
-                    (ns for ns in strokes if ns.idx > s.idx and ns.direction == -1),
-                    None
-                )
-                if next_down and next_down.end.low > hub.zg:
-                    points.append(BuySellPoint(
-                        type="3B", label="三买（第三类买点）",
-                        date=next_down.end.date, price=next_down.end.low,
-                        description=f"向上离开中枢{hub.idx+1}后回试，低点({next_down.end.low:.2f})不破ZG({hub.zg:.2f})",
-                        level=level, confidence="high",
-                        hub_idx=hub.idx,
-                    ))
-                    break  # found valid 3B, stop for this hub
+        # Pattern B for 3B: hub's last stroke is ↑ above ZG, first post-hub ↓ stays above ZG
+        if hub_end_stroke.direction == 1 and hub_end_stroke.end.high > hub.zg:
+            first_post = next(
+                (ns for ns in strokes if ns.idx > hub_end_stroke.idx and ns.direction == -1),
+                None
+            )
+            if first_post and first_post.end.low > hub.zg:
+                points.append(BuySellPoint(
+                    type="3B", label="三买（第三类买点）",
+                    date=first_post.end.date, price=first_post.end.low,
+                    description=f"向上离开中枢{hub.idx+1}后回试，低点({first_post.end.low:.2f})不破ZG({hub.zg:.2f})",
+                    level=level, confidence="high",
+                    hub_idx=hub.idx,
+                ))
+                found_3b = True
 
-        for s in strokes:
-            if s.idx <= hub_end_stroke.idx:
-                continue
-            if s.direction == -1 and s.end.low < hub.zd:
-                next_up = next(
-                    (ns for ns in strokes if ns.idx > s.idx and ns.direction == 1),
-                    None
-                )
-                if next_up and next_up.end.high < hub.zd:
-                    points.append(BuySellPoint(
-                        type="3S", label="三卖（第三类卖点）",
-                        date=next_up.end.date, price=next_up.end.high,
-                        description=f"向下离开中枢{hub.idx+1}后回抽，高点({next_up.end.high:.2f})不破ZD({hub.zd:.2f})",
-                        level=level, confidence="high",
-                        hub_idx=hub.idx,
-                    ))
-                    break  # found valid 3S, stop for this hub
+        # Pattern B for 3S: hub's last stroke is ↓ below ZD, first post-hub ↑ stays below ZD
+        if hub_end_stroke.direction == -1 and hub_end_stroke.end.low < hub.zd:
+            first_post = next(
+                (ns for ns in strokes if ns.idx > hub_end_stroke.idx and ns.direction == 1),
+                None
+            )
+            if first_post and first_post.end.high < hub.zd:
+                points.append(BuySellPoint(
+                    type="3S", label="三卖（第三类卖点）",
+                    date=first_post.end.date, price=first_post.end.high,
+                    description=f"向下离开中枢{hub.idx+1}后回抽，高点({first_post.end.high:.2f})不破ZD({hub.zd:.2f})",
+                    level=level, confidence="high",
+                    hub_idx=hub.idx,
+                ))
+                found_3s = True
+
+        # Pattern A for 3B: post-hub ↑ above ZG, then ↓ stays above ZG
+        if not found_3b:
+            for s in strokes:
+                if s.idx <= hub_end_stroke.idx:
+                    continue
+                if s.direction == 1 and s.end.high > hub.zg:
+                    next_down = next(
+                        (ns for ns in strokes if ns.idx > s.idx and ns.direction == -1),
+                        None
+                    )
+                    if next_down and next_down.end.low > hub.zg:
+                        points.append(BuySellPoint(
+                            type="3B", label="三买（第三类买点）",
+                            date=next_down.end.date, price=next_down.end.low,
+                            description=f"向上离开中枢{hub.idx+1}后回试，低点({next_down.end.low:.2f})不破ZG({hub.zg:.2f})",
+                            level=level, confidence="high",
+                            hub_idx=hub.idx,
+                        ))
+                        break
+
+        # Pattern A for 3S: post-hub ↓ below ZD, then ↑ stays below ZD
+        if not found_3s:
+            for s in strokes:
+                if s.idx <= hub_end_stroke.idx:
+                    continue
+                if s.direction == -1 and s.end.low < hub.zd:
+                    next_up = next(
+                        (ns for ns in strokes if ns.idx > s.idx and ns.direction == 1),
+                        None
+                    )
+                    if next_up and next_up.end.high < hub.zd:
+                        points.append(BuySellPoint(
+                            type="3S", label="三卖（第三类卖点）",
+                            date=next_up.end.date, price=next_up.end.high,
+                            description=f"向下离开中枢{hub.idx+1}后回抽，高点({next_up.end.high:.2f})不破ZD({hub.zd:.2f})",
+                            level=level, confidence="high",
+                            hub_idx=hub.idx,
+                        ))
+                        break
 
     # --- MACD zero-axis check for Type 2 ---
     for p in points:

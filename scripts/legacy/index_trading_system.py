@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPTS_DIR)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPTS_DIR))
 sys.path.insert(0, SCRIPTS_DIR)
 
 from fetch_data import (

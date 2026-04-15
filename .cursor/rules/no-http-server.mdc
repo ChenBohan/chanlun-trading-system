@@ -1,0 +1,28 @@
+---
+description: Prohibit launching HTTP servers to preview HTML reports
+globs:
+alwaysApply: true
+---
+
+# 禁止启动 HTTP 服务预览
+
+## 规则
+
+**永远不要**自动启动 HTTP 服务器来预览或打开 `dashboard.html`、`dashboard_mobile.html` 或任何报告 HTML 文件。
+
+包括但不限于：
+- `python -m http.server`
+- `npx serve`
+- `open` / `xdg-open`
+- 使用浏览器 MCP 工具打开本地 HTML 文件
+- 任何形式的 localhost 服务器
+
+## 原因
+
+用户自行手动打开 HTML 文件，不需要 Agent 代劳。
+
+## 正确做法
+
+生成仪表盘后，告知用户文件路径即可，例如：
+- `reports/dashboard.html`
+- `reports/dashboard_mobile.html`

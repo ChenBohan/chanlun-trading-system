@@ -529,7 +529,9 @@ def full_update(symbol: str = "688981", name: str = "中芯国际"):
         print(f"    North net flow: {north.get('total_net', 0) / 100000000:.2f} 亿")
 
     print("\n[3/5] Fetching K-line data...")
-    sys.path.insert(0, os.path.join(BASE_DIR, "scripts"))
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
     from fetch_data import fetch_kline, daily_to_md, min30_to_md
 
     beg = "20250620"

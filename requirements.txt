@@ -1,0 +1,9 @@
+# Chanlun Trading System v2
+# No third-party dependencies required — uses Python 3.10+ stdlib only.
+#
+# Runtime APIs:
+#   - Sina Finance (money.finance.sina.com.cn)
+#   - East Money (push2his.eastmoney.com)
+#
+# Optional (for dashboard viewing):
+#   - ECharts 5.5.0 (loaded from CDN in generated HTML)

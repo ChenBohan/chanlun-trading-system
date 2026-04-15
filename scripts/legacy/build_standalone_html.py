@@ -5,7 +5,7 @@ No external file dependencies - can be sent to any device independently.
 import re
 import os
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 INDICES = [
     ("000016", "上证50", "510050"),
     ("000300", "沪深300", "510300"),
