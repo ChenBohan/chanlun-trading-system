@@ -286,8 +286,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 <div id="global-signals-table" style="margin:0 32px 16px;overflow-x:auto"></div>
 
+<h2 style="color:#c9d1d9;margin:24px 32px 8px;font-size:17px;border-bottom:1px solid #30363d;padding-bottom:6px">📊 标的可操作性总览</h2>
 <div id="overview-table" style="margin:0 32px 16px;overflow-x:auto"></div>
 
+<h2 style="color:#c9d1d9;margin:24px 32px 8px;font-size:17px;border-bottom:1px solid #30363d;padding-bottom:6px">📈 技术分析详情</h2>
 <div class="nav" id="index-nav"></div>
 
 <div class="level-tabs" id="level-tabs">
@@ -319,21 +321,35 @@ let currentIndex = INDEX_LIST[0].etf_code;
 let currentLevel = 'daily';
 let chart = null;
 
-// ─── Global Signals Table (latest type-1/2/3 buy/sell across all indices) ───
+// ─── Global Signals Table (latest type-1/2/3 buy/sell, tabbed by level) ───
+let gsActiveTab = '日线';
 function renderGlobalSignals() {
   const el = document.getElementById('global-signals-table');
-  if (!GLOBAL_SIGNALS || GLOBAL_SIGNALS.length === 0) {
-    el.innerHTML = '';
-    return;
-  }
+  const levels = ['日线', '30分钟', '5分钟'];
+  const hasAny = levels.some(lv => (GLOBAL_SIGNALS[lv]||[]).length > 0);
+  if (!hasAny) { el.innerHTML = ''; return; }
+
   const confIcons = {'high': '🔴高', 'medium': '🟡中', 'low': '⚪低'};
   const typeColors = {'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'};
-  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新一二三类买卖点（日线5 / 30分钟5 / 5分钟10）</h3>';
+  const strengthMap = {'strongest': '最强(2+3合)', 'strong': '强(高于一买)', 'standard': '标准'};
+
+  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新买卖点（每级别 Top 10）</h3>';
+  h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
+  levels.forEach(lv => {
+    const cnt = (GLOBAL_SIGNALS[lv]||[]).length;
+    const active = lv === gsActiveTab;
+    const bg = active ? '#21262d' : 'transparent';
+    const clr = active ? '#58a6ff' : '#8b949e';
+    const border = active ? '2px solid #58a6ff' : '2px solid transparent';
+    h += `<button onclick="gsActiveTab='${lv}';renderGlobalSignals()" style="padding:6px 16px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:13px;border-radius:6px 6px 0 0">${lv} (${cnt})</button>`;
+  });
+  h += '</div>';
+
+  const signals = GLOBAL_SIGNALS[gsActiveTab] || [];
   h += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden">';
   h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
   h += '<th style="padding:8px;text-align:left">时间</th>';
   h += '<th style="padding:8px;text-align:left">标的</th>';
-  h += '<th style="padding:8px;text-align:center">级别</th>';
   h += '<th style="padding:8px;text-align:center">类型</th>';
   h += '<th style="padding:8px;text-align:right">价格</th>';
   h += '<th style="padding:8px;text-align:center">置信度</th>';
@@ -342,19 +358,16 @@ function renderGlobalSignals() {
   h += '<th style="padding:8px;text-align:left">仓位建议</th>';
   h += '<th style="padding:8px;text-align:center">防狼</th>';
   h += '</tr></thead><tbody>';
-  GLOBAL_SIGNALS.forEach((s, i) => {
+  signals.forEach((s, i) => {
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tClr = typeColors[s.type] || '#c9d1d9';
-    const isBuy = s.type.includes('B');
     const confStr = confIcons[s.conf] || s.conf || '-';
     const wolfStr = s.wolf ? '⚠' : '✓';
     const wolfClr = s.wolf ? '#d29922' : '#3fb950';
-    const strengthMap = {'strongest': '最强(2+3合)', 'strong': '强(高于一买)', 'standard': '标准'};
     const strStr = strengthMap[s.strength] || s.strength || '-';
     h += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d">';
     h += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px">' + (s.dt || '-') + '</td>';
     h += '<td style="padding:6px 8px;font-weight:600">' + s.etf_name + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center">' + s.level + '</td>';
     h += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + '">' + s.label + '</td>';
     h += '<td style="padding:6px 8px;text-align:right;font-family:monospace">' + (s.price ? s.price.toFixed(3) : '-') + '</td>';
     h += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
@@ -364,6 +377,9 @@ function renderGlobalSignals() {
     h += '<td style="padding:6px 8px;text-align:center;color:' + wolfClr + '">' + wolfStr + '</td>';
     h += '</tr>';
   });
+  if (signals.length === 0) {
+    h += '<tr><td colspan="9" style="padding:16px;text-align:center;color:#484f58">暂无信号</td></tr>';
+  }
   h += '</tbody></table>';
   el.innerHTML = h;
 }
@@ -1550,16 +1566,12 @@ def generate_dashboard(data_dir: str = None,
                 entry["area_cmp"] = ""
             global_signals.append(entry)
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    _LEVEL_TOP_N = {"日线": 5, "30分钟": 5, "5分钟": 10}
-    _level_counts: dict[str, int] = {}
-    global_signals_top = []
+    global_signals_by_level: dict[str, list] = {"日线": [], "30分钟": [], "5分钟": []}
     for s in global_signals:
         lv = s["level"]
-        limit = _LEVEL_TOP_N.get(lv, 5)
-        cnt = _level_counts.get(lv, 0)
-        if cnt < limit:
-            global_signals_top.append(s)
-            _level_counts[lv] = cnt + 1
+        if lv in global_signals_by_level and len(global_signals_by_level[lv]) < 10:
+            global_signals_by_level[lv].append(s)
+    global_signals_top = global_signals_by_level
 
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -1696,16 +1708,12 @@ def generate_mobile_dashboard(data_dir: str = None,
                 entry_m["area_cmp"] = ""
             mobile_global_signals.append(entry_m)
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    _m_level_top = {"日线": 5, "30分钟": 5, "5分钟": 10}
-    _m_counts: dict[str, int] = {}
-    mobile_global_signals_top = []
+    mobile_gs_by_level: dict[str, list] = {"日线": [], "30分钟": [], "5分钟": []}
     for s in mobile_global_signals:
         lv = s["level"]
-        limit = _m_level_top.get(lv, 5)
-        cnt = _m_counts.get(lv, 0)
-        if cnt < limit:
-            mobile_global_signals_top.append(s)
-            _m_counts[lv] = cnt + 1
+        if lv in mobile_gs_by_level and len(mobile_gs_by_level[lv]) < 10:
+            mobile_gs_by_level[lv].append(s)
+    mobile_global_signals_top = mobile_gs_by_level
     mobile_global_signals_json = json.dumps(mobile_global_signals_top, ensure_ascii=False)
 
     tab_parts = []
@@ -1805,8 +1813,10 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 
+<div style="color:#c9d1d9;font-size:14px;font-weight:bold;border-bottom:1px solid #30363d;padding-bottom:4px;margin:12px 0 6px">📊 标的可操作性总览</div>
 <div id="mobileOverview" style="margin-bottom:12px"></div>
 
+<div style="color:#c9d1d9;font-size:14px;font-weight:bold;border-bottom:1px solid #30363d;padding-bottom:4px;margin:12px 0 6px">📈 技术分析详情</div>
 <div class="chart-section">
   <div class="idx-tabs" id="idxTabs">
     {idx_tabs_html}
@@ -1850,24 +1860,40 @@ let isDragging = false, dragStartX = 0, dragStartView = 0;
 let pinchStartDist = 0, pinchStartRange = 0;
 const MIN_VIEW = 20;
 
+let mgsTab = '日线';
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
-  if (!GLOBAL_SIGNALS || GLOBAL_SIGNALS.length === 0) {{ el.innerHTML = ''; return; }}
+  const levels = ['日线', '30分钟', '5分钟'];
+  const hasAny = levels.some(lv => (GLOBAL_SIGNALS[lv]||[]).length > 0);
+  if (!hasAny) {{ el.innerHTML = ''; return; }}
+
   const confIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
   const tClrs = {{'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'}};
-  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点 (日线5/30分5/5分10)</div>';
+
+  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点 (每级别10)</div>';
+  h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
+  levels.forEach(lv => {{
+    const cnt = (GLOBAL_SIGNALS[lv]||[]).length;
+    const active = lv === mgsTab;
+    const bg = active ? '#21262d' : 'transparent';
+    const clr = active ? '#58a6ff' : '#8b949e';
+    const border = active ? '2px solid #58a6ff' : '2px solid transparent';
+    h += `<button onclick="mgsTab='${{lv}}';renderMobileGlobalSignals()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{cnt}})</button>`;
+  }});
+  h += '</div>';
+
+  const signals = GLOBAL_SIGNALS[mgsTab] || [];
   h += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
   h += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
   h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
   h += '<th style="padding:4px;text-align:left">时间</th>';
   h += '<th style="padding:4px;text-align:left">标的</th>';
-  h += '<th style="padding:4px;text-align:center">级别</th>';
   h += '<th style="padding:4px;text-align:center">类型</th>';
   h += '<th style="padding:4px;text-align:right">价格</th>';
   h += '<th style="padding:4px;text-align:center">置信</th>';
   h += '<th style="padding:4px;text-align:left">背驰</th>';
   h += '</tr></thead><tbody>';
-  GLOBAL_SIGNALS.forEach((s, i) => {{
+  signals.forEach((s, i) => {{
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tc = tClrs[s.type] || '#c9d1d9';
     const confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
@@ -1875,13 +1901,15 @@ function renderMobileGlobalSignals() {{
     h += `<tr style="background:${{bg}};border-bottom:1px solid #21262d">`;
     h += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap">${{dtShort}}</td>`;
     h += `<td style="padding:3px 4px;font-weight:600">${{s.etf_name}}</td>`;
-    h += `<td style="padding:3px 4px;text-align:center">${{s.level}}</td>`;
     h += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}}">${{s.label}}</td>`;
     h += `<td style="padding:3px 4px;text-align:right;font-family:monospace">${{s.price ? s.price.toFixed(3) : '-'}}</td>`;
     h += `<td style="padding:3px 4px;text-align:center">${{confStr}}</td>`;
     h += `<td style="padding:3px 4px;font-size:10px">${{s.area_cmp || '-'}}</td>`;
     h += '</tr>';
   }});
+  if (signals.length === 0) {{
+    h += '<tr><td colspan="6" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+  }}
   h += '</tbody></table></div>';
   el.innerHTML = h;
 }}
