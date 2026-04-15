@@ -390,11 +390,14 @@ function renderGlobalSignals() {
     h += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + s.etf_name + '</td>';
     h += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
     h += '<td style="padding:6px 8px;text-align:right;font-family:monospace;' + strike + '">' + (s.price ? s.price.toFixed(3) : '-') + '</td>';
+    const isBuyType = ['1B','2B','3B','PB'].includes(s.type);
+    const confirmedColor = isBuyType ? '#f85149' : '#3fb950';
+    const confirmedIcon = isBuyType ? '🔴' : '🟢';
     const statusHtml = inv
       ? '<span title="' + (s.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌已失效</span>'
       : pending
         ? '<span style="color:#d29922">⏳待确认</span>'
-        : '<span style="color:#3fb950">✅已确认</span>';
+        : '<span style="color:' + confirmedColor + '">' + confirmedIcon + '已确认</span>';
     h += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
     h += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
     h += '<td style="padding:6px 8px;font-size:12px">' + (s.area_cmp || '-') + '</td>';
@@ -734,11 +737,14 @@ function updateSignalPanel(data) {
     const pending = p.status === 'pending';
     const confirmed = p.status === 'confirmed';
     const rowStyle = inv ? ' style="opacity:0.45;text-decoration:line-through"' : '';
+    const pIsBuy = p.is_buy;
+    const pConfColor = pIsBuy ? '#f85149' : '#3fb950';
+    const pConfIcon = pIsBuy ? '🔴' : '🟢';
     const statusCell = inv
       ? '<td title="' + (p.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌失效</td>'
       : pending
         ? '<td style="color:#d29922">⏳待确认</td>'
-        : '<td style="color:#3fb950">✅已确认</td>';
+        : '<td style="color:' + pConfColor + '">' + pConfIcon + '已确认</td>';
     html += '<tr' + rowStyle + '>';
     html += '<td style="color:#484f58;font-weight:bold">#' + p.bsp_idx + '</td>';
     html += '<td class="' + cls + '" style="font-weight:bold">' + p.label + '</td>';
@@ -1961,7 +1967,9 @@ function renderMobileGlobalSignals() {{
     const pending = s.status === 'pending';
     const rowOpacity = inv ? 'opacity:0.45;' : '';
     const strike = inv ? 'text-decoration:line-through;' : '';
-    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:#3fb950;margin-left:2px">✓</span>');
+    const mGsBuyType = ['1B','2B','3B','PB'].includes(s.type);
+    const mGsConfClr = mGsBuyType ? '#f85149' : '#3fb950';
+    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>');
     h += `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
     h += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     h += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{s.etf_name}}</td>`;
@@ -2449,11 +2457,13 @@ function updateSignalPanel(data) {{
     const mInv = p.status === 'invalidated';
     const mPending = p.status === 'pending';
     const mRowStyle = mInv ? ' style="opacity:0.45"' : '';
+    const mIsBuyType = p.is_buy;
+    const mConfClr = mIsBuyType ? '#f85149' : '#3fb950';
     const mStatusCell = mInv
       ? '<td style="color:#da3633;font-size:10px">✗</td>'
       : mPending
         ? '<td style="color:#d29922;font-size:10px">⏳</td>'
-        : '<td style="color:#3fb950;font-size:10px">✓</td>';
+        : '<td style="color:' + mConfClr + ';font-size:10px">✓</td>';
     html += '<tr' + mRowStyle + '>';
     html += '<td style="color:#484f58;font-weight:bold">#' + p.bsp_idx + '</td>';
     html += '<td>' + data.dates[p.idx] + '</td>';
