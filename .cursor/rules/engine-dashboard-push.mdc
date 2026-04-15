@@ -1,0 +1,26 @@
+# 引擎修改后自动更新仪表盘并推送
+
+## 规则
+
+每次修改缠论引擎（`src/chanlun_engine.py`）或可视化模块（`src/visualize.py`）后，必须执行以下流程：
+
+1. **重新生成仪表盘**（包括移动版）：
+   ```bash
+   cd /home/chenbohan/github/chanlun-trading-system && python3 main.py dashboard --mobile
+   ```
+
+2. **提交并推送**：将引擎修改、仪表盘更新一起 commit 并 `git push origin main`
+
+## 触发条件
+
+- 修改了 `src/chanlun_engine.py`（分析引擎）
+- 修改了 `src/visualize.py`（可视化模块）
+- 修改了 `src/data_fetcher.py`（数据拉取模块，影响数据格式时）
+
+## 注意事项
+
+- 如果引擎修改影响了分析结果（买卖点、背驰、中枢等），需要先拉取最新数据再生成仪表盘：
+  ```bash
+  python3 main.py run --delay 0.5
+  ```
+- 纯样式/布局修改只需 `python3 main.py dashboard --mobile` 即可，不需要重新拉取数据
