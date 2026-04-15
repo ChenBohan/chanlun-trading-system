@@ -1551,12 +1551,10 @@ def generate_dashboard(data_dir: str = None,
             bars = load_bars_from_csv(csv_path)
             result = analyze(bars, level_key)
             level_results[level_key] = result
-            mb = 500 if level_key in ("30min", "5min") else 0
-            echarts_data = _result_to_echarts_data(result, max_bars=mb)
+            echarts_data = _result_to_echarts_data(result)
             key = f"{idx.etf_code}_{level_key}"
             all_data[key] = echarts_data
             print(f"OK ({result.trend}, {len(result.buy_sell_points)} signals)")
-
 
         if "daily" in level_results:
             syn = synthesize_multi_level(
@@ -1714,8 +1712,7 @@ def generate_mobile_dashboard(data_dir: str = None,
                 continue
             result = analyze(load_bars_from_csv(csv_path), level_key)
             level_results[level_key] = result
-            mb = 500 if level_key in ("30min", "5min") else 0
-            echarts_data = _result_to_echarts_data(result, max_bars=mb)
+            echarts_data = _result_to_echarts_data(result)
             key = f"{idx.etf_code}_{level_key}"
             all_data[key] = echarts_data
             print(f"  [{idx.etf_name} {level_label}] {result.trend} | "
