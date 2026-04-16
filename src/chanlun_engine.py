@@ -487,6 +487,62 @@ def find_strokes(fractals: list[Fractal], merged: list[MergedBar]) -> list[Strok
             direction=direction,
             mk_span=abs(e.mk_idx - s.mk_idx),
         ))
+    strokes = _fix_stroke_extreme_violations(strokes, fractals)
+    return strokes
+
+
+def _fix_stroke_extreme_violations(
+    strokes: list[Stroke], fractals: list[Fractal],
+) -> list[Stroke]:
+    """Fix strokes where an intermediate fractal exceeds the stroke's start.
+
+    An up stroke from BOT(A) to TOP(B) is violated when an intermediate
+    bottom fractal C has C.low < A.low.  This means the previous down
+    stroke should extend to C and the up stroke should start from C.
+    Similarly for down strokes with intermediate higher tops.
+
+    Only adjusts endpoints; stroke count stays the same.
+    Gap >= 4 is required for the adjusted up/down stroke.
+    """
+    _MIN_GAP = 4
+    changed = True
+    while changed:
+        changed = False
+        for i, s in enumerate(strokes):
+            start_mk = s.start.mk_idx
+            end_mk = s.end.mk_idx
+            worst = None
+            if s.direction == 1:
+                for f in fractals:
+                    if (f.type == "bottom" and start_mk < f.mk_idx < end_mk
+                            and f.low < s.start.low):
+                        if worst is None or f.low < worst.low:
+                            worst = f
+            else:
+                for f in fractals:
+                    if (f.type == "top" and start_mk < f.mk_idx < end_mk
+                            and f.high > s.start.high):
+                        if worst is None or f.high > worst.high:
+                            worst = f
+            if worst is None:
+                continue
+            new_gap = abs(end_mk - worst.mk_idx)
+            if new_gap < _MIN_GAP:
+                continue
+            if i > 0:
+                prev = strokes[i - 1]
+                strokes[i - 1] = Stroke(
+                    idx=prev.idx, start=prev.start, end=worst,
+                    direction=prev.direction,
+                    mk_span=abs(worst.mk_idx - prev.start.mk_idx),
+                )
+            strokes[i] = Stroke(
+                idx=s.idx, start=worst, end=s.end,
+                direction=s.direction,
+                mk_span=new_gap,
+            )
+            changed = True
+            break
     return strokes
 
 
