@@ -295,9 +295,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 <div id="global-signals-table" style="margin:0 32px 16px;overflow-x:auto"></div>
 
-<h2 style="color:#c9d1d9;margin:24px 32px 8px;font-size:17px;border-bottom:1px solid #30363d;padding-bottom:6px">📊 标的可操作性总览</h2>
-<div id="overview-table" style="margin:0 32px 16px;overflow-x:auto"></div>
-
 <h2 style="color:#c9d1d9;margin:24px 32px 8px;font-size:17px;border-bottom:1px solid #30363d;padding-bottom:6px">📈 技术分析详情</h2>
 <div class="nav" id="index-nav"></div>
 
@@ -318,6 +315,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 </div>
 <div id="synthesis-panel" class="detail-panel active"></div>
 <div id="signal-panel" class="detail-panel"></div>
+
+<h2 style="color:#c9d1d9;margin:24px 32px 8px;font-size:17px;border-bottom:1px solid #30363d;padding-bottom:6px">📊 标的可操作性总览</h2>
+<div id="overview-table" style="margin:0 32px 16px;overflow-x:auto"></div>
 
 <script>
 // ─── Data: lazy-loaded per index via script injection ───
@@ -1924,9 +1924,6 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 
-<div style="color:#c9d1d9;font-size:14px;font-weight:bold;border-bottom:1px solid #30363d;padding-bottom:4px;margin:12px 0 6px">📊 标的可操作性总览</div>
-<div id="mobileOverview" style="margin-bottom:12px"></div>
-
 <div style="color:#c9d1d9;font-size:14px;font-weight:bold;border-bottom:1px solid #30363d;padding-bottom:4px;margin:12px 0 6px">📈 技术分析详情</div>
 <div class="chart-section">
   <div class="idx-tabs" id="idxTabs">
@@ -1957,6 +1954,9 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
   <div id="synthesis-panel"></div>
   <div id="signal-panel"></div>
 </div>
+
+<div style="color:#c9d1d9;font-size:14px;font-weight:bold;border-bottom:1px solid #30363d;padding-bottom:4px;margin:12px 0 6px">📊 标的可操作性总览</div>
+<div id="mobileOverview" style="margin-bottom:12px"></div>
 </div>
 
 <script>
