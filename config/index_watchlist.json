@@ -320,6 +320,105 @@
       "notes": "华安黄金ETF，规模~1115亿，全球避险+通胀对冲"
     },
     {
+      "index_code": "000510",
+      "index_name": "中证A500",
+      "etf_code": "560610",
+      "etf_name": "中证A500ETF",
+      "market": "SH",
+      "category": "大中盘综合",
+      "type": "broad",
+      "weight": 0.8,
+      "notes": "中证A500指数，横跨大中盘核心资产，行业均衡度优于沪深300"
+    },
+    {
+      "index_code": "399330",
+      "index_name": "深证100",
+      "etf_code": "159901",
+      "etf_name": "深证100ETF",
+      "market": "SZ",
+      "category": "大盘成长",
+      "type": "broad",
+      "weight": 0.6,
+      "notes": "深市核心蓝筹100，偏成长，与沪深300形成比价参照"
+    },
+    {
+      "index_code": "000922",
+      "index_name": "红利",
+      "etf_code": "510880",
+      "etf_name": "红利ETF",
+      "market": "SH",
+      "category": "红利价值",
+      "type": "sector",
+      "weight": 0.6,
+      "notes": "上证红利指数，高股息价值风格，防御+轮动配置"
+    },
+    {
+      "index_code": "515170I",
+      "index_name": "食品饮料",
+      "etf_code": "515170",
+      "etf_name": "食品饮料ETF",
+      "market": "SH",
+      "category": "消费",
+      "type": "sector",
+      "weight": 0.6,
+      "notes": "中证细分食品饮料，消费龙头（茅台/伊利/海天等），补充消费轮动"
+    },
+    {
+      "index_code": "H30202",
+      "index_name": "家电",
+      "etf_code": "159996",
+      "etf_name": "家电ETF",
+      "market": "SZ",
+      "category": "消费",
+      "type": "sector",
+      "weight": 0.6,
+      "notes": "中证全指家用电器，美的/格力/海尔等，消费+出海逻辑"
+    },
+    {
+      "index_code": "399808",
+      "index_name": "保险",
+      "etf_code": "512070",
+      "etf_name": "保险ETF",
+      "market": "SH",
+      "category": "金融",
+      "type": "sector",
+      "weight": 0.6,
+      "notes": "中证800保险主题，补充金融板块内部轮动"
+    },
+    {
+      "index_code": "516950I",
+      "index_name": "基建",
+      "etf_code": "516950",
+      "etf_name": "基建ETF",
+      "market": "SH",
+      "category": "基建周期",
+      "type": "sector",
+      "weight": 0.6,
+      "notes": "中证基建工程指数，财政基建/稳增长/周期品种"
+    },
+    {
+      "index_code": "HSI",
+      "index_name": "恒生指数",
+      "etf_code": "159920",
+      "etf_name": "恒生ETF",
+      "market": "SZ",
+      "category": "跨市场综合",
+      "type": "broad",
+      "weight": 0.6,
+      "notes": "港股蓝筹综合，与恒生科技形成价值/科技对照"
+    },
+    {
+      "index_code": "SPX500",
+      "index_name": "标普500",
+      "etf_code": "513500",
+      "etf_name": "标普500ETF",
+      "market": "SH",
+      "category": "跨市场综合",
+      "type": "broad",
+      "weight": 0.6,
+      "notes": "美股宽基标普500，与纳指100形成对照，降低科技集中度"
+    },
+    {
       "index_code": "000977",
       "index_name": "浪潮信息",
       "etf_code": "000977",
@@ -362,6 +461,72 @@
       "type": "stock",
       "weight": 1.0,
       "notes": "中国联通(600050.SH)，三大运营商/数字经济/央企"
+    },
+    {
+      "index_code": "300308",
+      "index_name": "中际旭创",
+      "etf_code": "300308",
+      "etf_name": "中际旭创",
+      "market": "SZ",
+      "category": "AI算力",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中际旭创(300308.SZ)，光模块龙头，AI算力基础设施核心，与浪潮信息形成算力链比价"
+    },
+    {
+      "index_code": "002371",
+      "index_name": "北方华创",
+      "etf_code": "002371",
+      "etf_name": "北方华创",
+      "market": "SZ",
+      "category": "半导体设备",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "北方华创(002371.SZ)，半导体设备龙头，国产替代核心标的，与芯片ETF形成龙头/行业对照"
+    },
+    {
+      "index_code": "601899",
+      "index_name": "紫金矿业",
+      "etf_code": "601899",
+      "etf_name": "紫金矿业",
+      "market": "SH",
+      "category": "资源周期",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "紫金矿业(601899.SH)，铜金矿业龙头，全球资源+通胀逻辑，与有色/黄金ETF比价"
+    },
+    {
+      "index_code": "600519",
+      "index_name": "贵州茅台",
+      "etf_code": "600519",
+      "etf_name": "贵州茅台",
+      "market": "SH",
+      "category": "消费龙头",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "贵州茅台(600519.SH)，A股消费龙头，走势规范流动性极好，与酒/食品饮料ETF比价"
+    },
+    {
+      "index_code": "300750",
+      "index_name": "宁德时代",
+      "etf_code": "300750",
+      "etf_name": "宁德时代",
+      "market": "SZ",
+      "category": "新能源",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "宁德时代(300750.SZ)，动力电池龙头，新能源核心龙头，与电池/新能源车ETF比价"
+    },
+    {
+      "index_code": "002594",
+      "index_name": "比亚迪",
+      "etf_code": "002594",
+      "etf_name": "比亚迪",
+      "market": "SZ",
+      "category": "新能源车",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "比亚迪(002594.SZ)，新能源车龙头，产业链垂直整合，与新能源车ETF比价"
     }
   ],
   "settings": {
