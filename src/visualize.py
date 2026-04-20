@@ -1580,6 +1580,7 @@ def generate_dashboard(data_dir: str = None,
             print(f"  → 联立: {syn.direction_alignment} | {syn.overall_bias}")
 
     index_list = []
+    _valid_sig = {"1B", "1S", "2B", "2S", "3B", "3S"}
     for i in indices:
         entry = {"etf_code": i.etf_code, "index_name": i.index_name,
                  "etf_name": i.etf_name, "category": i.category,
@@ -1594,14 +1595,34 @@ def generate_dashboard(data_dir: str = None,
         entry["score"] = score
         entry["summary"] = summary
         entry.update(overview)
+
+        # Find most recent signal datetime across all levels for sorting
+        latest_sig_dt = ""
+        for lk in ("daily", "30min", "5min"):
+            d = all_data.get(f"{i.etf_code}_{lk}", {})
+            dates = d.get("dates", [])
+            for p in d.get("bsp", []):
+                if p.get("type") not in _valid_sig:
+                    continue
+                if p.get("type") in ("3B", "3S") and p.get("strength") == "weak":
+                    continue
+                pi = p.get("idx", -1)
+                if 0 <= pi < len(dates):
+                    dt = dates[pi]
+                    if dt > latest_sig_dt:
+                        latest_sig_dt = dt
+        entry["latest_sig_dt"] = latest_sig_dt
         index_list.append(entry)
+
+    def _sort_key(x):
+        return (x.get("latest_sig_dt", ""), x["score"])
 
     broad = [x for x in index_list if x.get("type") == "broad"]
     sector = [x for x in index_list if x.get("type") == "sector"]
     stocks = [x for x in index_list if x.get("type") == "stock"]
-    broad.sort(key=lambda x: x["score"], reverse=True)
-    sector.sort(key=lambda x: x["score"], reverse=True)
-    stocks.sort(key=lambda x: x["score"], reverse=True)
+    broad.sort(key=_sort_key, reverse=True)
+    sector.sort(key=_sort_key, reverse=True)
+    stocks.sort(key=_sort_key, reverse=True)
     index_list = broad + sector + stocks
 
     latest_data_time = ""
@@ -1746,6 +1767,7 @@ def generate_mobile_dashboard(data_dir: str = None,
             print(f"  → 联立: {syn.direction_alignment} | {syn.overall_bias}")
 
     index_list = []
+    _valid_sig_m = {"1B", "1S", "2B", "2S", "3B", "3S"}
     for idx in indices:
         entry = {"etf_code": idx.etf_code, "index_name": idx.index_name,
                  "etf_name": idx.etf_name, "category": idx.category,
@@ -1760,13 +1782,33 @@ def generate_mobile_dashboard(data_dir: str = None,
         entry["score"] = score
         entry["summary"] = summary
         entry.update(overview)
+
+        latest_sig_dt = ""
+        for lk in ("daily", "30min", "5min"):
+            d = all_data.get(f"{idx.etf_code}_{lk}", {})
+            dates = d.get("dates", [])
+            for p in d.get("bsp", []):
+                if p.get("type") not in _valid_sig_m:
+                    continue
+                if p.get("type") in ("3B", "3S") and p.get("strength") == "weak":
+                    continue
+                pi = p.get("idx", -1)
+                if 0 <= pi < len(dates):
+                    dt = dates[pi]
+                    if dt > latest_sig_dt:
+                        latest_sig_dt = dt
+        entry["latest_sig_dt"] = latest_sig_dt
         index_list.append(entry)
+
+    def _sort_key_m(x):
+        return (x.get("latest_sig_dt", ""), x["score"])
+
     broad = [x for x in index_list if x.get("type") == "broad"]
     sector = [x for x in index_list if x.get("type") == "sector"]
     stocks = [x for x in index_list if x.get("type") == "stock"]
-    broad.sort(key=lambda x: x["score"], reverse=True)
-    sector.sort(key=lambda x: x["score"], reverse=True)
-    stocks.sort(key=lambda x: x["score"], reverse=True)
+    broad.sort(key=_sort_key_m, reverse=True)
+    sector.sort(key=_sort_key_m, reverse=True)
+    stocks.sort(key=_sort_key_m, reverse=True)
     index_list = broad + sector + stocks
 
     latest_data_time = ""
