@@ -1428,6 +1428,7 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
                     "c_hist_peak": round(c_peak, 4),
                     "div_dims": dims,
                     "div_confidence": div_confidence,
+                    "hub_count": j - i + 1,
                     "hub_idx": last_hub.idx,
                     "price": trigger.end.low if trend_dir == -1 else trigger.end.high,
                     "a_start_dt": seg_a[0].start.dt,
@@ -1862,6 +1863,179 @@ def detect_double_pullback_zero(bars: list[RawBar]) -> list[dict]:
 #   Consolidation: PB/PS from consolidation divergence
 # ════════════════════════════════════════════════════════════════════
 
+_STRENGTH_ZH_ALL = {
+    "strongest": "最强", "strong": "强势",
+    "standard": "标准", "weak": "弱",
+}
+
+
+def _grade_type1(div: dict) -> tuple[str, str, list[str]]:
+    """Grade Type 1 buy/sell point quality.
+
+    Per 108课详解, 图解缠论2/3, 土匪注解, 缠论辅导:
+      1. div_dims: 3/3 vs 2/3 MACD divergence dimensions
+      2. area_ratio: magnitude of area divergence (lower = stronger)
+      3. hub_count: number of hubs in the trend (2+ = proper trend)
+      4. dif_ratio: DIF convergence ratio (lower = clearer divergence)
+    """
+    score = 0
+    tags: list[str] = []
+
+    dims = div.get("div_dims", 2)
+    ratio = div.get("ratio", 1.0)
+    hub_count = div.get("hub_count", 1)
+
+    if dims == 3:
+        score += 3
+        tags.append("三维背驰")
+    else:
+        score += 1
+        tags.append("二维背驰")
+
+    if ratio < 0.4:
+        score += 3
+        tags.append("强背驰")
+    elif ratio < 0.6:
+        score += 2
+    elif ratio < 0.75:
+        score += 1
+    else:
+        score -= 1
+        tags.append("弱背驰")
+
+    if hub_count >= 3:
+        score += 3
+        tags.append(f"{hub_count}中枢趋势")
+    elif hub_count == 2:
+        score += 2
+        tags.append("双中枢趋势")
+    else:
+        score -= 1
+        tags.append("单中枢")
+
+    a_dif = abs(div.get("a_dif", 0))
+    c_dif = abs(div.get("c_dif", 0))
+    if a_dif > 0:
+        dif_r = c_dif / a_dif
+        if dif_r < 0.5:
+            score += 2
+            tags.append("DIF强收敛")
+        elif dif_r < 0.8:
+            score += 1
+    # else: no contribution
+
+    if score >= 8:
+        return "strongest", "high", tags
+    elif score >= 5:
+        return "strong", "high", tags
+    elif score >= 2:
+        return "standard", "medium", tags
+    else:
+        return "weak", "low", tags
+
+
+def _grade_pb_ps(div: dict) -> tuple[str, str, list[str]]:
+    """Grade consolidation divergence (PB/PS) quality.
+
+    Per knowledge base: consolidation divergence is inherently weaker than
+    trend divergence. Confidence caps at "medium" (never "high").
+    """
+    score = 0
+    tags: list[str] = []
+
+    dims = div.get("div_dims", 2)
+    ratio = div.get("ratio", 1.0)
+
+    if dims == 3:
+        score += 2
+        tags.append("三维盘背")
+    else:
+        tags.append("二维盘背")
+
+    if ratio < 0.5:
+        score += 2
+        tags.append("强盘背")
+    elif ratio < 0.7:
+        score += 1
+    # else: no bonus
+
+    if score >= 4:
+        return "strong", "medium", tags
+    elif score >= 2:
+        return "standard", "medium", tags
+    else:
+        return "weak", "low", tags
+
+
+def _grade_type2(t1: 'BuySellPoint', first_move: 'Stroke',
+                 pullback: 'Stroke', ref_hub: 'Hub | None',
+                 is_buy: bool) -> tuple[str, str, list[str]]:
+    """Grade Type 2 buy/sell point quality.
+
+    Per 108课 §2.4, 图解缠论2, 缠论辅导:
+      1. Position: above hub ZG (2B) / below hub ZD (2S) → merged with type 3
+      2. Pullback depth ratio: shallower = stronger
+      3. DIF position: favorable side of zero = stronger
+    """
+    score = 0
+    tags: list[str] = []
+
+    if is_buy:
+        move_range = first_move.end.high - t1.price
+        pb_depth = first_move.end.high - pullback.end.low
+        merged = ref_hub and pullback.end.low > ref_hub.zg
+        dif_val = pullback.dif_extreme
+    else:
+        move_range = t1.price - first_move.end.low
+        pb_depth = pullback.end.high - first_move.end.low
+        merged = ref_hub and pullback.end.high < ref_hub.zd
+        dif_val = pullback.dif_extreme
+
+    if merged:
+        score += 3
+        tags.append("二买三买合一" if is_buy else "二卖三卖合一")
+
+    if move_range > 0:
+        pb_ratio = pb_depth / move_range
+        if pb_ratio < 0.236:
+            score += 4
+            tags.append("极浅回调")
+        elif pb_ratio < 0.382:
+            score += 3
+            tags.append("浅回调")
+        elif pb_ratio < 0.500:
+            score += 2
+        elif pb_ratio < 0.618:
+            score += 1
+        elif pb_ratio < 0.786:
+            pass
+        else:
+            score -= 1
+            tags.append("深回调")
+
+    if is_buy:
+        if dif_val > 0:
+            score += 1
+            tags.append("DIF>0")
+        elif dif_val < 0:
+            score -= 1
+    else:
+        if dif_val < 0:
+            score += 1
+            tags.append("DIF<0")
+        elif dif_val > 0:
+            score -= 1
+
+    if score >= 6:
+        return "strongest", "high", tags
+    elif score >= 3:
+        return "strong", "high", tags
+    elif score >= 1:
+        return "standard", "medium", tags
+    else:
+        return "weak", "low", tags
+
+
 def find_buy_sell_points(
     hubs: list[Hub],
     strokes: list[Stroke],
@@ -1906,19 +2080,22 @@ def find_buy_sell_points(
         struct = div.get("structure", [])
         dims = div.get("div_dims", 1)
         dim_tag = f" ({dims}/3维)" if dims > 0 else ""
-        conf = div.get("div_confidence", "medium")
+        t1_strength, t1_conf, t1_tags = _grade_type1(div)
+        tag_str = "，".join(t1_tags)
         if div["direction"] == -1:
             points.append(BuySellPoint(
                 type="1B", label="一买",
                 dt=div["dt"], price=div["price"],
                 description=(
                     f"[{loc}] 下跌趋势背驰{dim_tag}：c段面积({div['c_area']}) < a段({div['a_area']})，"
-                    f"比值={div['ratio']:.2f}"
+                    f"比值={div['ratio']:.2f}，"
+                    f"{_STRENGTH_ZH_ALL[t1_strength]}（{tag_str}）"
                 ),
                 level=level,
-                confidence=conf,
+                confidence=t1_conf,
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
+                strength=t1_strength,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -1928,12 +2105,14 @@ def find_buy_sell_points(
                 dt=div["dt"], price=div["price"],
                 description=(
                     f"[{loc}] 上涨趋势背驰{dim_tag}：c段面积({div['c_area']}) < a段({div['a_area']})，"
-                    f"比值={div['ratio']:.2f}"
+                    f"比值={div['ratio']:.2f}，"
+                    f"{_STRENGTH_ZH_ALL[t1_strength]}（{tag_str}）"
                 ),
                 level=level,
-                confidence=conf,
+                confidence=t1_conf,
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
+                strength=t1_strength,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -1965,19 +2144,22 @@ def find_buy_sell_points(
                        "end_dt": div["curr_end_dt"]})
         dims = div.get("div_dims", 1)
         dim_tag = f" ({dims}/3维)" if dims > 0 else ""
-        conf = div.get("div_confidence", "low")
+        pb_strength, pb_conf, pb_tags = _grade_pb_ps(div)
+        pb_tag_str = "，".join(pb_tags) if pb_tags else ""
         if div["direction"] == -1:
             points.append(BuySellPoint(
                 type="PB", label="盘整买点",
                 dt=div["dt"], price=div["price"],
                 description=(
                     f"[{loc}] 盘整背驰{dim_tag}：当次面积({div['curr_area']}) < 前次({div['prev_area']})，"
-                    f"比值={div['ratio']:.2f}"
+                    f"比值={div['ratio']:.2f}，"
+                    f"{_STRENGTH_ZH_ALL[pb_strength]}（{pb_tag_str}）"
                 ),
                 level=level,
-                confidence=conf,
+                confidence=pb_conf,
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
+                strength=pb_strength,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -1987,21 +2169,19 @@ def find_buy_sell_points(
                 dt=div["dt"], price=div["price"],
                 description=(
                     f"[{loc}] 盘整背驰{dim_tag}：当次面积({div['curr_area']}) < 前次({div['prev_area']})，"
-                    f"比值={div['ratio']:.2f}"
+                    f"比值={div['ratio']:.2f}，"
+                    f"{_STRENGTH_ZH_ALL[pb_strength]}（{pb_tag_str}）"
                 ),
                 level=level,
-                confidence=conf,
+                confidence=pb_conf,
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
+                strength=pb_strength,
                 area_ranges=ranges,
                 structure=struct,
             ))
 
     # ── Type 2: First pullback after Type 1 (二买/二卖) ──
-    # Per 108课 §2.4, three strength levels:
-    #   strongest: 2B+3B merged — pullback stays above the hub ZG (二买三买合一)
-    #   strong: pullback low > 1B price (回调幅度小)
-    #   standard: pullback low <= 1B price but doesn't break (标准二买)
     hub_by_idx = {h.idx: h for h in hubs}
 
     for t1 in [p for p in points if p.type == "1B"]:
@@ -2016,27 +2196,18 @@ def find_buy_sell_points(
             s_idx, d_idx = _stroke_seg(first_pullback)
             loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
             pb_low = first_pullback.end.low
-
             ref_hub = hub_by_idx.get(t1.hub_idx)
-            if ref_hub and pb_low > ref_hub.zg:
-                strength = "strongest"
-                strength_label = "最强（二买三买合一）"
-                conf = "high"
-            elif pb_low > t1.price:
-                strength = "strong"
-                strength_label = "强势（高于一买）"
-                conf = "high" if pb_low > t1.price * 1.02 else "medium"
-            else:
-                strength = "standard"
-                strength_label = "标准"
-                conf = "medium"
+            strength, conf, t2_tags = _grade_type2(
+                t1, first_up, first_pullback, ref_hub, is_buy=True)
+            t2_tag_str = "，".join(t2_tags) if t2_tags else ""
 
             points.append(BuySellPoint(
                 type="2B", label="二买",
                 dt=first_pullback.end.dt, price=pb_low,
                 description=(
                     f"[{loc}] 一买(S{t1.stroke_idx})后回调低点({pb_low:.3f})"
-                    f"不破一买价({t1.price:.3f})，{strength_label}"
+                    f"不破一买价({t1.price:.3f})，"
+                    f"{_STRENGTH_ZH_ALL[strength]}（{t2_tag_str}）"
                 ),
                 level=level,
                 confidence=conf,
@@ -2058,27 +2229,18 @@ def find_buy_sell_points(
             s_idx, d_idx = _stroke_seg(first_rally)
             loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
             rl_high = first_rally.end.high
-
             ref_hub = hub_by_idx.get(t1.hub_idx)
-            if ref_hub and rl_high < ref_hub.zd:
-                strength = "strongest"
-                strength_label = "最强（二卖三卖合一）"
-                conf = "high"
-            elif rl_high < t1.price:
-                strength = "strong"
-                strength_label = "强势（低于一卖）"
-                conf = "high" if rl_high < t1.price * 0.98 else "medium"
-            else:
-                strength = "standard"
-                strength_label = "标准"
-                conf = "medium"
+            strength, conf, t2_tags = _grade_type2(
+                t1, first_down, first_rally, ref_hub, is_buy=False)
+            t2_tag_str = "，".join(t2_tags) if t2_tags else ""
 
             points.append(BuySellPoint(
                 type="2S", label="二卖",
                 dt=first_rally.end.dt, price=rl_high,
                 description=(
                     f"[{loc}] 一卖(S{t1.stroke_idx})后反弹高点({rl_high:.3f})"
-                    f"不破一卖价({t1.price:.3f})，{strength_label}"
+                    f"不破一卖价({t1.price:.3f})，"
+                    f"{_STRENGTH_ZH_ALL[strength]}（{t2_tag_str}）"
                 ),
                 level=level,
                 confidence=conf,
@@ -2318,8 +2480,8 @@ def _apply_position_advice(points: list[BuySellPoint]):
 
     Per 108课 §6.4:
       1B → 1/3, 2B → 2/3, 3B → full, 1S → reduce to 1/3, 3S → must clear
-    Also adjusts for 2B strength:
-      strongest (二买三买合一) → directly to full position
+    Adjusted per strength:
+      strongest → upgrade position; weak → downgrade or skip
     """
     for p in points:
         base = _POSITION_ADVICE.get(p.type)
@@ -2328,16 +2490,85 @@ def _apply_position_advice(points: list[BuySellPoint]):
 
         advice, reason = base
 
-        if p.type == "2B" and p.strength == "strongest":
-            advice = "满仓（二买三买合一）"
-            reason = "最强二买，回抽不进中枢，常对应大行情"
-        elif p.type == "2B" and p.strength == "strong":
-            advice = "加至标准仓位 2/3（强势二买）"
-            reason = "二买高于一买，回调幅度小，信心较高"
-        elif p.type == "2S" and p.strength == "strongest":
-            advice = "必须清仓（二卖三卖合一）"
-            reason = "最强二卖，反弹不进中枢，下跌可能加速"
+        # 1B/1S position by strength
+        if p.type == "1B":
+            if p.strength == "strongest":
+                advice = "加仓至 1/2"
+                reason = "最强一买：多中枢+强背驰+DIF收敛，底部信号明确"
+            elif p.strength == "strong":
+                advice = "轻仓试探 1/3"
+                reason = "强势一买，趋势背驰条件好"
+            elif p.strength == "standard":
+                advice = "轻仓试探 1/4"
+                reason = "标准一买，背驰信号一般"
+            elif p.strength == "weak":
+                advice = "极轻仓或观望"
+                reason = "弱一买：背驰不充分或单中枢，风险偏高"
+        elif p.type == "1S":
+            if p.strength == "strongest":
+                advice = "清仓"
+                reason = "最强一卖：多中枢+强背驰+DIF收敛，顶部信号明确"
+            elif p.strength == "strong":
+                advice = "减至 1/3 或清仓"
+                reason = "强势一卖，趋势背驰条件好"
+            elif p.strength == "standard":
+                advice = "减至 1/2"
+                reason = "标准一卖，背驰信号一般"
+            elif p.strength == "weak":
+                advice = "减仓 1/3"
+                reason = "弱一卖：背驰不充分，可能继续上行"
 
+        # PB/PS position by strength
+        elif p.type == "PB":
+            if p.strength in ("strong", "strongest"):
+                advice = "轻仓试探 1/3"
+                reason = "强盘整背驰买点，但后续路径不确定"
+            elif p.strength == "standard":
+                advice = "极轻仓 1/5"
+                reason = "标准盘整买点，多路径可能"
+            elif p.strength == "weak":
+                advice = "观望"
+                reason = "弱盘整买点，信号不充分"
+        elif p.type == "PS":
+            if p.strength in ("strong", "strongest"):
+                advice = "减仓 1/3"
+                reason = "强盘整背驰卖点"
+            elif p.strength == "standard":
+                advice = "小幅减仓"
+                reason = "标准盘整卖点，多路径可能"
+            elif p.strength == "weak":
+                advice = "暂不操作"
+                reason = "弱盘整卖点，信号不充分"
+
+        # 2B/2S position by strength
+        elif p.type == "2B":
+            if p.strength == "strongest":
+                advice = "满仓（二买三买合一）"
+                reason = "最强二买，回抽不进中枢+极浅回调，常对应大行情"
+            elif p.strength == "strong":
+                advice = "加至标准仓位 2/3"
+                reason = "强势二买，回调幅度小，信心较高"
+            elif p.strength == "standard":
+                advice = "加至 1/2"
+                reason = "标准二买，确认一买有效"
+            elif p.strength == "weak":
+                advice = "维持轻仓，观察"
+                reason = "弱二买：深度回调接近一买价，确认力度不足"
+        elif p.type == "2S":
+            if p.strength == "strongest":
+                advice = "必须清仓（二卖三卖合一）"
+                reason = "最强二卖，反弹不进中枢，下跌加速"
+            elif p.strength == "strong":
+                advice = "清仓"
+                reason = "强势二卖，反弹力度弱"
+            elif p.strength == "standard":
+                advice = "减至 1/3"
+                reason = "标准二卖，确认一卖有效"
+            elif p.strength == "weak":
+                advice = "减仓 1/2"
+                reason = "弱二卖：深度反弹接近一卖价，确认力度不足"
+
+        # 3B/3S position by strength (unchanged)
         elif p.type == "3B":
             if p.strength == "strongest":
                 advice = "满仓"
