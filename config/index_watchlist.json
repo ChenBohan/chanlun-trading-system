@@ -681,6 +681,138 @@
       "type": "stock",
       "weight": 1.0,
       "notes": "五粮液(000858.SZ)，白酒二线龙头，与茅台+酒ETF形成梯队比价"
+    },
+    {
+      "index_code": "600048",
+      "index_name": "保利发展",
+      "etf_code": "600048",
+      "etf_name": "保利发展",
+      "market": "SH",
+      "category": "地产",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "保利发展(600048.SH)，央企地产龙头，与房地产ETF比价"
+    },
+    {
+      "index_code": "603019",
+      "index_name": "中科曙光",
+      "etf_code": "603019",
+      "etf_name": "中科曙光",
+      "market": "SH",
+      "category": "信创/服务器",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中科曙光(603019.SH)，信创服务器/AI算力龙头，与计算机ETF比价"
+    },
+    {
+      "index_code": "300418",
+      "index_name": "昆仑万维",
+      "etf_code": "300418",
+      "etf_name": "昆仑万维",
+      "market": "SZ",
+      "category": "AI传媒",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "昆仑万维(300418.SZ)，AI大模型+游戏龙头，与传媒/人工智能ETF比价"
+    },
+    {
+      "index_code": "601668",
+      "index_name": "中国建筑",
+      "etf_code": "601668",
+      "etf_name": "中国建筑",
+      "market": "SH",
+      "category": "基建",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中国建筑(601668.SH)，基建/建筑央企龙头，与基建ETF比价"
+    },
+    {
+      "index_code": "600887",
+      "index_name": "伊利股份",
+      "etf_code": "600887",
+      "etf_name": "伊利股份",
+      "market": "SH",
+      "category": "食品消费",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "伊利股份(600887.SH)，乳制品龙头，与食品饮料ETF比价（非酒类消费代表）"
+    },
+    {
+      "index_code": "600019",
+      "index_name": "宝钢股份",
+      "etf_code": "600019",
+      "etf_name": "宝钢股份",
+      "market": "SH",
+      "category": "钢铁",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "宝钢股份(600019.SH)，钢铁龙头/高股息，补充钢铁周期品种"
+    },
+    {
+      "index_code": "002714",
+      "index_name": "牧原股份",
+      "etf_code": "002714",
+      "etf_name": "牧原股份",
+      "market": "SZ",
+      "category": "农牧",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "牧原股份(002714.SZ)，生猪养殖龙头，强周期品种，猪周期核心标的"
+    },
+    {
+      "index_code": "600585",
+      "index_name": "海螺水泥",
+      "etf_code": "600585",
+      "etf_name": "海螺水泥",
+      "market": "SH",
+      "category": "建材",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "海螺水泥(600585.SH)，水泥龙头，基建链+周期品种"
+    },
+    {
+      "index_code": "601888",
+      "index_name": "中国中免",
+      "etf_code": "601888",
+      "etf_name": "中国中免",
+      "market": "SH",
+      "category": "免税消费",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中国中免(601888.SH)，免税龙头，消费复苏/旅游核心标的"
+    },
+    {
+      "index_code": "601919",
+      "index_name": "中远海控",
+      "etf_code": "601919",
+      "etf_name": "中远海控",
+      "market": "SH",
+      "category": "航运",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中远海控(601919.SH)，集运龙头，全球贸易/航运周期"
+    },
+    {
+      "index_code": "601689",
+      "index_name": "拓普集团",
+      "etf_code": "601689",
+      "etf_name": "拓普集团",
+      "market": "SH",
+      "category": "汽车零部件",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "拓普集团(601689.SH)，汽车零部件/底盘龙头，新能源车产业链延伸"
+    },
+    {
+      "index_code": "600038",
+      "index_name": "中直股份",
+      "etf_code": "600038",
+      "etf_name": "中直股份",
+      "market": "SH",
+      "category": "低空经济",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中直股份(600038.SH)，直升机龙头，与低空经济/通用航空ETF比价"
     }
   ],
   "settings": {
