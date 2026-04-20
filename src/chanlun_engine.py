@@ -2089,13 +2089,32 @@ def find_buy_sell_points(
             ))
 
     # ── Type 3: Hub breakout + pullback (三买/三卖) ──
+    # Compute trend_hub_rank: position of each hub within a consecutive
+    # same-direction trend (1 = first hub after direction change → best).
+    hub_rank: dict[int, int] = {}
+    up_run = 0
+    down_run = 0
+    for h in hubs:
+        evo = h.evolution_type
+        if evo == "新生（上）":
+            up_run += 1
+            down_run = 0
+            hub_rank[h.idx] = up_run
+        elif evo == "新生（下）":
+            down_run += 1
+            up_run = 0
+            hub_rank[h.idx] = down_run
+        else:
+            hub_rank[h.idx] = max(up_run, down_run, 1)
+
     for hub in hubs:
         hub_end_idx = hub.strokes[-1].idx
+        rank = hub_rank.get(hub.idx, 1)
 
-        # 3B: up breakout above ZG, pullback stays above ZG
-        _check_type3_buy(hub, strokes, hub_end_idx, points, level, stroke_to_seg)
-        # 3S: down breakout below ZD, rally stays below ZD
-        _check_type3_sell(hub, strokes, hub_end_idx, points, level, stroke_to_seg)
+        _check_type3_buy(hub, strokes, hub_end_idx, points, level,
+                         stroke_to_seg, rank)
+        _check_type3_sell(hub, strokes, hub_end_idx, points, level,
+                          stroke_to_seg, rank)
 
     points.sort(key=lambda p: p.dt)
 
@@ -2304,6 +2323,33 @@ def _apply_position_advice(points: list[BuySellPoint]):
             advice = "必须清仓（二卖三卖合一）"
             reason = "最强二卖，反弹不进中枢，下跌可能加速"
 
+        elif p.type == "3B":
+            if p.strength == "strongest":
+                advice = "满仓"
+                reason = "最强三买：首个中枢+强突破+浅回抽，趋势起步"
+            elif p.strength == "strong":
+                advice = "加至标准仓位 2/3"
+                reason = "强势三买，中枢突破回踩确认"
+            elif p.strength == "standard":
+                advice = "轻仓试探 1/3"
+                reason = "标准三买，条件一般，轻仓参与"
+            elif p.strength == "weak":
+                advice = "观望不参与"
+                reason = "弱三买：趋势末端/突破不力/回抽过深，风险大于收益"
+        elif p.type == "3S":
+            if p.strength == "strongest":
+                advice = "必须清仓"
+                reason = "最强三卖：首个中枢+强破位+浅反弹，下跌确认"
+            elif p.strength == "strong":
+                advice = "减至 1/3 或清仓"
+                reason = "强势三卖，中枢破位确认"
+            elif p.strength == "standard":
+                advice = "减仓 1/3"
+                reason = "标准三卖，谨慎减仓"
+            elif p.strength == "weak":
+                advice = "暂不操作，观察"
+                reason = "弱三卖：条件不充分，可能假破位"
+
         if p.confidence == "low":
             if "满仓" in advice:
                 advice = advice.replace("满仓", "标准仓位 2/3") + "（置信度低，降仓）"
@@ -2358,31 +2404,119 @@ def _apply_wolf_filter(points: list[BuySellPoint], bars: list[RawBar]):
 
 def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                      points: list[BuySellPoint], level: str,
-                     stroke_to_seg: dict[int, int] | None = None):
-    """Check for Type 3 buy point after hub."""
+                     stroke_to_seg: dict[int, int] | None = None,
+                     trend_hub_rank: int = 1):
+    """Check for Type 3 buy point after hub with quality grading.
+
+    Quality dimensions (per 108课详解, 图解缠论2/3, 土匪注解):
+      1. trend_hub_rank: 1st hub in direction → best; ≥3 → weak/dangerous
+      2. breakout_strength: how far the breakout stroke exceeds ZG
+      3. pullback_depth: how far the pullback stays above ZG (shallower = stronger)
+      4. hub_width: number of strokes in hub (narrow 3-stroke hubs → less reliable)
+      5. MACD: breakout stroke dif_extreme (above zero = stronger)
+    """
     stm = stroke_to_seg or {}
     last_stroke = hub.strokes[-1]
+    hub_range = hub.zg - hub.zd if hub.zg > hub.zd else 1e-9
 
-    def _make_3b(pullback):
+    def _grade_3b(breakout_stroke, pullback):
+        breakout_pct = (breakout_stroke.end.high - hub.zg) / hub_range
+        margin_pct = (pullback.end.low - hub.zg) / hub_range
+        breakout_abs = (breakout_stroke.end.high - hub.zg) / hub.zg if hub.zg else 0
+        hub_width = len(hub.strokes)
+        dif_val = breakout_stroke.dif_extreme
+
+        score = 0
+        tags = []
+
+        # Rank is the dominant factor (108课详解: first hub best; ≥3 risky)
+        if trend_hub_rank == 1:
+            score += 4
+            tags.append("首个中枢")
+        elif trend_hub_rank == 2:
+            score += 1
+            tags.append("第二中枢")
+        elif trend_hub_rank == 3:
+            score -= 2
+            tags.append(f"第{trend_hub_rank}中枢⚠")
+        elif trend_hub_rank <= 5:
+            score -= 4
+            tags.append(f"第{trend_hub_rank}中枢⚠趋势末端")
+        else:
+            score -= 6
+            tags.append(f"第{trend_hub_rank}中枢⚠极晚期")
+
+        # Breakout strength: use price-relative measure (> 1% is meaningful)
+        if breakout_abs > 0.03:
+            score += 2
+            tags.append("强突破")
+        elif breakout_abs > 0.01:
+            score += 1
+        elif breakout_abs < 0.005:
+            score -= 1
+            tags.append("弱突破⚠")
+
+        # Pullback margin: shallower = stronger (图解3: 回抽越轻能量越强)
+        if margin_pct > 0.50:
+            score += 1
+            tags.append("浅回抽")
+        elif margin_pct < 0.05:
+            score -= 1
+            tags.append("深回抽⚠")
+
+        if hub_width >= 7:
+            score += 1
+            tags.append("充分换手")
+        elif hub_width <= 3:
+            score -= 1
+            tags.append("窄中枢⚠")
+
+        if dif_val > 0:
+            score += 1
+            tags.append("DIF>0")
+        elif dif_val < 0:
+            score -= 1
+
+        if score >= 6:
+            return "strongest", "high", tags
+        elif score >= 3:
+            return "strong", "high", tags
+        elif score >= 0:
+            return "standard", "medium", tags
+        else:
+            return "weak", "low", tags
+
+    def _make_3b(breakout_stroke, pullback):
+        strength, conf, tags = _grade_3b(breakout_stroke, pullback)
         s_idx = pullback.idx
         d_idx = stm.get(s_idx, -1)
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
+        _STRENGTH_ZH = {
+            "strongest": "最强", "strong": "强势",
+            "standard": "标准", "weak": "弱",
+        }
+        breakout_pct = (breakout_stroke.end.high - hub.zg) / hub_range * 100
+        margin_pct = (pullback.end.low - hub.zg) / hub_range * 100
+        tag_str = "，".join(tags)
         return BuySellPoint(
             type="3B", label="三买",
             dt=pullback.end.dt, price=pullback.end.low,
             description=(
                 f"[{loc}] 离开中枢{hub.idx + 1}后回试，"
-                f"低点({pullback.end.low:.3f})不破ZG({hub.zg:.3f})"
+                f"低点({pullback.end.low:.3f})不破ZG({hub.zg:.3f})，"
+                f"突破{breakout_pct:.0f}%/余量{margin_pct:.0f}%，"
+                f"{_STRENGTH_ZH[strength]}（{tag_str}）"
             ),
-            level=level, confidence="high", hub_idx=hub.idx,
+            level=level, confidence=conf, hub_idx=hub.idx,
             stroke_idx=s_idx, seg_idx=d_idx,
+            strength=strength,
             invalidation_price=hub.zg,
         )
 
     if last_stroke.direction == 1 and last_stroke.end.high > hub.zg:
         pullback = _find_next_stroke(strokes, last_stroke.idx, direction=-1)
         if pullback and pullback.end.low > hub.zg:
-            points.append(_make_3b(pullback))
+            points.append(_make_3b(last_stroke, pullback))
             return
 
     for s in strokes:
@@ -2391,37 +2525,117 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         if s.direction == 1 and s.end.high > hub.zg:
             pullback = _find_next_stroke(strokes, s.idx, direction=-1)
             if pullback and pullback.end.low > hub.zg:
-                points.append(_make_3b(pullback))
+                points.append(_make_3b(s, pullback))
             break
 
 
 def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                       points: list[BuySellPoint], level: str,
-                      stroke_to_seg: dict[int, int] | None = None):
-    """Check for Type 3 sell point after hub."""
+                      stroke_to_seg: dict[int, int] | None = None,
+                      trend_hub_rank: int = 1):
+    """Check for Type 3 sell point after hub with quality grading.
+
+    Mirror of _check_type3_buy for the sell side.
+    """
     stm = stroke_to_seg or {}
     last_stroke = hub.strokes[-1]
+    hub_range = hub.zg - hub.zd if hub.zg > hub.zd else 1e-9
 
-    def _make_3s(rally):
+    def _grade_3s(breakdown_stroke, rally):
+        breakdown_pct = (hub.zd - breakdown_stroke.end.low) / hub_range
+        margin_pct = (hub.zd - rally.end.high) / hub_range
+        breakdown_abs = (hub.zd - breakdown_stroke.end.low) / hub.zd if hub.zd else 0
+        hub_width = len(hub.strokes)
+        dif_val = breakdown_stroke.dif_extreme
+
+        score = 0
+        tags = []
+
+        if trend_hub_rank == 1:
+            score += 4
+            tags.append("首个中枢")
+        elif trend_hub_rank == 2:
+            score += 1
+            tags.append("第二中枢")
+        elif trend_hub_rank == 3:
+            score -= 2
+            tags.append(f"第{trend_hub_rank}中枢⚠")
+        elif trend_hub_rank <= 5:
+            score -= 4
+            tags.append(f"第{trend_hub_rank}中枢⚠趋势末端")
+        else:
+            score -= 6
+            tags.append(f"第{trend_hub_rank}中枢⚠极晚期")
+
+        if breakdown_abs > 0.03:
+            score += 2
+            tags.append("强破位")
+        elif breakdown_abs > 0.01:
+            score += 1
+        elif breakdown_abs < 0.005:
+            score -= 1
+            tags.append("弱破位⚠")
+
+        if margin_pct > 0.50:
+            score += 1
+            tags.append("浅反弹")
+        elif margin_pct < 0.05:
+            score -= 1
+            tags.append("深反弹⚠")
+
+        if hub_width >= 7:
+            score += 1
+            tags.append("充分换手")
+        elif hub_width <= 3:
+            score -= 1
+            tags.append("窄中枢⚠")
+
+        if dif_val < 0:
+            score += 1
+            tags.append("DIF<0")
+        elif dif_val > 0:
+            score -= 1
+
+        if score >= 6:
+            return "strongest", "high", tags
+        elif score >= 3:
+            return "strong", "high", tags
+        elif score >= 0:
+            return "standard", "medium", tags
+        else:
+            return "weak", "low", tags
+
+    def _make_3s(breakdown_stroke, rally):
+        strength, conf, tags = _grade_3s(breakdown_stroke, rally)
         s_idx = rally.idx
         d_idx = stm.get(s_idx, -1)
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
+        _STRENGTH_ZH = {
+            "strongest": "最强", "strong": "强势",
+            "standard": "标准", "weak": "弱",
+        }
+        breakdown_pct = (hub.zd - breakdown_stroke.end.low) / hub_range * 100
+        margin_pct = (hub.zd - rally.end.high) / hub_range * 100
+        tag_str = "，".join(tags)
         return BuySellPoint(
             type="3S", label="三卖",
             dt=rally.end.dt, price=rally.end.high,
             description=(
                 f"[{loc}] 离开中枢{hub.idx + 1}后回抽，"
-                f"高点({rally.end.high:.3f})不破ZD({hub.zd:.3f})"
+                f"高点({rally.end.high:.3f})不破ZD({hub.zd:.3f})，"
+                f"破位{breakdown_pct:.0f}%/余量{margin_pct:.0f}%，"
+                f"{_STRENGTH_ZH[strength]}（{tag_str}）"
             ),
-            level=level, confidence="high", hub_idx=hub.idx,
+            level=level, confidence=conf, hub_idx=hub.idx,
             stroke_idx=s_idx, seg_idx=d_idx,
+            strength=strength,
             invalidation_price=hub.zd,
         )
 
     if last_stroke.direction == -1 and last_stroke.end.low < hub.zd:
         rally = _find_next_stroke(strokes, last_stroke.idx, direction=1)
         if rally and rally.end.high < hub.zd:
-            points.append(_make_3s(rally))
+            points.append(_make_3s(last_stroke, rally))
             return
 
     for s in strokes:
@@ -2430,7 +2644,7 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         if s.direction == -1 and s.end.low < hub.zd:
             rally = _find_next_stroke(strokes, s.idx, direction=1)
             if rally and rally.end.high < hub.zd:
-                points.append(_make_3s(rally))
+                points.append(_make_3s(s, rally))
             break
 
 
@@ -3162,7 +3376,7 @@ def format_report(result: AnalysisResult) -> str:
             zone = f" [{p.macd_zone}]" if p.macd_zone else ""
             strength_tag = ""
             if p.strength:
-                _STR_MAP = {"strongest": "🔥最强", "strong": "💪强势", "standard": "📌标准"}
+                _STR_MAP = {"strongest": "🔥最强", "strong": "💪强势", "standard": "📌标准", "weak": "⚠弱"}
                 strength_tag = f" {_STR_MAP.get(p.strength, p.strength)}"
             lines.append(f"- **{p.label}** [{p.confidence}]{strength_tag}{wolf}{zone} @ {p.dt}，"
                          f"价格={p.price:.3f}")

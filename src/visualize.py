@@ -354,7 +354,7 @@ function renderGlobalSignals() {
 
   const confIcons = {'high': '🔴高', 'medium': '🟡中', 'low': '⚪低'};
   const typeColors = {'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'};
-  const strengthMap = {'strongest': '最强(2+3合)', 'strong': '强(高于一买)', 'standard': '标准'};
+  const strengthMap = {'strongest': '🔥最强', 'strong': '💪强势', 'standard': '📌标准', 'weak': '⚠弱'};
 
   let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新买卖点（每级别 Top 10）</h3>';
   h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
@@ -748,7 +748,7 @@ function updateSignalPanel(data) {
       if (p.seg_idx >= 0) locStr += '/D' + p.seg_idx;
     }
     const wolfStr = p.wolf ? '<span style="color:#d29922">⚠</span>' : '<span style="color:#3fb950">✓</span>';
-    const strMap = {strongest: '🔥最强', strong: '💪强势', standard: '📌标准'};
+    const strMap = {strongest: '🔥最强', strong: '💪强势', standard: '📌标准', weak: '⚠弱'};
     const strStr = p.strength ? ('<span style="color:#f0883e">' + (strMap[p.strength]||p.strength) + '</span>') : '-';
     let areaStr = '-';
     if (p.ranges && p.ranges.length >= 2) {
@@ -1472,6 +1472,8 @@ def _actionability_score(daily_data: dict, m30_data: dict, syn: dict) -> tuple[i
         "2B": 45, "2S": 45,
         "PB": 15, "PS": 15,
     }
+    # Downweight weak 3B/3S in scoring (趋势末端信号价值低)
+    _STRENGTH_MULT = {"strongest": 1.0, "strong": 0.8, "standard": 0.5, "weak": 0.15}
 
     recency_cutoff = int(m30_total * 0.85)
     recent = [p for p in m30_bsp if p.get("idx", 0) >= recency_cutoff]
@@ -1487,7 +1489,8 @@ def _actionability_score(daily_data: dict, m30_data: dict, syn: dict) -> tuple[i
     base = type_weights.get(sig_type, 5)
 
     recency_ratio = latest["idx"] / max(m30_total - 1, 1)
-    score += int(base * recency_ratio)
+    str_mult = _STRENGTH_MULT.get(latest.get("strength", ""), 1.0)
+    score += int(base * recency_ratio * str_mult)
 
     if is_up and is_buy:
         score += 25
@@ -1610,6 +1613,7 @@ def generate_dashboard(data_dir: str = None,
                 latest_data_time = last_dt
 
     # Collect global signals (1B/1S/2B/2S/3B/3S) across all indices
+    # Filter out weak 3B/3S — they have low operational value per theory.
     level_labels = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
     idx_name_map = {i.etf_code: i.etf_name for i in indices}
     global_signals: list[dict] = []
@@ -1623,6 +1627,8 @@ def generate_dashboard(data_dir: str = None,
         level_cn = level_labels.get(level_key, level_key)
         for p in data.get("bsp", []):
             if p["type"] not in valid_types:
+                continue
+            if p["type"] in ("3B", "3S") and p.get("strength") == "weak":
                 continue
             dt_str = data["dates"][p["idx"]] if p["idx"] < len(data["dates"]) else ""
             entry = {
@@ -1802,6 +1808,8 @@ def generate_mobile_dashboard(data_dir: str = None,
         level_cn = level_labels_m.get(level_key, level_key)
         for p in data.get("bsp", []):
             if p["type"] not in valid_types_m:
+                continue
+            if p["type"] in ("3B", "3S") and p.get("strength") == "weak":
                 continue
             dt_str = data["dates"][p["idx"]] if p["idx"] < len(data["dates"]) else ""
             entry_m = {
@@ -2533,7 +2541,7 @@ function updateSignalPanel(data) {{
     let locStr = '';
     if (p.stroke_idx >= 0) {{ locStr = 'S' + p.stroke_idx; if (p.seg_idx >= 0) locStr += '/D' + p.seg_idx; }}
     const wolfStr = p.wolf ? '<span style="color:#d29922">⚠</span>' : '<span style="color:#3fb950">✓</span>';
-    const strMap = {{strongest: '🔥', strong: '💪', standard: '📌'}};
+    const strMap = {{strongest: '🔥', strong: '💪', standard: '📌', weak: '⚠'}};
     const strStr = p.strength ? (strMap[p.strength]||p.strength) : '-';
     let areaStr = '-';
     if (p.ranges && p.ranges.length >= 2) {{
