@@ -2091,10 +2091,14 @@ def find_buy_sell_points(
     # ── Type 3: Hub breakout + pullback (三买/三卖) ──
     # Compute trend_hub_rank: position of each hub within a consecutive
     # same-direction trend (1 = first hub after direction change → best).
+    # Also compute churn_penalty: frequent direction flips in recent hubs
+    # indicate large-level consolidation, reducing 3B/3S value.
     hub_rank: dict[int, int] = {}
+    hub_churn: dict[int, int] = {}
     up_run = 0
     down_run = 0
-    for h in hubs:
+    _CHURN_WINDOW = 6
+    for i, h in enumerate(hubs):
         evo = h.evolution_type
         if evo == "新生（上）":
             up_run += 1
@@ -2107,14 +2111,25 @@ def find_buy_sell_points(
         else:
             hub_rank[h.idx] = max(up_run, down_run, 1)
 
+        window = hubs[max(0, i - _CHURN_WINDOW + 1): i + 1]
+        flips = 0
+        for j in range(1, len(window)):
+            e_prev = window[j - 1].evolution_type
+            e_curr = window[j].evolution_type
+            if (("上" in e_prev and "下" in e_curr) or
+                    ("下" in e_prev and "上" in e_curr)):
+                flips += 1
+        hub_churn[h.idx] = flips
+
     for hub in hubs:
         hub_end_idx = hub.strokes[-1].idx
         rank = hub_rank.get(hub.idx, 1)
+        churn = hub_churn.get(hub.idx, 0)
 
         _check_type3_buy(hub, strokes, hub_end_idx, points, level,
-                         stroke_to_seg, rank)
+                         stroke_to_seg, rank, churn)
         _check_type3_sell(hub, strokes, hub_end_idx, points, level,
-                          stroke_to_seg, rank)
+                          stroke_to_seg, rank, churn)
 
     points.sort(key=lambda p: p.dt)
 
@@ -2405,7 +2420,7 @@ def _apply_wolf_filter(points: list[BuySellPoint], bars: list[RawBar]):
 def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                      points: list[BuySellPoint], level: str,
                      stroke_to_seg: dict[int, int] | None = None,
-                     trend_hub_rank: int = 1):
+                     trend_hub_rank: int = 1, churn: int = 0):
     """Check for Type 3 buy point after hub with quality grading.
 
     Quality dimensions (per 108课详解, 图解缠论2/3, 土匪注解):
@@ -2414,6 +2429,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
       3. pullback_depth: how far the pullback stays above ZG (shallower = stronger)
       4. hub_width: number of strokes in hub (narrow 3-stroke hubs → less reliable)
       5. MACD: breakout stroke dif_extreme (above zero = stronger)
+      6. churn: direction-flip count in recent hubs (high = large-level consolidation)
     """
     stm = stroke_to_seg or {}
     last_stroke = hub.strokes[-1]
@@ -2429,7 +2445,6 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         score = 0
         tags = []
 
-        # Rank is the dominant factor (108课详解: first hub best; ≥3 risky)
         if trend_hub_rank == 1:
             score += 4
             tags.append("首个中枢")
@@ -2446,7 +2461,14 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             score -= 6
             tags.append(f"第{trend_hub_rank}中枢⚠极晚期")
 
-        # Breakout strength: use price-relative measure (> 1% is meaningful)
+        # Frequent direction flips → large-level consolidation, not real trend
+        if churn >= 3:
+            score -= 3
+            tags.append("频繁翻转⚠震荡市")
+        elif churn >= 2:
+            score -= 1
+            tags.append("方向不稳")
+
         if breakout_abs > 0.03:
             score += 2
             tags.append("强突破")
@@ -2532,7 +2554,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
 def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                       points: list[BuySellPoint], level: str,
                       stroke_to_seg: dict[int, int] | None = None,
-                      trend_hub_rank: int = 1):
+                      trend_hub_rank: int = 1, churn: int = 0):
     """Check for Type 3 sell point after hub with quality grading.
 
     Mirror of _check_type3_buy for the sell side.
@@ -2566,6 +2588,13 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         else:
             score -= 6
             tags.append(f"第{trend_hub_rank}中枢⚠极晚期")
+
+        if churn >= 3:
+            score -= 3
+            tags.append("频繁翻转⚠震荡市")
+        elif churn >= 2:
+            score -= 1
+            tags.append("方向不稳")
 
         if breakdown_abs > 0.03:
             score += 2
