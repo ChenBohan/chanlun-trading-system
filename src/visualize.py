@@ -356,7 +356,7 @@ function renderGlobalSignals() {
   const typeColors = {'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'};
   const strengthMap = {'strongest': '🔥最强', 'strong': '💪强势', 'standard': '📌标准', 'weak': '⚠弱'};
 
-  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新买卖点（每级别 Top 10）</h3>';
+  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新买卖点（每级别最新 20 个）</h3>';
   h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
   levels.forEach(lv => {
     const items = GLOBAL_SIGNALS[lv]||[];
@@ -1658,7 +1658,7 @@ def generate_dashboard(data_dir: str = None,
     global_signals_by_level: dict[str, list] = {"日线": [], "30分钟": [], "5分钟": []}
     for s in global_signals:
         lv = s["level"]
-        if lv in global_signals_by_level and len(global_signals_by_level[lv]) < 10:
+        if lv in global_signals_by_level and len(global_signals_by_level[lv]) < 20:
             global_signals_by_level[lv].append(s)
     global_signals_top = global_signals_by_level
 
@@ -1830,7 +1830,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     mobile_gs_by_level: dict[str, list] = {"日线": [], "30分钟": [], "5分钟": []}
     for s in mobile_global_signals:
         lv = s["level"]
-        if lv in mobile_gs_by_level and len(mobile_gs_by_level[lv]) < 10:
+        if lv in mobile_gs_by_level and len(mobile_gs_by_level[lv]) < 20:
             mobile_gs_by_level[lv].append(s)
     mobile_global_signals_top = mobile_gs_by_level
     mobile_global_signals_json = json.dumps(mobile_global_signals_top, ensure_ascii=False)
@@ -2005,7 +2005,7 @@ function renderMobileGlobalSignals() {{
   const confIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
   const tClrs = {{'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'}};
 
-  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点 (每级别10)</div>';
+  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点 (每级别20)</div>';
   h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
   levels.forEach(lv => {{
     const items = GLOBAL_SIGNALS[lv]||[];
