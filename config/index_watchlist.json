@@ -527,6 +527,160 @@
       "type": "stock",
       "weight": 1.0,
       "notes": "比亚迪(002594.SZ)，新能源车龙头，产业链垂直整合，与新能源车ETF比价"
+    },
+    {
+      "index_code": "600036",
+      "index_name": "招商银行",
+      "etf_code": "600036",
+      "etf_name": "招商银行",
+      "market": "SH",
+      "category": "银行",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "招商银行(600036.SH)，零售银行龙头，走势规范，与银行ETF比价"
+    },
+    {
+      "index_code": "601318",
+      "index_name": "中国平安",
+      "etf_code": "601318",
+      "etf_name": "中国平安",
+      "market": "SH",
+      "category": "保险",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中国平安(601318.SH)，保险/金融龙头，与保险ETF比价"
+    },
+    {
+      "index_code": "600030",
+      "index_name": "中信证券",
+      "etf_code": "600030",
+      "etf_name": "中信证券",
+      "market": "SH",
+      "category": "券商",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中信证券(600030.SH)，券商龙头，牛市弹性大，与证券ETF比价"
+    },
+    {
+      "index_code": "600276",
+      "index_name": "恒瑞医药",
+      "etf_code": "600276",
+      "etf_name": "恒瑞医药",
+      "market": "SH",
+      "category": "创新药",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "恒瑞医药(600276.SH)，创新药龙头，与医药/创新药ETF比价"
+    },
+    {
+      "index_code": "600900",
+      "index_name": "长江电力",
+      "etf_code": "600900",
+      "etf_name": "长江电力",
+      "market": "SH",
+      "category": "电力",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "长江电力(600900.SH)，水电龙头/高股息防御，与电力ETF比价"
+    },
+    {
+      "index_code": "601012",
+      "index_name": "隆基绿能",
+      "etf_code": "601012",
+      "etf_name": "隆基绿能",
+      "market": "SH",
+      "category": "光伏",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "隆基绿能(601012.SH)，光伏龙头，与光伏ETF比价"
+    },
+    {
+      "index_code": "000333",
+      "index_name": "美的集团",
+      "etf_code": "000333",
+      "etf_name": "美的集团",
+      "market": "SZ",
+      "category": "家电",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "美的集团(000333.SZ)，家电龙头，消费+出海，与家电ETF比价"
+    },
+    {
+      "index_code": "601088",
+      "index_name": "中国神华",
+      "etf_code": "601088",
+      "etf_name": "中国神华",
+      "market": "SH",
+      "category": "煤炭",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中国神华(601088.SH)，煤炭龙头/高股息，与煤炭ETF比价"
+    },
+    {
+      "index_code": "600309",
+      "index_name": "万华化学",
+      "etf_code": "600309",
+      "etf_name": "万华化学",
+      "market": "SH",
+      "category": "化工",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "万华化学(600309.SH)，MDI全球龙头，化工周期核心品种"
+    },
+    {
+      "index_code": "300124",
+      "index_name": "汇川技术",
+      "etf_code": "300124",
+      "etf_name": "汇川技术",
+      "market": "SZ",
+      "category": "智能制造",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "汇川技术(300124.SZ)，工控/伺服电机龙头，与机器人ETF比价"
+    },
+    {
+      "index_code": "688041",
+      "index_name": "海光信息",
+      "etf_code": "688041",
+      "etf_name": "海光信息",
+      "market": "SH",
+      "category": "AI芯片",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "海光信息(688041.SH)，国产CPU/GPU龙头，与芯片/人工智能ETF比价"
+    },
+    {
+      "index_code": "600760",
+      "index_name": "中航沈飞",
+      "etf_code": "600760",
+      "etf_name": "中航沈飞",
+      "market": "SH",
+      "category": "军工",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中航沈飞(600760.SH)，战斗机总装龙头，与军工ETF比价"
+    },
+    {
+      "index_code": "600941",
+      "index_name": "中国移动",
+      "etf_code": "600941",
+      "etf_name": "中国移动",
+      "market": "SH",
+      "category": "电信运营",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中国移动(600941.SH)，运营商龙头/高股息/数字经济，补全三大运营商"
+    },
+    {
+      "index_code": "000858",
+      "index_name": "五粮液",
+      "etf_code": "000858",
+      "etf_name": "五粮液",
+      "market": "SZ",
+      "category": "消费",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "五粮液(000858.SZ)，白酒二线龙头，与茅台+酒ETF形成梯队比价"
     }
   ],
   "settings": {
