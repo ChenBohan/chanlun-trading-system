@@ -2678,6 +2678,46 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
     last_stroke = hub.strokes[-1]
     hub_range = hub.zg - hub.zd if hub.zg > hub.zd else 1e-9
 
+    def _classify_departure_pullback_buy(breakout_stroke, pullback):
+        """Classify departure+pullback combination per 108课 lesson 18.
+
+        Lesson 18: hub destruction has only 3 combinations:
+          趋势+盘整 (strongest), 趋势+反趋势, 盘整+反趋势
+        Plus 盘整+盘整 (weak, per lesson 53 2008-1-8 解盘)
+
+        At stroke level, "trend departure" is approximated by breakout
+        range strength since individual strokes lack internal hub structure.
+        """
+        dep_above_zg = breakout_stroke.end.high - hub.zg
+        dep_total = abs(breakout_stroke.end.high - breakout_stroke.start.low)
+        pb_total = abs(pullback.start.high - pullback.end.low)
+
+        dep_strong = (dep_above_zg > hub_range * 0.5
+                      or dep_total > hub_range * 0.8)
+        dep_weak = dep_above_zg < hub_range * 0.3 and dep_total < hub_range * 0.5
+
+        if dep_above_zg > 0:
+            retrace = pb_total / dep_above_zg
+        else:
+            retrace = 1.0
+        pb_is_shallow = retrace < 0.382
+        pb_is_deep = retrace > 0.618
+
+        if dep_strong and pb_is_shallow:
+            return "趋势+盘整", 3
+        elif dep_strong and not pb_is_deep:
+            return "趋势+回抽", 2
+        elif dep_strong and pb_is_deep:
+            return "趋势+反趋势", 1
+        elif dep_weak and pb_is_shallow:
+            return "盘整+盘整", -2
+        elif dep_weak and pb_is_deep:
+            return "盘整+反趋势", 0
+        elif dep_weak:
+            return "盘整离开", -1
+        else:
+            return "标准离开", 0
+
     def _grade_3b(breakout_stroke, pullback):
         breakout_pct = (breakout_stroke.end.high - hub.zg) / hub_range
         margin_pct = (pullback.end.low - hub.zg) / hub_range
@@ -2688,10 +2728,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         score = 0
         tags = []
 
-        # Per 108课/图解缠论2/土匪注解: trend_hub_rank determines context.
-        # rank=1 → only one hub in direction = 盘整 context → higher risk
-        # rank=2 → two hubs confirmed = 趋势 context → BEST risk/reward
-        # rank≥3 → trend continuation but potentially late stage
+        # Dimension 1: trend context (per 108课/图解缠论2/土匪注解)
         if trend_hub_rank == 1:
             score += 1
             tags.append("盘整三买")
@@ -2715,8 +2752,14 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             score -= 1
             tags.append("方向不稳")
 
-        # Departure-pullback flatness filter (图解缠论2 §2.3):
-        # Both departure and pullback being flat → hub extension, NOT real 3B
+        # Dimension 2: departure+pullback combination (per lesson 18/53)
+        combo_label, combo_score = _classify_departure_pullback_buy(
+            breakout_stroke, pullback)
+        score += combo_score
+        if combo_score != 0:
+            tags.append(combo_label)
+
+        # Flatness filter (图解缠论2 §2.3)
         dep_range = abs(breakout_stroke.end.high - breakout_stroke.start.low)
         pb_range = abs(pullback.start.high - pullback.end.low)
         if hub_range > 0:
@@ -2758,9 +2801,9 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         elif dif_val < 0:
             score -= 1
 
-        if score >= 7:
+        if score >= 8:
             return "strongest", "high", tags
-        elif score >= 4:
+        elif score >= 5:
             return "strong", "high", tags
         elif score >= 1:
             return "standard", "medium", tags
@@ -2827,6 +2870,38 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
     last_stroke = hub.strokes[-1]
     hub_range = hub.zg - hub.zd if hub.zg > hub.zd else 1e-9
 
+    def _classify_departure_pullback_sell(breakdown_stroke, rally):
+        """Mirror of _classify_departure_pullback_buy for sell side."""
+        dep_below_zd = hub.zd - breakdown_stroke.end.low
+        dep_total = abs(breakdown_stroke.start.high - breakdown_stroke.end.low)
+        rl_total = abs(rally.end.high - rally.start.low)
+
+        dep_strong = (dep_below_zd > hub_range * 0.5
+                      or dep_total > hub_range * 0.8)
+        dep_weak = dep_below_zd < hub_range * 0.3 and dep_total < hub_range * 0.5
+
+        if dep_below_zd > 0:
+            retrace = rl_total / dep_below_zd
+        else:
+            retrace = 1.0
+        rl_is_shallow = retrace < 0.382
+        rl_is_deep = retrace > 0.618
+
+        if dep_strong and rl_is_shallow:
+            return "趋势+盘整", 3
+        elif dep_strong and not rl_is_deep:
+            return "趋势+回抽", 2
+        elif dep_strong and rl_is_deep:
+            return "趋势+反趋势", 1
+        elif dep_weak and rl_is_shallow:
+            return "盘整+盘整", -2
+        elif dep_weak and rl_is_deep:
+            return "盘整+反趋势", 0
+        elif dep_weak:
+            return "盘整离开", -1
+        else:
+            return "标准离开", 0
+
     def _grade_3s(breakdown_stroke, rally):
         breakdown_pct = (hub.zd - breakdown_stroke.end.low) / hub_range
         margin_pct = (hub.zd - rally.end.high) / hub_range
@@ -2837,7 +2912,7 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         score = 0
         tags = []
 
-        # Mirror of 3B context logic (see _grade_3b comments)
+        # Dimension 1: trend context
         if trend_hub_rank == 1:
             score += 1
             tags.append("盘整三卖")
@@ -2861,7 +2936,14 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             score -= 1
             tags.append("方向不稳")
 
-        # Departure-pullback flatness filter (mirror of 3B)
+        # Dimension 2: departure+pullback combination (per lesson 18/53)
+        combo_label, combo_score = _classify_departure_pullback_sell(
+            breakdown_stroke, rally)
+        score += combo_score
+        if combo_score != 0:
+            tags.append(combo_label)
+
+        # Flatness filter
         dep_range = abs(breakdown_stroke.start.high - breakdown_stroke.end.low)
         rl_range = abs(rally.end.high - rally.start.low)
         if hub_range > 0:
@@ -2903,9 +2985,9 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         elif dif_val > 0:
             score -= 1
 
-        if score >= 7:
+        if score >= 8:
             return "strongest", "high", tags
-        elif score >= 4:
+        elif score >= 5:
             return "strong", "high", tags
         elif score >= 1:
             return "standard", "medium", tags
