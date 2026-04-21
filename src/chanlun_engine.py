@@ -2290,15 +2290,16 @@ def find_buy_sell_points(
                 flips += 1
         hub_churn[h.idx] = flips
 
-    for hub in hubs:
+    for i, hub in enumerate(hubs):
         hub_end_idx = hub.strokes[-1].idx
         rank = hub_rank.get(hub.idx, 1)
         churn = hub_churn.get(hub.idx, 0)
+        next_hub = hubs[i + 1] if i + 1 < len(hubs) else None
 
         _check_type3_buy(hub, strokes, hub_end_idx, points, level,
-                         stroke_to_seg, rank, churn)
+                         stroke_to_seg, rank, churn, next_hub)
         _check_type3_sell(hub, strokes, hub_end_idx, points, level,
-                          stroke_to_seg, rank, churn)
+                          stroke_to_seg, rank, churn, next_hub)
 
     points.sort(key=lambda p: p.dt)
 
@@ -2658,8 +2659,12 @@ def _apply_wolf_filter(points: list[BuySellPoint], bars: list[RawBar]):
 def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                      points: list[BuySellPoint], level: str,
                      stroke_to_seg: dict[int, int] | None = None,
-                     trend_hub_rank: int = 1, churn: int = 0):
+                     trend_hub_rank: int = 1, churn: int = 0,
+                     next_hub: Hub | None = None):
     """Check for Type 3 buy point after hub with quality grading.
+
+    Per 108课 lesson 20: departure and pullback must be the FIRST sub-level
+    movements after leaving the hub. Scan stops at the next hub boundary.
 
     Quality dimensions (per 108课详解, 图解缠论2/3, 土匪注解):
       1. trend_hub_rank: 1st hub in direction → best; ≥3 → weak/dangerous
@@ -2773,6 +2778,8 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             invalidation_price=hub.zg,
         )
 
+    scan_limit = next_hub.strokes[0].idx if next_hub else len(strokes) + 1
+
     if last_stroke.direction == 1 and last_stroke.end.high > hub.zg:
         pullback = _find_next_stroke(strokes, last_stroke.idx, direction=-1)
         if pullback and pullback.end.low > hub.zg:
@@ -2782,6 +2789,8 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
     for s in strokes:
         if s.idx <= hub_end_idx:
             continue
+        if s.idx >= scan_limit:
+            break
         if s.direction == 1 and s.end.high > hub.zg:
             pullback = _find_next_stroke(strokes, s.idx, direction=-1)
             if pullback and pullback.end.low > hub.zg:
@@ -2792,7 +2801,8 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
 def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                       points: list[BuySellPoint], level: str,
                       stroke_to_seg: dict[int, int] | None = None,
-                      trend_hub_rank: int = 1, churn: int = 0):
+                      trend_hub_rank: int = 1, churn: int = 0,
+                      next_hub: Hub | None = None):
     """Check for Type 3 sell point after hub with quality grading.
 
     Mirror of _check_type3_buy for the sell side.
@@ -2899,6 +2909,8 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             invalidation_price=hub.zd,
         )
 
+    scan_limit = next_hub.strokes[0].idx if next_hub else len(strokes) + 1
+
     if last_stroke.direction == -1 and last_stroke.end.low < hub.zd:
         rally = _find_next_stroke(strokes, last_stroke.idx, direction=1)
         if rally and rally.end.high < hub.zd:
@@ -2908,6 +2920,8 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
     for s in strokes:
         if s.idx <= hub_end_idx:
             continue
+        if s.idx >= scan_limit:
+            break
         if s.direction == -1 and s.end.low < hub.zd:
             rally = _find_next_stroke(strokes, s.idx, direction=1)
             if rally and rally.end.high < hub.zd:
