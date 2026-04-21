@@ -39,7 +39,10 @@ def cmd_fetch(args):
     for idx in indices:
         print(f"  {idx.index_name} ({idx.etf_name} {idx.etf_code}) [{idx.category}]")
 
-    results = fetch_all_indices(indices=indices, beg=args.beg, delay=args.delay)
+    results = fetch_all_indices(
+        indices=indices, beg=args.beg,
+        delay=args.delay, max_workers=args.workers,
+    )
     print_fetch_summary(results)
 
     fmt = args.format
@@ -148,7 +151,10 @@ def cmd_run(args):
     # Step 1: Fetch
     print("\n[Step 1/3] 数据拉取...")
     indices = load_index_watchlist()
-    results = fetch_all_indices(indices=indices, beg=args.beg, delay=args.delay)
+    results = fetch_all_indices(
+        indices=indices, beg=args.beg,
+        delay=args.delay, max_workers=args.workers,
+    )
     print_fetch_summary(results)
     save_fetch_results(results, fmt="csv")
 
@@ -176,8 +182,10 @@ def main():
     p_fetch.add_argument("--beg", default="20250101", help="起始日期 YYYYMMDD")
     p_fetch.add_argument("--format", choices=["csv", "md"], default="csv",
                          help="输出格式 (默认: csv)")
-    p_fetch.add_argument("--delay", type=float, default=1.0,
-                         help="API 调用间隔秒数 (默认: 1.0)")
+    p_fetch.add_argument("--delay", type=float, default=0.2,
+                         help="API 调用间隔秒数 (默认: 0.2)")
+    p_fetch.add_argument("--workers", type=int, default=8,
+                         help="并发线程数 (默认: 8)")
 
     # analyze
     p_analyze = sub.add_parser("analyze", help="分析单个CSV文件")
@@ -200,8 +208,10 @@ def main():
     # run
     p_run = sub.add_parser("run", help="完整流水线: 拉取 → 分析 → 仪表盘")
     p_run.add_argument("--beg", default="20250101", help="起始日期 YYYYMMDD")
-    p_run.add_argument("--delay", type=float, default=1.0,
-                        help="API 调用间隔秒数 (默认: 1.0)")
+    p_run.add_argument("--delay", type=float, default=0.2,
+                        help="API 调用间隔秒数 (默认: 0.2)")
+    p_run.add_argument("--workers", type=int, default=8,
+                        help="并发线程数 (默认: 8)")
 
     args = parser.parse_args()
 

@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Optional
@@ -309,19 +311,60 @@ def load_settings(path: str = None) -> dict:
 # Batch Fetch for All Indices
 # ════════════════════════════════════════════════════════════════════
 
+_print_lock = threading.Lock()
+
+
+def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
+                     beg: str, datalen_daily: int, datalen_intraday: int,
+                     delay: float) -> FetchResult:
+    """Fetch all 3 timeframes for a single index (runs in a worker thread)."""
+    result = FetchResult(index_cfg=idx)
+    bar_counts = {}
+
+    for period, label in [("daily", "日线"), ("30min", "30分钟"), ("5min", "5分钟")]:
+        try:
+            dl = datalen_daily if period == "daily" else datalen_intraday
+            bars = fetch_kline(
+                idx.etf_code, period,
+                market=idx.market, beg=beg, datalen=dl,
+            )
+            if period == "daily":
+                result.daily = bars
+            elif period == "30min":
+                result.min30 = bars
+            else:
+                result.min5 = bars
+            bar_counts[label] = len(bars)
+        except Exception as e:
+            msg = f"{idx.etf_name} {label}: {e}"
+            result.errors.append(msg)
+            bar_counts[label] = f"ERR"
+
+        if delay > 0:
+            time.sleep(delay)
+
+    summary = " | ".join(f"{k} {v}" for k, v in bar_counts.items())
+    with _print_lock:
+        print(f"  [{seq}/{total}] {idx.etf_name} {idx.etf_code}: {summary}")
+
+    return result
+
+
 def fetch_all_indices(indices: list[IndexConfig] = None,
                       beg: str = None,
                       datalen_daily: int = None,
                       datalen_intraday: int = None,
-                      delay: float = 1.0) -> list[FetchResult]:
-    """Fetch daily + 30min + 5min data for all indices.
+                      delay: float = 0.2,
+                      max_workers: int = 8) -> list[FetchResult]:
+    """Fetch daily + 30min + 5min data for all indices (parallelized).
 
     Args:
         indices: list of IndexConfig (loads from config if None)
         beg: start date for filtering (reads from config if None)
         datalen_daily: max bars for daily Sina (reads from config if None)
         datalen_intraday: max bars for intraday Sina (reads from config if None)
-        delay: seconds to wait between API calls to avoid throttling
+        delay: seconds between API calls within each worker thread
+        max_workers: number of concurrent download threads (default 8)
     """
     if indices is None:
         indices = load_index_watchlist()
@@ -334,38 +377,32 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
         datalen_intraday = settings.get("datalen_intraday", 2000)
 
     total = len(indices)
-    results = []
+    print(f"\n并发拉取 {total} 个标的（{max_workers} 线程，间隔 {delay}s）...")
 
-    for i, idx in enumerate(indices, 1):
-        print(f"\n[{i}/{total}] {idx.index_name} ({idx.etf_name} {idx.etf_code})")
-        result = FetchResult(index_cfg=idx)
+    ordered_results: list[FetchResult | None] = [None] * total
 
-        for period, label in [("daily", "日线"), ("30min", "30分钟"), ("5min", "5分钟")]:
-            print(f"  -> {label} ...", end=" ", flush=True)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+        for i, idx in enumerate(indices):
+            fut = executor.submit(
+                _fetch_one_index, idx, i + 1, total,
+                beg, datalen_daily, datalen_intraday, delay,
+            )
+            futures[fut] = i
+
+        for fut in as_completed(futures):
+            idx_pos = futures[fut]
             try:
-                dl = datalen_daily if period == "daily" else datalen_intraday
-                bars = fetch_kline(
-                    idx.etf_code, period,
-                    market=idx.market, beg=beg, datalen=dl,
-                )
-                if period == "daily":
-                    result.daily = bars
-                elif period == "30min":
-                    result.min30 = bars
-                else:
-                    result.min5 = bars
-                print(f"{len(bars)} bars")
+                ordered_results[idx_pos] = fut.result()
             except Exception as e:
-                msg = f"{idx.etf_name} {label}: {e}"
-                result.errors.append(msg)
-                print(f"ERROR: {e}")
+                idx = indices[idx_pos]
+                with _print_lock:
+                    print(f"  [{idx_pos+1}/{total}] {idx.etf_name} FATAL: {e}")
+                ordered_results[idx_pos] = FetchResult(
+                    index_cfg=idx, errors=[str(e)],
+                )
 
-            if delay > 0:
-                time.sleep(delay)
-
-        results.append(result)
-
-    return results
+    return [r for r in ordered_results if r is not None]
 
 
 # ════════════════════════════════════════════════════════════════════
