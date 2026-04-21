@@ -906,6 +906,9 @@ def _stroke_range(s: Stroke) -> tuple[float, float]:
     return max(s.start.high, s.end.high), min(s.start.low, s.end.low)
 
 
+_HUB_MIN_WIDTH_RATIO = 0.005  # 0.5% — skip degenerate hubs with negligible overlap
+
+
 def find_hubs(strokes: list[Stroke]) -> list[Hub]:
     """Build hubs from stroke sequence."""
     if len(strokes) < 3:
@@ -920,6 +923,10 @@ def find_hubs(strokes: list[Stroke]) -> list[Hub]:
         zd = max(r[1] for r in ranges)
 
         if zd >= zg:
+            i += 1
+            continue
+
+        if zd > 0 and (zg - zd) / zd < _HUB_MIN_WIDTH_RATIO:
             i += 1
             continue
 
