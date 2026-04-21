@@ -510,7 +510,9 @@ async function init() {
     }
     const btn = document.createElement('button');
     btn.className = 'nav-btn' + (i === 0 ? ' active' : '');
-    const trendIcon = (idx.trend||'').includes('上涨') ? '🔺' : ((idx.trend||'').includes('下跌') ? '🔻' : '➖');
+    const isUp = (idx.trend||'').includes('上涨');
+    const isDown = (idx.trend||'').includes('下跌');
+    const trendIcon = isUp ? '<span style="color:#f85149">▲</span>' : (isDown ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>');
     btn.innerHTML = trendIcon + ' ' + idx.index_name;
     btn.title = (idx.summary || '') + ' | 评分:' + idx.score;
     btn.dataset.code = idx.etf_code;
@@ -1940,8 +1942,11 @@ def generate_mobile_dashboard(data_dir: str = None,
                 f'{label}</div>')
             last_type = il.get("type")
         active = ' active' if i == 0 else ''
-        trend_icon = ('🔺' if '上涨' in il.get('trend', '')
-                      else ('🔻' if '下跌' in il.get('trend', '') else '➖'))
+        trend_up = '上涨' in il.get('trend', '')
+        trend_dn = '下跌' in il.get('trend', '')
+        trend_icon = ('<span style="color:#f85149">▲</span>' if trend_up
+                      else ('<span style="color:#3fb950">▼</span>' if trend_dn
+                            else '<span style="color:#8b949e">—</span>'))
         tab_parts.append(
             f'<div class="idx-tab{active}" onclick="switchIndex(\'{il["etf_code"]}\')">'
             f'{trend_icon} {il["index_name"]}</div>')
