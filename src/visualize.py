@@ -1079,7 +1079,7 @@ function renderChart(data) {
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1], start: 60, end: 100 },
+      { type: 'inside', xAxisIndex: [0, 1], start: 80, end: 100 },
       { type: 'slider', xAxisIndex: [0, 1], bottom: 10, height: 20,
         borderColor: '#30363d', fillerColor: 'rgba(88,166,255,0.1)',
         textStyle: { color: '#8b949e' } },
@@ -1642,9 +1642,9 @@ def generate_dashboard(data_dir: str = None,
         entry["summary"] = summary
         entry.update(overview)
 
-        # Find most recent signal datetime across all levels for sorting
+        # Find most recent signal datetime from daily & 30min only for sorting
         latest_sig_dt = ""
-        for lk in ("daily", "30min", "5min"):
+        for lk in ("daily", "30min"):
             d = all_data.get(f"{i.etf_code}_{lk}", {})
             dates = d.get("dates", [])
             for p in d.get("bsp", []):
@@ -1830,7 +1830,7 @@ def generate_mobile_dashboard(data_dir: str = None,
         entry.update(overview)
 
         latest_sig_dt = ""
-        for lk in ("daily", "30min", "5min"):
+        for lk in ("daily", "30min"):
             d = all_data.get(f"{idx.etf_code}_{lk}", {})
             dates = d.get("dates", [])
             for p in d.get("bsp", []):
@@ -2243,7 +2243,10 @@ async function ensureData() {{
 function resetView() {{
   const d = getData();
   if (!d) return;
-  viewStart = 0; viewEnd = d.dates.length;
+  const total = d.dates.length;
+  viewEnd = total;
+  viewStart = Math.max(0, Math.round(total * 0.8));
+  if (viewEnd - viewStart < MIN_VIEW) viewStart = Math.max(0, viewEnd - MIN_VIEW);
 }}
 function clampView(total) {{
   let range = viewEnd - viewStart;
