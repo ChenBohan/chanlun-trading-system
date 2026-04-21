@@ -1077,6 +1077,171 @@
       "type": "stock",
       "weight": 1.0,
       "notes": "兆易创新(603986.SH)，NOR Flash+DRAM龙头，存储国产替代核心"
+    },
+    {
+      "index_code": "688017",
+      "index_name": "绿的谐波",
+      "etf_code": "688017",
+      "etf_name": "绿的谐波",
+      "market": "SH",
+      "category": "人形机器人",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "绿的谐波(688017.SH)，谐波减速器龙头，人形机器人核心零部件"
+    },
+    {
+      "index_code": "300502",
+      "index_name": "新易盛",
+      "etf_code": "300502",
+      "etf_name": "新易盛",
+      "market": "SZ",
+      "category": "CPO光模块",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "新易盛(300502.SZ)，800G光模块龙头，AI算力CPO方向"
+    },
+    {
+      "index_code": "300442",
+      "index_name": "润泽科技",
+      "etf_code": "300442",
+      "etf_name": "润泽科技",
+      "market": "SZ",
+      "category": "算力IDC",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "润泽科技(300442.SZ)，数据中心龙头，算力租赁核心标的"
+    },
+    {
+      "index_code": "002460",
+      "index_name": "赣锋锂业",
+      "etf_code": "002460",
+      "etf_name": "赣锋锂业",
+      "market": "SZ",
+      "category": "固态电池",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "赣锋锂业(002460.SZ)，全球锂业双龙头+固态电池先行者"
+    },
+    {
+      "index_code": "688111",
+      "index_name": "金山办公",
+      "etf_code": "688111",
+      "etf_name": "金山办公",
+      "market": "SH",
+      "category": "AI应用",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "金山办公(688111.SH)，国产办公软件龙头，AI大模型应用落地"
+    },
+    {
+      "index_code": "000568",
+      "index_name": "泸州老窖",
+      "etf_code": "000568",
+      "etf_name": "泸州老窖",
+      "market": "SZ",
+      "category": "白酒",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "泸州老窖(000568.SZ)，浓香白酒第三，高端消费代表"
+    },
+    {
+      "index_code": "601985",
+      "index_name": "中国核电",
+      "etf_code": "601985",
+      "etf_name": "中国核电",
+      "market": "SH",
+      "category": "核电",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "中国核电(601985.SH)，核电运营龙头，新型能源方向"
+    },
+    {
+      "index_code": "002202",
+      "index_name": "金风科技",
+      "etf_code": "002202",
+      "etf_name": "金风科技",
+      "market": "SZ",
+      "category": "风电",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "金风科技(002202.SZ)，风电整机龙头"
+    },
+    {
+      "index_code": "002916",
+      "index_name": "深南电路",
+      "etf_code": "002916",
+      "etf_name": "深南电路",
+      "market": "SZ",
+      "category": "PCB载板",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "深南电路(002916.SZ)，高端PCB+IC载板龙头"
+    },
+    {
+      "index_code": "603290",
+      "index_name": "斯达半导",
+      "etf_code": "603290",
+      "etf_name": "斯达半导",
+      "market": "SH",
+      "category": "IGBT",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "斯达半导(603290.SH)，IGBT/碳化硅功率半导体龙头"
+    },
+    {
+      "index_code": "600893",
+      "index_name": "航发动力",
+      "etf_code": "600893",
+      "etf_name": "航发动力",
+      "market": "SH",
+      "category": "军工航发",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "航发动力(600893.SH)，航空发动机唯一总装平台"
+    },
+    {
+      "index_code": "300896",
+      "index_name": "爱美客",
+      "etf_code": "300896",
+      "etf_name": "爱美客",
+      "market": "SZ",
+      "category": "医美",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "爱美客(300896.SZ)，玻尿酸/医美龙头"
+    },
+    {
+      "index_code": "600547",
+      "index_name": "山东黄金",
+      "etf_code": "600547",
+      "etf_name": "山东黄金",
+      "market": "SH",
+      "category": "黄金",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "山东黄金(600547.SH)，国内黄金开采龙头"
+    },
+    {
+      "index_code": "688305",
+      "index_name": "科德数控",
+      "etf_code": "688305",
+      "etf_name": "科德数控",
+      "market": "SH",
+      "category": "工业母机",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "科德数控(688305.SH)，高端五轴数控机床龙头，国产替代"
+    },
+    {
+      "index_code": "300394",
+      "index_name": "天孚通信",
+      "etf_code": "300394",
+      "etf_name": "天孚通信",
+      "market": "SZ",
+      "category": "光连接",
+      "type": "stock",
+      "weight": 1.0,
+      "notes": "天孚通信(300394.SZ)，光器件连接龙头，CPO概念核心"
     }
   ],
   "settings": {
