@@ -50,6 +50,8 @@ class MergedBar:
     end_raw: int          # last raw bar index
     direction: int        # 1=up merge, -1=down merge, 0=initial
     dates: list[str] = field(default_factory=list)
+    high_dt: str = ""     # dt of the raw bar that achieved the high price
+    low_dt: str = ""      # dt of the raw bar that achieved the low price
 
 
 @dataclass
@@ -357,6 +359,7 @@ def inclusion_processing(bars: list[RawBar]) -> list[MergedBar]:
         idx=0, high=bars[0].high, low=bars[0].low,
         start_raw=0, end_raw=0, direction=0,
         dates=[bars[0].dt],
+        high_dt=bars[0].dt, low_dt=bars[0].dt,
     )]
 
     for i in range(1, len(bars)):
@@ -375,10 +378,18 @@ def inclusion_processing(bars: list[RawBar]) -> list[MergedBar]:
                 direction = 1 if b.close >= b.open else -1
 
             if direction == 1:
+                if b.high > last.high:
+                    last.high_dt = b.dt
                 last.high = max(last.high, b.high)
+                if b.low > last.low:
+                    last.low_dt = b.dt
                 last.low = max(last.low, b.low)
             else:
+                if b.high < last.high:
+                    last.high_dt = b.dt
                 last.high = min(last.high, b.high)
+                if b.low < last.low:
+                    last.low_dt = b.dt
                 last.low = min(last.low, b.low)
             last.end_raw = i
             last.dates.append(b.dt)
@@ -390,6 +401,7 @@ def inclusion_processing(bars: list[RawBar]) -> list[MergedBar]:
                 start_raw=i, end_raw=i,
                 direction=1 if b.high > last.high else -1,
                 dates=[b.dt],
+                high_dt=b.dt, low_dt=b.dt,
             ))
 
     for i, m in enumerate(merged):
@@ -417,14 +429,14 @@ def find_fractals(merged: list[MergedBar]) -> list[Fractal]:
             fractals.append(Fractal(
                 type="top", mk_idx=i,
                 high=curr.high, low=curr.low,
-                dt=curr.dates[0],
+                dt=curr.high_dt or curr.dates[0],
             ))
         elif (curr.low < prev.low and curr.low < nxt.low and
               curr.high < prev.high and curr.high < nxt.high):
             fractals.append(Fractal(
                 type="bottom", mk_idx=i,
                 high=curr.high, low=curr.low,
-                dt=curr.dates[0],
+                dt=curr.low_dt or curr.dates[0],
             ))
     return fractals
 
