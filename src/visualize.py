@@ -890,6 +890,39 @@ function renderChart(data) {
   // Sort BSP by x-index to detect neighboring labels; alternate distance offset
   const sortedBuys = data.bsp.filter(p => p.is_buy).sort((a,b) => a.idx - b.idx);
   const sortedSells = data.bsp.filter(p => !p.is_buy).sort((a,b) => a.idx - b.idx);
+  function bspTooltipHtml(p) {
+    const confMap = {'high': '🔴 高', 'medium': '🟡 中', 'low': '⚪ 低'};
+    const strMap = {strongest: '🔥最强', strong: '💪强势', standard: '📌标准', weak: '⚠弱'};
+    const statusMap = {'active': '✅ 有效', 'confirmed': '✅ 已确认', 'invalidated': '❌ 失效', 'pending': '⏳ 待确认'};
+    let h = '<div style="max-width:360px;font-size:13px;line-height:1.6">';
+    const typeColor = p.is_buy ? '#f85149' : '#3fb950';
+    h += '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">#' + p.bsp_idx + ' ' + p.label + '</div>';
+    h += '<div style="color:#8b949e;margin:2px 0">日期: ' + (data.dates[p.idx] || '') + ' | 价格: ' + p.price.toFixed(3) + '</div>';
+    h += '<table style="width:100%;border-collapse:collapse;margin:4px 0">';
+    h += '<tr><td style="color:#8b949e;padding:2px 6px 2px 0">置信度</td><td>' + (confMap[p.conf] || p.conf || '-') + '</td>';
+    h += '<td style="color:#8b949e;padding:2px 6px 2px 12px">强弱</td><td>' + (strMap[p.strength] || p.strength || '-') + '</td></tr>';
+    h += '<tr><td style="color:#8b949e;padding:2px 6px 2px 0">状态</td><td>' + (statusMap[p.status] || p.status) + '</td>';
+    h += '<td style="color:#8b949e;padding:2px 6px 2px 12px">防狼</td><td>' + (p.wolf ? '<span style="color:#d29922">⚠ ' + p.wolf + '</span>' : '✓ 安全') + '</td></tr>';
+    h += '</table>';
+    if (p.ranges && p.ranges.length >= 2) {
+      const r0 = p.ranges[0], r1 = p.ranges[1];
+      const ratio = r0.area > 0 ? (r1.area / r0.area * 100).toFixed(1) : '-';
+      h += '<div style="margin:3px 0;padding:3px 6px;background:#161b22;border-radius:4px">';
+      h += '<span style="color:#58a6ff">' + r0.label + '=' + r0.area + '</span>';
+      h += ' vs <span style="color:#f85149">' + r1.label + '=' + r1.area + '</span>';
+      h += ' &nbsp;背驰比 <b>' + ratio + '%</b>';
+      h += '</div>';
+    }
+    if (p.pos_advice) {
+      h += '<div style="margin:3px 0;color:#f0883e">💰 ' + p.pos_advice + '</div>';
+    }
+    if (p.status === 'invalidated' && p.inv_reason) {
+      h += '<div style="margin:3px 0;color:#da3633">失效原因: ' + p.inv_reason + '</div>';
+    }
+    h += '<div style="margin:4px 0 0;color:#8b949e;font-size:12px;border-top:1px solid #30363d;padding-top:4px">' + (p.desc || '') + '</div>';
+    h += '</div>';
+    return h;
+  }
   function buildPoints(list, isBuy) {
     const baseColor = isBuy ? upColor : downColor;
     const pos = isBuy ? 'bottom' : 'top';
@@ -917,6 +950,7 @@ function renderChart(data) {
         label: { show: true, formatter: labelText, position: pos,
                  fontSize: fs, color: color,
                  lineHeight: lh, align: 'center', distance: dist },
+        _bp: p,
       };
     });
   }
@@ -1088,6 +1122,18 @@ function renderChart(data) {
         markPoint: {
           data: [...buyPoints, ...sellPoints, ...hubLabelPts, ...structLabels],
           animation: false,
+          tooltip: {
+            show: true,
+            trigger: 'item',
+            backgroundColor: '#161b22',
+            borderColor: '#30363d',
+            textStyle: { color: '#c9d1d9', fontSize: 12 },
+            formatter: function(params) {
+              const bp = params.data && params.data._bp;
+              if (!bp) return null;
+              return bspTooltipHtml(bp);
+            },
+          },
         },
         markArea: {
           silent: true,
@@ -2003,6 +2049,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
   </div>
   <div id="synthesis-panel"></div>
   <div id="signal-panel"></div>
+  <div id="bspTooltip" style="display:none;position:fixed;z-index:1000;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;max-width:88vw;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-size:12px;line-height:1.6;color:#c9d1d9;pointer-events:auto"></div>
 </div>
 
 <div style="color:#c9d1d9;font-size:14px;font-weight:bold;border-bottom:1px solid #30363d;padding-bottom:4px;margin:12px 0 6px">📊 标的可操作性总览</div>
@@ -2036,6 +2083,7 @@ let isDragging = false, dragStartX = 0, dragStartView = 0;
 let pinchStartDist = 0, pinchStartRange = 0;
 const MIN_VIEW = 20;
 let dataLoading = false;
+let bspHitAreas = [];
 
 let mgsTab = '日线';
 function renderMobileGlobalSignals() {{
@@ -2401,6 +2449,7 @@ function renderKline(data) {{
   }});
 
   // Buy/Sell markers
+  bspHitAreas = [];
   data.bsp.forEach(p => {{
     if (p.idx < viewStart || p.idx >= viewEnd) return;
     const x = scaleX(p.idx);
@@ -2417,6 +2466,7 @@ function renderKline(data) {{
       ctx.moveTo(x, y - 10); ctx.lineTo(x - 6, y - 18); ctx.lineTo(x + 6, y - 18); ctx.closePath();
       ctx.fillStyle = triColor; ctx.fill();
     }}
+    bspHitAreas.push({{cx: x, cy: p.is_buy ? y + 14 : y - 14, bp: p}});
     ctx.fillStyle = mIsInv ? '#484f58' : (mIsPending ? '#d29922' : (p.is_buy ? '#f85149' : '#3fb950'));
     ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
     ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
@@ -2621,6 +2671,64 @@ function updateSignalPanel(data) {{
   panel.innerHTML = html;
 }}
 
+// === BSP Tooltip ===
+function showBspTooltip(bp, screenX, screenY) {{
+  const el = document.getElementById('bspTooltip');
+  const confMap = {{'high': '🔴 高', 'medium': '🟡 中', 'low': '⚪ 低'}};
+  const strMap = {{strongest: '🔥最强', strong: '💪强势', standard: '📌标准', weak: '⚠弱'}};
+  const statusMap = {{'active': '✅ 有效', 'confirmed': '✅ 已确认', 'invalidated': '❌ 失效', 'pending': '⏳ 待确认'}};
+  const d = getData();
+  const dateStr = d && d.dates && d.dates[bp.idx] ? d.dates[bp.idx] : '';
+  const typeColor = bp.is_buy ? '#f85149' : '#3fb950';
+  let h = '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">#' + bp.bsp_idx + ' ' + bp.label;
+  h += ' <span style="float:right;cursor:pointer;color:#8b949e;font-size:16px" onclick="hideBspTooltip()">✕</span></div>';
+  h += '<div style="color:#8b949e;margin:2px 0">日期: ' + dateStr + ' | 价格: ' + bp.price.toFixed(3) + '</div>';
+  h += '<table style="width:100%;border-collapse:collapse;margin:4px 0">';
+  h += '<tr><td style="color:#8b949e;padding:2px 4px 2px 0;white-space:nowrap">置信度</td><td>' + (confMap[bp.conf] || bp.conf || '-') + '</td>';
+  h += '<td style="color:#8b949e;padding:2px 4px 2px 8px;white-space:nowrap">强弱</td><td>' + (strMap[bp.strength] || bp.strength || '-') + '</td></tr>';
+  h += '<tr><td style="color:#8b949e;padding:2px 4px 2px 0;white-space:nowrap">状态</td><td>' + (statusMap[bp.status] || bp.status) + '</td>';
+  h += '<td style="color:#8b949e;padding:2px 4px 2px 8px;white-space:nowrap">防狼</td><td>' + (bp.wolf ? '<span style="color:#d29922">⚠ ' + bp.wolf + '</span>' : '✓ 安全') + '</td></tr>';
+  h += '</table>';
+  if (bp.ranges && bp.ranges.length >= 2) {{
+    const r0 = bp.ranges[0], r1 = bp.ranges[1];
+    const ratio = r0.area > 0 ? (r1.area / r0.area * 100).toFixed(1) : '-';
+    h += '<div style="margin:3px 0;padding:3px 6px;background:#0d1117;border-radius:4px">';
+    h += '<span style="color:#58a6ff">' + r0.label + '=' + r0.area + '</span>';
+    h += ' vs <span style="color:#f85149">' + r1.label + '=' + r1.area + '</span>';
+    h += ' 背驰比 <b>' + ratio + '%</b></div>';
+  }}
+  if (bp.pos_advice) {{
+    h += '<div style="margin:3px 0;color:#f0883e">💰 ' + bp.pos_advice + '</div>';
+  }}
+  if (bp.status === 'invalidated' && bp.inv_reason) {{
+    h += '<div style="margin:3px 0;color:#da3633">失效: ' + bp.inv_reason + '</div>';
+  }}
+  h += '<div style="margin:4px 0 0;color:#8b949e;font-size:11px;border-top:1px solid #30363d;padding-top:4px">' + (bp.desc || '') + '</div>';
+  el.innerHTML = h;
+  el.style.display = 'block';
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let left = screenX + 8, top = screenY + 8;
+  el.style.left = '0px'; el.style.top = '0px';
+  const ew = el.offsetWidth, eh = el.offsetHeight;
+  if (left + ew > vw - 8) left = Math.max(8, vw - ew - 8);
+  if (top + eh > vh - 8) top = Math.max(8, screenY - eh - 8);
+  el.style.left = left + 'px'; el.style.top = top + 'px';
+}}
+function hideBspTooltip() {{
+  document.getElementById('bspTooltip').style.display = 'none';
+}}
+function findNearestBsp(canvasX, canvasY) {{
+  const dpr = window.devicePixelRatio || 1;
+  const hitRadius = 24;
+  let best = null, bestDist = Infinity;
+  bspHitAreas.forEach(h => {{
+    const dx = canvasX / dpr - h.cx, dy = canvasY / dpr - h.cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < hitRadius && dist < bestDist) {{ best = h; bestDist = dist; }}
+  }});
+  return best;
+}}
+
 // === Touch & Mouse Zoom/Pan ===
 function setupInteraction() {{
   const kCanvas = document.getElementById('klineCanvas');
@@ -2639,7 +2747,8 @@ function setupInteraction() {{
     viewEnd = viewStart + newRange;
     clampView(total); render();
   }}
-  function handleMouseDown(e) {{ isDragging = true; dragStartX = e.clientX; dragStartView = viewStart; kCanvas.style.cursor = 'grabbing'; }}
+  let tapStartX = 0, tapStartY = 0, tapMoved = false;
+  function handleMouseDown(e) {{ isDragging = true; dragStartX = e.clientX; dragStartView = viewStart; kCanvas.style.cursor = 'grabbing'; hideBspTooltip(); }}
   function handleMouseMove(e) {{
     if (!isDragging) return;
     const d = getData(); if (!d) return;
@@ -2652,14 +2761,28 @@ function setupInteraction() {{
     clampView(total); render();
   }}
   function handleMouseUp() {{ isDragging = false; kCanvas.style.cursor = 'crosshair'; }}
+  function handleClick(e) {{
+    const rect = kCanvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cx = (e.clientX - rect.left) * dpr;
+    const cy = (e.clientY - rect.top) * dpr;
+    const hit = findNearestBsp(cx, cy);
+    if (hit) {{ showBspTooltip(hit.bp, e.clientX, e.clientY); }}
+    else {{ hideBspTooltip(); }}
+  }}
   function handleTouchStart(e) {{
     if (e.touches.length === 2) {{
       pinchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
       pinchStartRange = viewEnd - viewStart;
-    }} else if (e.touches.length === 1) {{ isDragging = true; dragStartX = e.touches[0].clientX; dragStartView = viewStart; }}
+      tapMoved = true;
+    }} else if (e.touches.length === 1) {{
+      isDragging = true; dragStartX = e.touches[0].clientX; dragStartView = viewStart;
+      tapStartX = e.touches[0].clientX; tapStartY = e.touches[0].clientY; tapMoved = false;
+    }}
   }}
   function handleTouchMove(e) {{
     e.preventDefault();
+    tapMoved = true;
     const d = getData(); if (!d) return;
     const total = d.dates.length;
     if (e.touches.length === 2) {{
@@ -2678,15 +2801,31 @@ function setupInteraction() {{
       clampView(total); render();
     }}
   }}
-  function handleTouchEnd() {{ isDragging = false; }}
+  function handleTouchEnd(e) {{
+    isDragging = false;
+    if (!tapMoved && e.changedTouches && e.changedTouches.length > 0) {{
+      const t = e.changedTouches[0];
+      const rect = kCanvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const cx = (t.clientX - rect.left) * dpr;
+      const cy = (t.clientY - rect.top) * dpr;
+      const hit = findNearestBsp(cx, cy);
+      if (hit) {{ showBspTooltip(hit.bp, t.clientX, t.clientY); }}
+      else {{ hideBspTooltip(); }}
+    }}
+  }}
   [kCanvas, mCanvas].forEach(c => {{ c.addEventListener('wheel', handleWheel, {{passive: false}}); c.style.cursor = 'crosshair'; c.style.touchAction = 'none'; }});
   kCanvas.addEventListener('mousedown', handleMouseDown);
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', handleMouseUp);
+  kCanvas.addEventListener('click', handleClick);
   kCanvas.addEventListener('touchstart', handleTouchStart, {{passive: false}});
   kCanvas.addEventListener('touchmove', handleTouchMove, {{passive: false}});
   kCanvas.addEventListener('touchend', handleTouchEnd);
   kCanvas.addEventListener('dblclick', () => {{ resetView(); render(); }});
+  document.addEventListener('click', (e) => {{
+    if (!e.target.closest('#bspTooltip') && !e.target.closest('#klineCanvas')) hideBspTooltip();
+  }});
 }}
 
 window.addEventListener('load', async () => {{ await loadAndRender(); setupInteraction(); }});
