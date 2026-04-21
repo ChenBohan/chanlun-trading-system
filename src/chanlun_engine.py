@@ -2576,27 +2576,27 @@ def _apply_position_advice(points: list[BuySellPoint]):
                 advice = "减仓 1/2"
                 reason = "弱二卖：深度反弹接近一卖价，确认力度不足"
 
-        # 3B/3S position by strength (unchanged)
+        # 3B/3S position by strength (context-aware per 108课/图解缠论2)
         elif p.type == "3B":
             if p.strength == "strongest":
                 advice = "满仓"
-                reason = "最强三买：首个中枢+强突破+浅回抽，趋势起步"
+                reason = "最强三买：趋势确认+强突破+浅回抽，中枢上移段"
             elif p.strength == "strong":
                 advice = "加至标准仓位 2/3"
-                reason = "强势三买，中枢突破回踩确认"
+                reason = "强势三买（趋势中或强盘整突破），中枢突破回踩确认"
             elif p.strength == "standard":
                 advice = "轻仓试探 1/3"
                 reason = "标准三买，条件一般，轻仓参与"
             elif p.strength == "weak":
                 advice = "观望不参与"
-                reason = "弱三买：趋势末端/突破不力/回抽过深，风险大于收益"
+                reason = "弱三买：盘整扩展风险高/双横盘/突破不力/趋势末端"
         elif p.type == "3S":
             if p.strength == "strongest":
                 advice = "必须清仓"
-                reason = "最强三卖：首个中枢+强破位+浅反弹，下跌确认"
+                reason = "最强三卖：趋势确认+强破位+浅反弹，下跌加速"
             elif p.strength == "strong":
                 advice = "减至 1/3 或清仓"
-                reason = "强势三卖，中枢破位确认"
+                reason = "强势三卖（趋势中或强盘整破位），中枢破位确认"
             elif p.strength == "standard":
                 advice = "减仓 1/3"
                 reason = "标准三卖，谨慎减仓"
@@ -2688,29 +2688,46 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         score = 0
         tags = []
 
+        # Per 108课/图解缠论2/土匪注解: trend_hub_rank determines context.
+        # rank=1 → only one hub in direction = 盘整 context → higher risk
+        # rank=2 → two hubs confirmed = 趋势 context → BEST risk/reward
+        # rank≥3 → trend continuation but potentially late stage
         if trend_hub_rank == 1:
-            score += 4
-            tags.append("首个中枢")
-        elif trend_hub_rank == 2:
             score += 1
-            tags.append("第二中枢")
+            tags.append("盘整三买")
+        elif trend_hub_rank == 2:
+            score += 5
+            tags.append("趋势三买")
         elif trend_hub_rank == 3:
-            score -= 2
-            tags.append(f"第{trend_hub_rank}中枢⚠")
+            score += 2
+            tags.append(f"趋势三买(第{trend_hub_rank}中枢)")
         elif trend_hub_rank <= 5:
-            score -= 4
-            tags.append(f"第{trend_hub_rank}中枢⚠趋势末端")
+            score -= 2
+            tags.append(f"趋势末端(第{trend_hub_rank}中枢)⚠")
         else:
-            score -= 6
-            tags.append(f"第{trend_hub_rank}中枢⚠极晚期")
+            score -= 4
+            tags.append(f"极晚期(第{trend_hub_rank}中枢)⚠")
 
-        # Frequent direction flips → large-level consolidation, not real trend
         if churn >= 3:
             score -= 3
             tags.append("频繁翻转⚠震荡市")
         elif churn >= 2:
             score -= 1
             tags.append("方向不稳")
+
+        # Departure-pullback flatness filter (图解缠论2 §2.3):
+        # Both departure and pullback being flat → hub extension, NOT real 3B
+        dep_range = abs(breakout_stroke.end.high - breakout_stroke.start.low)
+        pb_range = abs(pullback.start.high - pullback.end.low)
+        if hub_range > 0:
+            dep_flat = dep_range / hub_range < 0.3
+            pb_flat = pb_range / hub_range < 0.3
+            if dep_flat and pb_flat:
+                score -= 4
+                tags.append("双横盘⚠非三买")
+            elif dep_flat:
+                score -= 2
+                tags.append("离开段偏弱⚠")
 
         if breakout_abs > 0.03:
             score += 2
@@ -2721,7 +2738,6 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             score -= 1
             tags.append("弱突破⚠")
 
-        # Pullback margin: shallower = stronger (图解3: 回抽越轻能量越强)
         if margin_pct > 0.50:
             score += 1
             tags.append("浅回抽")
@@ -2742,11 +2758,11 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         elif dif_val < 0:
             score -= 1
 
-        if score >= 6:
+        if score >= 7:
             return "strongest", "high", tags
-        elif score >= 3:
+        elif score >= 4:
             return "strong", "high", tags
-        elif score >= 0:
+        elif score >= 1:
             return "standard", "medium", tags
         else:
             return "weak", "low", tags
@@ -2821,21 +2837,22 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         score = 0
         tags = []
 
+        # Mirror of 3B context logic (see _grade_3b comments)
         if trend_hub_rank == 1:
-            score += 4
-            tags.append("首个中枢")
-        elif trend_hub_rank == 2:
             score += 1
-            tags.append("第二中枢")
+            tags.append("盘整三卖")
+        elif trend_hub_rank == 2:
+            score += 5
+            tags.append("趋势三卖")
         elif trend_hub_rank == 3:
-            score -= 2
-            tags.append(f"第{trend_hub_rank}中枢⚠")
+            score += 2
+            tags.append(f"趋势三卖(第{trend_hub_rank}中枢)")
         elif trend_hub_rank <= 5:
-            score -= 4
-            tags.append(f"第{trend_hub_rank}中枢⚠趋势末端")
+            score -= 2
+            tags.append(f"趋势末端(第{trend_hub_rank}中枢)⚠")
         else:
-            score -= 6
-            tags.append(f"第{trend_hub_rank}中枢⚠极晚期")
+            score -= 4
+            tags.append(f"极晚期(第{trend_hub_rank}中枢)⚠")
 
         if churn >= 3:
             score -= 3
@@ -2843,6 +2860,19 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         elif churn >= 2:
             score -= 1
             tags.append("方向不稳")
+
+        # Departure-pullback flatness filter (mirror of 3B)
+        dep_range = abs(breakdown_stroke.start.high - breakdown_stroke.end.low)
+        rl_range = abs(rally.end.high - rally.start.low)
+        if hub_range > 0:
+            dep_flat = dep_range / hub_range < 0.3
+            rl_flat = rl_range / hub_range < 0.3
+            if dep_flat and rl_flat:
+                score -= 4
+                tags.append("双横盘⚠非三卖")
+            elif dep_flat:
+                score -= 2
+                tags.append("离开段偏弱⚠")
 
         if breakdown_abs > 0.03:
             score += 2
@@ -2873,11 +2903,11 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         elif dif_val > 0:
             score -= 1
 
-        if score >= 6:
+        if score >= 7:
             return "strongest", "high", tags
-        elif score >= 3:
+        elif score >= 4:
             return "strong", "high", tags
-        elif score >= 0:
+        elif score >= 1:
             return "standard", "medium", tags
         else:
             return "weak", "low", tags
