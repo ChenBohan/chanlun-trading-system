@@ -386,7 +386,6 @@ function renderGlobalSignals() {
   h += '<th style="padding:8px;text-align:left">时间</th>';
   h += '<th style="padding:8px;text-align:left">标的</th>';
   h += '<th style="padding:8px;text-align:center">类型</th>';
-  h += '<th style="padding:8px;text-align:right">价格</th>';
   h += '<th style="padding:8px;text-align:center">状态</th>';
   h += '<th style="padding:8px;text-align:center">置信度</th>';
   h += '<th style="padding:8px;text-align:left">背驰段对比</th>';
@@ -408,9 +407,8 @@ function renderGlobalSignals() {
     const strike = inv ? 'text-decoration:line-through;' : '';
     h += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
     h += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
-    h += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + s.etf_name + '</td>';
+    h += '<td style="padding:6px 8px;font-weight:600;' + strike + '"><a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="跳转查看K线">' + s.etf_name + '</a></td>';
     h += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
-    h += '<td style="padding:6px 8px;text-align:right;font-family:monospace;' + strike + '">' + (s.price ? s.price.toFixed(3) : '-') + '</td>';
     const isBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const confirmedColor = isBuyType ? '#f85149' : '#3fb950';
     const confirmedIcon = isBuyType ? '🔴' : '🟢';
@@ -428,7 +426,7 @@ function renderGlobalSignals() {
     h += '</tr>';
   });
   if (signals.length === 0) {
-    h += '<tr><td colspan="10" style="padding:16px;text-align:center;color:#484f58">暂无信号</td></tr>';
+    h += '<tr><td colspan="9" style="padding:16px;text-align:center;color:#484f58">暂无信号</td></tr>';
   }
   h += '</tbody></table>';
   el.innerHTML = h;
@@ -1708,6 +1706,7 @@ def generate_dashboard(data_dir: str = None,
                 "etf_code": etf_code,
                 "etf_name": etf_name,
                 "level": level_cn,
+                "level_key": level_key,
                 "type": p["type"],
                 "label": p["label"],
                 "price": p["price"],
@@ -1906,7 +1905,8 @@ def generate_mobile_dashboard(data_dir: str = None,
                 continue
             dt_str = data["dates"][p["idx"]] if p["idx"] < len(data["dates"]) else ""
             entry_m = {
-                "dt": dt_str, "etf_name": etf_name, "level": level_cn,
+                "dt": dt_str, "etf_code": etf_code, "etf_name": etf_name,
+                "level": level_cn, "level_key": level_key,
                 "type": p["type"], "label": p["label"],
                 "price": p["price"], "conf": p.get("conf", ""),
                 "status": p.get("status", "active"),
@@ -2131,7 +2131,6 @@ function renderMobileGlobalSignals() {{
   h += '<th style="padding:4px;text-align:left">时间</th>';
   h += '<th style="padding:4px;text-align:left">标的</th>';
   h += '<th style="padding:4px;text-align:center">类型</th>';
-  h += '<th style="padding:4px;text-align:right">价格</th>';
   h += '<th style="padding:4px;text-align:center">置信</th>';
   h += '<th style="padding:4px;text-align:left">背驰</th>';
   h += '</tr></thead><tbody>';
@@ -2149,15 +2148,14 @@ function renderMobileGlobalSignals() {{
     const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>');
     h += `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
     h += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
-    h += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{s.etf_name}}</td>`;
+    h += `<td style="padding:3px 4px;font-weight:600;${{strike}}"><a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
     h += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
-    h += `<td style="padding:3px 4px;text-align:right;font-family:monospace;${{strike}}">${{s.price ? s.price.toFixed(3) : '-'}}</td>`;
     h += `<td style="padding:3px 4px;text-align:center">${{confStr}}</td>`;
     h += `<td style="padding:3px 4px;font-size:10px">${{s.area_cmp || '-'}}</td>`;
     h += '</tr>';
   }});
   if (signals.length === 0) {{
-    h += '<tr><td colspan="6" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+    h += '<tr><td colspan="5" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
   }}
   h += '</tbody></table></div>';
   el.innerHTML = h;
