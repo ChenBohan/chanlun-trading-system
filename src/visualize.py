@@ -1078,12 +1078,17 @@ function renderChart(data) {
       textStyle: { color: '#c9d1d9', fontSize: 12 },
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
-    dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1], start: 80, end: 100 },
-      { type: 'slider', xAxisIndex: [0, 1], bottom: 10, height: 20,
-        borderColor: '#30363d', fillerColor: 'rgba(88,166,255,0.1)',
-        textStyle: { color: '#8b949e' } },
-    ],
+    dataZoom: (() => {
+      const VISIBLE_BARS = 120;
+      const total = data.dates.length;
+      const zoomStart = total > VISIBLE_BARS ? Math.max(0, 100 - (VISIBLE_BARS / total * 100)) : 0;
+      return [
+        { type: 'inside', xAxisIndex: [0, 1], start: zoomStart, end: 100 },
+        { type: 'slider', xAxisIndex: [0, 1], bottom: 10, height: 20,
+          borderColor: '#30363d', fillerColor: 'rgba(88,166,255,0.1)',
+          textStyle: { color: '#8b949e' } },
+      ];
+    })(),
     grid: [
       { left: 60, right: 30, top: 20, bottom: '30%' },
       { left: 60, right: 30, top: '75%', bottom: 50 },
@@ -2244,8 +2249,9 @@ function resetView() {{
   const d = getData();
   if (!d) return;
   const total = d.dates.length;
+  const VISIBLE_BARS = 120;
   viewEnd = total;
-  viewStart = Math.max(0, Math.round(total * 0.8));
+  viewStart = Math.max(0, total - VISIBLE_BARS);
   if (viewEnd - viewStart < MIN_VIEW) viewStart = Math.max(0, viewEnd - MIN_VIEW);
 }}
 function clampView(total) {{
