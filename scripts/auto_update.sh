@@ -24,11 +24,14 @@ if [[ "${1:-}" == "--install" ]]; then
     SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
     # Trading-hour schedule (Mon-Fri, China Standard Time):
-    #   11:35  — after morning session close
-    #   15:05  — after afternoon session close (main update)
+    #   Every 5 min during morning session  (9:30-11:30)
+    #   Every 5 min during afternoon session (13:00-15:00)
+    #   Final update at 15:05 after market close
     CRON_LINES=$(cat <<CRON
-35 11 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
-5 15 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
+30-59/5 9 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
+*/5 10-11 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
+*/5 13-14 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
+0,5 15 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
 CRON
 )
     # Remove old entries then append
