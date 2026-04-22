@@ -218,16 +218,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 .header > span { font-size: 16px; }
 .header .gen-time { font-size: 15px; color: #8b949e; margin-left: auto; }
 
-.nav { display: flex; background: #161b22; border-bottom: 1px solid #30363d;
-       padding: 0 32px; overflow-x: auto; align-items: stretch; }
-.nav-sep { display: flex; align-items: center; padding: 0 6px; color: #484f58;
-           font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-           border-left: 2px solid #30363d; margin-left: 4px; padding-left: 12px; white-space: nowrap; }
-.nav-btn { padding: 14px 18px; cursor: pointer; border: none; background: none;
-           color: #8b949e; font-size: 15px; white-space: nowrap; border-bottom: 3px solid transparent;
-           transition: color 0.15s, border-color 0.15s; }
-.nav-btn:hover { color: #c9d1d9; }
-.nav-btn.active { color: #58a6ff; border-bottom-color: #58a6ff; font-weight: 600; }
+.nav { display: flex; flex-wrap: wrap; background: #161b22; border-bottom: 1px solid #30363d;
+       padding: 4px 16px; gap: 4px; align-items: center; }
+.nav-sep { display: inline-flex; align-items: center; padding: 2px 6px; color: #484f58;
+           font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+           border-left: 2px solid #30363d; margin-left: 2px; white-space: nowrap; }
+.nav-btn { padding: 4px 8px; cursor: pointer; border: 1px solid transparent; background: none;
+           color: #8b949e; font-size: 12px; white-space: nowrap; border-radius: 4px;
+           transition: color 0.15s, background 0.15s; line-height: 1.4; }
+.nav-btn:hover { color: #c9d1d9; background: #21262d; }
+.nav-btn.active { color: #58a6ff; background: #1a2332; border-color: #1f3a5f; font-weight: 600; }
 
 .level-tabs { display: flex; padding: 12px 32px; gap: 12px; background: #0d1117; }
 .level-btn { padding: 10px 22px; border-radius: 8px; cursor: pointer; border: 1px solid #30363d;
@@ -1992,11 +1992,12 @@ h1 {{ font-size: 20px; color: #58a6ff; text-align: center; padding: 12px 0 4px; 
 
 .chart-section {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px;
                   margin-bottom: 14px; overflow: hidden; }}
-.idx-tabs {{ display: flex; gap: 0; border-bottom: 1px solid #21262d;
+.idx-tabs {{ display: flex; gap: 3px; padding: 4px 8px;
              flex-wrap: wrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }}
-.idx-tab {{ padding: 8px 12px; cursor: pointer; color: #8b949e;
-            border-bottom: 2px solid transparent; font-size: 13px; white-space: nowrap; }}
-.idx-tab.active {{ color: #58a6ff; border-bottom-color: #58a6ff; background: rgba(88,166,255,0.05); }}
+.idx-tab {{ padding: 3px 7px; cursor: pointer; color: #8b949e;
+            border: 1px solid transparent; font-size: 11px; white-space: nowrap;
+            border-radius: 4px; line-height: 1.3; }}
+.idx-tab.active {{ color: #58a6ff; background: #1a2332; border-color: #1f3a5f; }}
 .level-tabs {{ display: flex; gap: 0; border-bottom: 1px solid #21262d;
                padding: 0 12px; background: #0d1117; }}
 .level-tab {{ padding: 7px 14px; cursor: pointer; color: #8b949e;
