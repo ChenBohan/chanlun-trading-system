@@ -295,8 +295,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 <div id="global-signals-table" style="margin:0 32px 16px;overflow-x:auto"></div>
 
-<h2 style="color:#c9d1d9;margin:24px 32px 8px;font-size:17px;border-bottom:1px solid #30363d;padding-bottom:6px">📈 技术分析详情</h2>
-<div class="nav" id="index-nav"></div>
+<div style="display:flex;align-items:center;margin:24px 32px 0;gap:12px">
+  <h2 style="color:#c9d1d9;font-size:17px;margin:0">📈 技术分析详情</h2>
+  <span id="current-asset-label" style="color:#58a6ff;font-size:14px;font-weight:600"></span>
+  <button id="toggle-nav-btn" onclick="toggleNav()" style="padding:3px 10px;border:1px solid #30363d;background:#21262d;color:#8b949e;cursor:pointer;font-size:12px;border-radius:4px">展开标的 ▼</button>
+</div>
+<div class="nav" id="index-nav" style="display:none"></div>
 
 <div class="level-tabs" id="level-tabs">
   <button class="level-btn active" data-level="daily">日线</button>
@@ -531,14 +535,31 @@ async function init() {
     };
   });
 
+  if (INDEX_LIST.length > 0) {
+    const first = INDEX_LIST[0];
+    document.getElementById('current-asset-label').textContent = first.index_name + ' (' + first.etf_code + ')';
+  }
+
   chart = echarts.init(document.getElementById('chart-container'));
   window.addEventListener('resize', () => chart.resize());
   await render();
 }
 
+let navExpanded = false;
+function toggleNav() {
+  navExpanded = !navExpanded;
+  const nav = document.getElementById('index-nav');
+  const btn = document.getElementById('toggle-nav-btn');
+  nav.style.display = navExpanded ? '' : 'none';
+  btn.textContent = navExpanded ? '收起标的 ▲' : '展开标的 ▼';
+}
+
 function selectIndex(code) {
   currentIndex = code;
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.code === code));
+  const idx = INDEX_LIST.find(x => x.etf_code === code);
+  if (idx) document.getElementById('current-asset-label').textContent = idx.index_name + ' (' + code + ')';
+  if (navExpanded) toggleNav();
   render();
 }
 
@@ -2055,17 +2076,23 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 
-<div style="color:#c9d1d9;font-size:14px;font-weight:bold;border-bottom:1px solid #30363d;padding-bottom:4px;margin:12px 0 6px">📈 技术分析详情</div>
+<div style="display:flex;align-items:center;margin:12px 0 6px;gap:8px;border-bottom:1px solid #30363d;padding-bottom:4px">
+  <span style="color:#c9d1d9;font-size:14px;font-weight:bold">📈 技术分析详情</span>
+  <span id="mCurrentAsset" style="color:#58a6ff;font-size:12px;font-weight:600"></span>
+  <button id="mToggleNav" onclick="toggleMobileNav()" style="margin-left:auto;padding:3px 8px;border:1px solid #30363d;background:#21262d;color:#8b949e;cursor:pointer;font-size:11px;border-radius:4px">展开 ▼</button>
+</div>
 <div class="chart-section">
-  <div style="padding:6px 8px 2px;background:#161b22">
-    <input id="idxSearch" type="text" placeholder="🔍 搜索标的..."
-           style="width:100%;padding:6px 10px;font-size:13px;border:1px solid #30363d;
-                  border-radius:6px;background:#0d1117;color:#c9d1d9;outline:none;
-                  box-sizing:border-box"
-           oninput="filterIdxTabs(this.value)">
-  </div>
-  <div class="idx-tabs" id="idxTabs">
-    {idx_tabs_html}
+  <div id="mNavPanel" style="display:none">
+    <div style="padding:6px 8px 2px;background:#161b22">
+      <input id="idxSearch" type="text" placeholder="🔍 搜索标的..."
+             style="width:100%;padding:6px 10px;font-size:13px;border:1px solid #30363d;
+                    border-radius:6px;background:#0d1117;color:#c9d1d9;outline:none;
+                    box-sizing:border-box"
+             oninput="filterIdxTabs(this.value)">
+    </div>
+    <div class="idx-tabs" id="idxTabs">
+      {idx_tabs_html}
+    </div>
   </div>
   <div class="level-tabs" id="levelTabs">
     <div class="level-tab active" onclick="switchLevel('daily')">日线</div>
@@ -2266,6 +2293,9 @@ function renderMobileOverview() {{
 }}
 renderMobileGlobalSignals();
 renderMobileOverview();
+if (INDEX_LIST.length > 0) {{
+  document.getElementById('mCurrentAsset').textContent = INDEX_LIST[0].index_name;
+}}
 
 function getData() {{
   const key = currentIndex + '_' + currentLevel;
@@ -2291,12 +2321,22 @@ function clampView(total) {{
   if (viewEnd > total) {{ viewEnd = total; viewStart = Math.max(0, total - (viewEnd - viewStart)); }}
 }}
 
+let mNavOpen = false;
+function toggleMobileNav() {{
+  mNavOpen = !mNavOpen;
+  document.getElementById('mNavPanel').style.display = mNavOpen ? '' : 'none';
+  document.getElementById('mToggleNav').textContent = mNavOpen ? '收起 ▲' : '展开 ▼';
+}}
+
 async function switchIndex(code) {{
   currentIndex = code;
   document.querySelectorAll('.idx-tab').forEach(t => t.classList.remove('active'));
   event.target.classList.add('active');
   document.getElementById('idxSearch').value = '';
   filterIdxTabs('');
+  const idx = INDEX_LIST.find(x => x.etf_code === code);
+  if (idx) document.getElementById('mCurrentAsset').textContent = idx.index_name;
+  if (mNavOpen) toggleMobileNav();
   await loadAndRender();
 }}
 
