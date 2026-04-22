@@ -344,56 +344,14 @@ let currentIndex = INDEX_LIST[0].etf_code;
 let currentLevel = 'daily';
 let chart = null;
 
-// ─── Global Signals Table (latest type-1/2/3 buy/sell, tabbed by level) ───
-let gsActiveTab = '日线';
+// ─── Global Signals Table (split into type-1/2/3 sub-tables) ───
 function renderGlobalSignals() {
   const el = document.getElementById('global-signals-table');
-  const levels = ['日线', '30分钟', '5分钟'];
-  const hasAny = levels.some(lv => (GLOBAL_SIGNALS[lv]||[]).length > 0);
-  if (!hasAny) { el.innerHTML = ''; return; }
-
   const confIcons = {'high': '🔴高', 'medium': '🟡中', 'low': '⚪低'};
   const typeColors = {'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'};
   const strengthMap = {'strongest': '🔥最强', 'strong': '💪强势', 'standard': '📌标准', 'weak': '⚠弱'};
 
-  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新买卖点（每级别最新 20 个）</h3>';
-  h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
-  levels.forEach(lv => {
-    const items = GLOBAL_SIGNALS[lv]||[];
-    const total = items.length;
-    const confirmedCnt = items.filter(s => s.status === 'confirmed').length;
-    const pendingCnt = items.filter(s => s.status === 'pending').length;
-    const invCnt = items.filter(s => s.status === 'invalidated').length;
-    let cntLabel = '' + total;
-    if (invCnt > 0 || pendingCnt > 0) {
-      const parts = [];
-      if (confirmedCnt > 0) parts.push(confirmedCnt + '✓');
-      if (pendingCnt > 0) parts.push(pendingCnt + '⏳');
-      if (invCnt > 0) parts.push(invCnt + '✗');
-      cntLabel = parts.join(' ');
-    }
-    const active = lv === gsActiveTab;
-    const bg = active ? '#21262d' : 'transparent';
-    const clr = active ? '#58a6ff' : '#8b949e';
-    const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="gsActiveTab='${lv}';renderGlobalSignals()" style="padding:6px 16px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:13px;border-radius:6px 6px 0 0">${lv} (${cntLabel})</button>`;
-  });
-  h += '</div>';
-
-  const signals = GLOBAL_SIGNALS[gsActiveTab] || [];
-  h += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden">';
-  h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
-  h += '<th style="padding:8px;text-align:left">时间</th>';
-  h += '<th style="padding:8px;text-align:left">标的</th>';
-  h += '<th style="padding:8px;text-align:center">类型</th>';
-  h += '<th style="padding:8px;text-align:center">状态</th>';
-  h += '<th style="padding:8px;text-align:center">置信度</th>';
-  h += '<th style="padding:8px;text-align:left">背驰段对比</th>';
-  h += '<th style="padding:8px;text-align:center">强弱</th>';
-  h += '<th style="padding:8px;text-align:left">仓位建议</th>';
-  h += '<th style="padding:8px;text-align:center">防狼</th>';
-  h += '</tr></thead><tbody>';
-  signals.forEach((s, i) => {
+  function signalRow(s, i) {
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tClr = typeColors[s.type] || '#c9d1d9';
     const confStr = confIcons[s.conf] || s.conf || '-';
@@ -402,33 +360,55 @@ function renderGlobalSignals() {
     const strStr = strengthMap[s.strength] || s.strength || '-';
     const inv = s.status === 'invalidated';
     const pending = s.status === 'pending';
-    const confirmed = s.status === 'confirmed';
     const rowOpacity = inv ? 'opacity:0.45;' : '';
     const strike = inv ? 'text-decoration:line-through;' : '';
-    h += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
-    h += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
-    h += '<td style="padding:6px 8px;font-weight:600;' + strike + '"><a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="跳转查看K线">' + s.etf_name + '</a></td>';
-    h += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
     const isBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const confirmedColor = isBuyType ? '#f85149' : '#3fb950';
     const confirmedIcon = isBuyType ? '🔴' : '🟢';
     const statusHtml = inv
       ? '<span title="' + (s.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌已失效</span>'
-      : pending
-        ? '<span style="color:#d29922">⏳待确认</span>'
-        : '<span style="color:' + confirmedColor + '">' + confirmedIcon + '已确认</span>';
-    h += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
-    h += '<td style="padding:6px 8px;font-size:12px">' + (s.area_cmp || '-') + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
-    h += '<td style="padding:6px 8px;font-size:12px">' + (s.pos_advice || '-') + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center;color:' + wolfClr + '">' + wolfStr + '</td>';
-    h += '</tr>';
-  });
-  if (signals.length === 0) {
-    h += '<tr><td colspan="9" style="padding:16px;text-align:center;color:#484f58">暂无信号</td></tr>';
+      : pending ? '<span style="color:#d29922">⏳待确认</span>'
+      : '<span style="color:' + confirmedColor + '">' + confirmedIcon + '已确认</span>';
+    let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
+    r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
+    r += '<td style="padding:6px 8px;font-weight:600;' + strike + '"><a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="跳转查看K线">' + s.etf_name + '</a></td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-size:12px;color:#8b949e">' + (s.level||'') + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
+    r += '<td style="padding:6px 8px;font-size:12px">' + (s.pos_advice || '-') + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;color:' + wolfClr + '">' + wolfStr + '</td>';
+    r += '</tr>';
+    return r;
   }
-  h += '</tbody></table>';
+
+  function makeTable(title, signals, ncols) {
+    let t = '<h4 style="color:#c9d1d9;margin:12px 0 6px;font-size:14px">' + title + '</h4>';
+    t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden;margin-bottom:6px">';
+    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
+    t += '<th style="padding:8px;text-align:left">时间</th>';
+    t += '<th style="padding:8px;text-align:left">标的</th>';
+    t += '<th style="padding:8px;text-align:center">级别</th>';
+    t += '<th style="padding:8px;text-align:center">类型</th>';
+    t += '<th style="padding:8px;text-align:center">状态</th>';
+    t += '<th style="padding:8px;text-align:center">置信度</th>';
+    t += '<th style="padding:8px;text-align:center">强弱</th>';
+    t += '<th style="padding:8px;text-align:left">仓位建议</th>';
+    t += '<th style="padding:8px;text-align:center">防狼</th>';
+    t += '</tr></thead><tbody>';
+    signals.forEach((s, i) => { t += signalRow(s, i); });
+    if (signals.length === 0) {
+      t += '<tr><td colspan="' + ncols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+    }
+    t += '</tbody></table>';
+    return t;
+  }
+
+  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新买卖点</h3>';
+  h += makeTable('🔴 第一类买卖点（趋势背驰，最新5个）', GLOBAL_SIGNALS.type1 || [], 9);
+  h += makeTable('🟠 第二类买卖点（回调确认，最新5个）', GLOBAL_SIGNALS.type2 || [], 9);
+  h += makeTable('🔵 第三类买卖点（中枢突破，最新20个）', GLOBAL_SIGNALS.type3 || [], 9);
   el.innerHTML = h;
 }
 
@@ -1728,12 +1708,18 @@ def generate_dashboard(data_dir: str = None,
                 entry["area_cmp"] = ""
             global_signals.append(entry)
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    global_signals_by_level: dict[str, list] = {"日线": [], "30分钟": [], "5分钟": []}
+    type_limits = {"type1": 5, "type2": 5, "type3": 20}
+    global_signals_by_type: dict[str, list] = {"type1": [], "type2": [], "type3": []}
     for s in global_signals:
-        lv = s["level"]
-        if lv in global_signals_by_level and len(global_signals_by_level[lv]) < 20:
-            global_signals_by_level[lv].append(s)
-    global_signals_top = global_signals_by_level
+        if s["type"] in ("1B", "1S"):
+            bucket = "type1"
+        elif s["type"] in ("2B", "2S"):
+            bucket = "type2"
+        else:
+            bucket = "type3"
+        if len(global_signals_by_type[bucket]) < type_limits[bucket]:
+            global_signals_by_type[bucket].append(s)
+    global_signals_top = global_signals_by_type
 
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -1922,12 +1908,18 @@ def generate_mobile_dashboard(data_dir: str = None,
                 entry_m["area_cmp"] = ""
             mobile_global_signals.append(entry_m)
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    mobile_gs_by_level: dict[str, list] = {"日线": [], "30分钟": [], "5分钟": []}
+    mobile_type_limits = {"type1": 5, "type2": 5, "type3": 20}
+    mobile_gs_by_type: dict[str, list] = {"type1": [], "type2": [], "type3": []}
     for s in mobile_global_signals:
-        lv = s["level"]
-        if lv in mobile_gs_by_level and len(mobile_gs_by_level[lv]) < 20:
-            mobile_gs_by_level[lv].append(s)
-    mobile_global_signals_top = mobile_gs_by_level
+        if s["type"] in ("1B", "1S"):
+            bucket = "type1"
+        elif s["type"] in ("2B", "2S"):
+            bucket = "type2"
+        else:
+            bucket = "type3"
+        if len(mobile_gs_by_type[bucket]) < mobile_type_limits[bucket]:
+            mobile_gs_by_type[bucket].append(s)
+    mobile_global_signals_top = mobile_gs_by_type
     mobile_global_signals_json = json.dumps(mobile_global_signals_top, ensure_ascii=False)
 
     tab_parts = []
@@ -2095,51 +2087,12 @@ const MIN_VIEW = 20;
 let dataLoading = false;
 let bspHitAreas = [];
 
-let mgsTab = '日线';
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
-  const levels = ['日线', '30分钟', '5分钟'];
-  const hasAny = levels.some(lv => (GLOBAL_SIGNALS[lv]||[]).length > 0);
-  if (!hasAny) {{ el.innerHTML = ''; return; }}
-
   const confIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
   const tClrs = {{'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'}};
 
-  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点 (每级别20)</div>';
-  h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
-  levels.forEach(lv => {{
-    const items = GLOBAL_SIGNALS[lv]||[];
-    const total = items.length;
-    const confirmedCnt = items.filter(s => s.status === 'confirmed').length;
-    const pendingCnt = items.filter(s => s.status === 'pending').length;
-    const invCnt = items.filter(s => s.status === 'invalidated').length;
-    let cntLabel = '' + total;
-    if (invCnt > 0 || pendingCnt > 0) {{
-      const parts = [];
-      if (confirmedCnt > 0) parts.push(confirmedCnt + '✓');
-      if (pendingCnt > 0) parts.push(pendingCnt + '⏳');
-      if (invCnt > 0) parts.push(invCnt + '✗');
-      cntLabel = parts.join(' ');
-    }}
-    const active = lv === mgsTab;
-    const bg = active ? '#21262d' : 'transparent';
-    const clr = active ? '#58a6ff' : '#8b949e';
-    const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="mgsTab='${{lv}}';renderMobileGlobalSignals()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{cntLabel}})</button>`;
-  }});
-  h += '</div>';
-
-  const signals = GLOBAL_SIGNALS[mgsTab] || [];
-  h += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
-  h += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
-  h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
-  h += '<th style="padding:4px;text-align:left">时间</th>';
-  h += '<th style="padding:4px;text-align:left">标的</th>';
-  h += '<th style="padding:4px;text-align:center">类型</th>';
-  h += '<th style="padding:4px;text-align:center">置信</th>';
-  h += '<th style="padding:4px;text-align:left">背驰</th>';
-  h += '</tr></thead><tbody>';
-  signals.forEach((s, i) => {{
+  function mgsRow(s, i) {{
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tc = tClrs[s.type] || '#c9d1d9';
     const confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
@@ -2151,18 +2104,39 @@ function renderMobileGlobalSignals() {{
     const mGsBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const mGsConfClr = mGsBuyType ? '#f85149' : '#3fb950';
     const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>');
-    h += `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
-    h += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
-    h += `<td style="padding:3px 4px;font-weight:600;${{strike}}"><a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
-    h += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
-    h += `<td style="padding:3px 4px;text-align:center">${{confStr}}</td>`;
-    h += `<td style="padding:3px 4px;font-size:10px">${{s.area_cmp || '-'}}</td>`;
-    h += '</tr>';
-  }});
-  if (signals.length === 0) {{
-    h += '<tr><td colspan="5" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+    let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
+    r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
+    r += `<td style="padding:3px 4px;font-weight:600;${{strike}}"><a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-size:10px;color:#8b949e">${{s.level||''}}</td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
+    r += `<td style="padding:3px 4px;text-align:center">${{confStr}}</td>`;
+    r += '</tr>';
+    return r;
   }}
-  h += '</tbody></table></div>';
+
+  function mgsTable(title, signals, ncols) {{
+    let t = '<div style="font-size:12px;font-weight:bold;color:#c9d1d9;margin:8px 0 4px">' + title + '</div>';
+    t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+    t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
+    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
+    t += '<th style="padding:4px;text-align:left">时间</th>';
+    t += '<th style="padding:4px;text-align:left">标的</th>';
+    t += '<th style="padding:4px;text-align:center">级别</th>';
+    t += '<th style="padding:4px;text-align:center">类型</th>';
+    t += '<th style="padding:4px;text-align:center">置信</th>';
+    t += '</tr></thead><tbody>';
+    signals.forEach((s, i) => {{ t += mgsRow(s, i); }});
+    if (signals.length === 0) {{
+      t += '<tr><td colspan="' + ncols + '" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>';
+    }}
+    t += '</tbody></table></div>';
+    return t;
+  }}
+
+  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点</div>';
+  h += mgsTable('🔴 第一类买卖点（最新5个）', GLOBAL_SIGNALS.type1 || [], 5);
+  h += mgsTable('🟠 第二类买卖点（最新5个）', GLOBAL_SIGNALS.type2 || [], 5);
+  h += mgsTable('🔵 第三类买卖点（最新20个）', GLOBAL_SIGNALS.type3 || [], 5);
   el.innerHTML = h;
 }}
 
