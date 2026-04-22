@@ -2889,7 +2889,8 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         else:
             return "weak", "low", tags
 
-    def _make_3b(breakout_stroke, pullback):
+    def _make_3b(breakout_stroke, pullback, *, dep_count: int = 1,
+                 pb_count: int = 1):
         strength, conf, tags = _grade_3b(breakout_stroke, pullback)
         s_idx = pullback.idx
         d_idx = stm.get(s_idx, -1)
@@ -2900,6 +2901,10 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         }
         breakout_pct = (breakout_stroke.end.high - hub.zg) / hub_range * 100
         margin_pct = (pullback.end.low - hub.zg) / hub_range * 100
+        if dep_count > 1 or pb_count > 1:
+            tags.append(f"次级别({dep_count}笔离开+{pb_count}笔回抽)")
+        else:
+            tags.append("单笔离开")
         tag_str = "，".join(tags)
         return BuySellPoint(
             type="3B", label="三买",
@@ -2918,22 +2923,57 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
 
     scan_limit = next_hub.strokes[0].idx if next_hub else len(strokes) + 1
 
+    # Collect all strokes after the hub and before the next hub.
+    post_hub = [s for s in strokes
+                if s.idx > hub_end_idx and s.idx < scan_limit]
+
+    # --- Single-stroke check (fires early) ---
+    single_found = False
     if last_stroke.direction == 1 and last_stroke.end.high > hub.zg:
         pullback = _find_next_stroke(strokes, last_stroke.idx, direction=-1)
         if pullback and pullback.end.low > hub.zg:
             points.append(_make_3b(last_stroke, pullback))
-            return
+            single_found = True
 
-    for s in strokes:
-        if s.idx <= hub_end_idx:
-            continue
-        if s.idx >= scan_limit:
-            break
-        if s.direction == 1 and s.end.high > hub.zg:
-            pullback = _find_next_stroke(strokes, s.idx, direction=-1)
-            if pullback and pullback.end.low > hub.zg:
-                points.append(_make_3b(s, pullback))
-            break
+    if not single_found:
+        for s in post_hub:
+            if s.direction == 1 and s.end.high > hub.zg:
+                pullback = _find_next_stroke(strokes, s.idx, direction=-1)
+                if pullback and pullback.end.low > hub.zg:
+                    points.append(_make_3b(s, pullback))
+                    single_found = True
+                break
+
+    # --- Multi-stroke scan: complete sub-level departure + pullback ---
+    # Collect all strokes after hub that remain above ZG.
+    above_zg: list[Stroke] = []
+    for s in post_hub:
+        if s.direction == 1:
+            if s.end.high <= hub.zg:
+                continue
+            above_zg.append(s)
+        elif s.direction == -1:
+            if s.end.low < hub.zg:
+                break
+            above_zg.append(s)
+
+    if len(above_zg) >= 3:
+        up_above = [s for s in above_zg if s.direction == 1]
+        if up_above:
+            peak_s = max(up_above, key=lambda s: s.end.high)
+            dep_up = len([s for s in up_above if s.idx <= peak_s.idx])
+            pb_downs = [s for s in above_zg
+                        if s.idx > peak_s.idx and s.direction == -1]
+            if pb_downs:
+                trough_s = min(pb_downs, key=lambda s: s.end.low)
+                if trough_s.end.low > hub.zg and (dep_up > 1 or len(pb_downs) > 1):
+                    multi_sig = _make_3b(
+                        peak_s, trough_s,
+                        dep_count=dep_up,
+                        pb_count=len(pb_downs),
+                    )
+                    if not single_found or multi_sig.dt != points[-1].dt:
+                        points.append(multi_sig)
 
 
 def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
@@ -3073,7 +3113,8 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         else:
             return "weak", "low", tags
 
-    def _make_3s(breakdown_stroke, rally):
+    def _make_3s(breakdown_stroke, rally, *, dep_count: int = 1,
+                 pb_count: int = 1):
         strength, conf, tags = _grade_3s(breakdown_stroke, rally)
         s_idx = rally.idx
         d_idx = stm.get(s_idx, -1)
@@ -3084,6 +3125,10 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         }
         breakdown_pct = (hub.zd - breakdown_stroke.end.low) / hub_range * 100
         margin_pct = (hub.zd - rally.end.high) / hub_range * 100
+        if dep_count > 1 or pb_count > 1:
+            tags.append(f"次级别({dep_count}笔离开+{pb_count}笔回抽)")
+        else:
+            tags.append("单笔离开")
         tag_str = "，".join(tags)
         return BuySellPoint(
             type="3S", label="三卖",
@@ -3101,23 +3146,55 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         )
 
     scan_limit = next_hub.strokes[0].idx if next_hub else len(strokes) + 1
+    post_hub = [s for s in strokes
+                if s.idx > hub_end_idx and s.idx < scan_limit]
 
+    # --- Single-stroke check ---
+    single_found = False
     if last_stroke.direction == -1 and last_stroke.end.low < hub.zd:
         rally = _find_next_stroke(strokes, last_stroke.idx, direction=1)
         if rally and rally.end.high < hub.zd:
             points.append(_make_3s(last_stroke, rally))
-            return
+            single_found = True
 
-    for s in strokes:
-        if s.idx <= hub_end_idx:
-            continue
-        if s.idx >= scan_limit:
-            break
-        if s.direction == -1 and s.end.low < hub.zd:
-            rally = _find_next_stroke(strokes, s.idx, direction=1)
-            if rally and rally.end.high < hub.zd:
-                points.append(_make_3s(s, rally))
-            break
+    if not single_found:
+        for s in post_hub:
+            if s.direction == -1 and s.end.low < hub.zd:
+                rally = _find_next_stroke(strokes, s.idx, direction=1)
+                if rally and rally.end.high < hub.zd:
+                    points.append(_make_3s(s, rally))
+                    single_found = True
+                break
+
+    # --- Multi-stroke scan: complete sub-level departure + pullback ---
+    below_zd: list[Stroke] = []
+    for s in post_hub:
+        if s.direction == -1:
+            if s.end.low >= hub.zd:
+                continue
+            below_zd.append(s)
+        elif s.direction == 1:
+            if s.end.high > hub.zd:
+                break
+            below_zd.append(s)
+
+    if len(below_zd) >= 3:
+        dn_below = [s for s in below_zd if s.direction == -1]
+        if dn_below:
+            trough_s = min(dn_below, key=lambda s: s.end.low)
+            dep_dn = len([s for s in dn_below if s.idx <= trough_s.idx])
+            pb_ups = [s for s in below_zd
+                      if s.idx > trough_s.idx and s.direction == 1]
+            if pb_ups:
+                peak_s = max(pb_ups, key=lambda s: s.end.high)
+                if peak_s.end.high < hub.zd and (dep_dn > 1 or len(pb_ups) > 1):
+                    multi_sig = _make_3s(
+                        trough_s, peak_s,
+                        dep_count=dep_dn,
+                        pb_count=len(pb_ups),
+                    )
+                    if not single_found or multi_sig.dt != points[-1].dt:
+                        points.append(multi_sig)
 
 
 # ── Helpers ──
