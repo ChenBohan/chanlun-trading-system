@@ -1359,8 +1359,44 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
         # Limit a-segment to strokes between the previous hub and the
         # first hub of this trend group (not ALL historical strokes).
         a_start_idx = hubs[i - 1].strokes[-1].idx if i > 0 else 0
+        first_hub_start = first_hub.strokes[0].idx
+
+        # Trim a-segment past any hidden hubs (3+ consecutive strokes
+        # with overlap that were filtered by the minimum-width threshold).
+        # Per 缠中说禅走势中枢定理一, the connecting segment between two
+        # same-level hubs must be sub-level and cannot contain a same-level
+        # hub internally.
+        all_in_a = [s for s in strokes
+                    if a_start_idx <= s.idx < first_hub_start]
+        if len(all_in_a) >= 3:
+            last_hidden_end = -1
+            k = 0
+            while k < len(all_in_a) - 2:
+                s1, s2, s3 = all_in_a[k], all_in_a[k + 1], all_in_a[k + 2]
+                highs = [max(x.start.high, x.end.high) for x in (s1, s2, s3)]
+                lows = [min(x.start.low, x.end.low) for x in (s1, s2, s3)]
+                zg, zd = min(highs), max(lows)
+                if zg > zd:
+                    end_k = k + 2
+                    while end_k + 1 < len(all_in_a):
+                        ns = all_in_a[end_k + 1]
+                        nh = max(ns.start.high, ns.end.high)
+                        nl = min(ns.start.low, ns.end.low)
+                        new_zg, new_zd = min(zg, nh), max(zd, nl)
+                        if new_zg > new_zd:
+                            zg, zd = new_zg, new_zd
+                            end_k += 1
+                        else:
+                            break
+                    last_hidden_end = end_k
+                    k = end_k + 1
+                else:
+                    k += 1
+            if last_hidden_end >= 0:
+                a_start_idx = all_in_a[last_hidden_end].idx
+
         seg_a = [s for s in strokes
-                 if a_start_idx <= s.idx < first_hub.strokes[0].idx
+                 if a_start_idx <= s.idx < first_hub_start
                  and s.direction == trend_dir]
 
         # Limit c-segment to strokes between the last hub and the next
@@ -1596,8 +1632,39 @@ def estimate_area_2x(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]:
                 break
 
         first_hub, last_hub = hubs[i], hubs[j]
+        a_low = hubs[i - 1].strokes[-1].idx if i > 0 else 0
+        fhs = first_hub.strokes[0].idx
+        all_in_a2 = [s for s in strokes if a_low <= s.idx < fhs]
+        eff_a_start = a_low
+        if len(all_in_a2) >= 3:
+            last_he = -1
+            kk = 0
+            while kk < len(all_in_a2) - 2:
+                s1, s2, s3 = all_in_a2[kk], all_in_a2[kk+1], all_in_a2[kk+2]
+                hs = [max(x.start.high, x.end.high) for x in (s1, s2, s3)]
+                ls = [min(x.start.low, x.end.low) for x in (s1, s2, s3)]
+                zg2, zd2 = min(hs), max(ls)
+                if zg2 > zd2:
+                    ek = kk + 2
+                    while ek + 1 < len(all_in_a2):
+                        ns = all_in_a2[ek + 1]
+                        nh = max(ns.start.high, ns.end.high)
+                        nl = min(ns.start.low, ns.end.low)
+                        nzg, nzd = min(zg2, nh), max(zd2, nl)
+                        if nzg > nzd:
+                            zg2, zd2 = nzg, nzd
+                            ek += 1
+                        else:
+                            break
+                    last_he = ek
+                    kk = ek + 1
+                else:
+                    kk += 1
+            if last_he >= 0:
+                eff_a_start = all_in_a2[last_he].idx
+
         seg_a = [s for s in strokes
-                 if s.idx < first_hub.strokes[0].idx and s.direction == trend_dir]
+                 if eff_a_start <= s.idx < fhs and s.direction == trend_dir]
         seg_c = [s for s in strokes
                  if s.idx > last_hub.strokes[-1].idx and s.direction == trend_dir]
 
