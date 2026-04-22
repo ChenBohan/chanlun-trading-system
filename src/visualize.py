@@ -1958,7 +1958,7 @@ def generate_mobile_dashboard(data_dir: str = None,
         if il.get("type") != last_type:
             label = "宽基" if il.get("type") == "broad" else ("个股" if il.get("type") == "stock" else "行业")
             tab_parts.append(
-                f'<div style="display:flex;align-items:center;padding:0 6px;'
+                f'<div class="idx-sep" style="display:flex;align-items:center;padding:0 6px;'
                 f'color:#484f58;font-size:10px;font-weight:700;letter-spacing:1px;'
                 f'border-left:2px solid #30363d;margin-left:2px;padding-left:8px">'
                 f'{label}</div>')
@@ -1969,8 +1969,10 @@ def generate_mobile_dashboard(data_dir: str = None,
         trend_icon = ('<span style="color:#f85149">▲</span>' if trend_up
                       else ('<span style="color:#3fb950">▼</span>' if trend_dn
                             else '<span style="color:#8b949e">—</span>'))
+        search_text = f'{il["index_name"]} {il.get("etf_code", "")}'.lower()
         tab_parts.append(
-            f'<div class="idx-tab{active}" onclick="switchIndex(\'{il["etf_code"]}\')">'
+            f'<div class="idx-tab{active}" data-search="{search_text}" '
+            f'onclick="switchIndex(\'{il["etf_code"]}\')">'
             f'{trend_icon} {il["index_name"]}</div>')
     idx_tabs_html = "\n      ".join(tab_parts)
     first_code = index_list[0]["etf_code"] if index_list else ""
@@ -2055,6 +2057,13 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 
 <div style="color:#c9d1d9;font-size:14px;font-weight:bold;border-bottom:1px solid #30363d;padding-bottom:4px;margin:12px 0 6px">📈 技术分析详情</div>
 <div class="chart-section">
+  <div style="padding:6px 8px 2px;background:#161b22">
+    <input id="idxSearch" type="text" placeholder="🔍 搜索标的..."
+           style="width:100%;padding:6px 10px;font-size:13px;border:1px solid #30363d;
+                  border-radius:6px;background:#0d1117;color:#c9d1d9;outline:none;
+                  box-sizing:border-box"
+           oninput="filterIdxTabs(this.value)">
+  </div>
   <div class="idx-tabs" id="idxTabs">
     {idx_tabs_html}
   </div>
@@ -2286,7 +2295,25 @@ async function switchIndex(code) {{
   currentIndex = code;
   document.querySelectorAll('.idx-tab').forEach(t => t.classList.remove('active'));
   event.target.classList.add('active');
+  document.getElementById('idxSearch').value = '';
+  filterIdxTabs('');
   await loadAndRender();
+}}
+
+function filterIdxTabs(query) {{
+  const q = query.trim().toLowerCase();
+  const tabs = document.querySelectorAll('#idxTabs .idx-tab');
+  const seps = document.querySelectorAll('#idxTabs .idx-sep');
+  if (!q) {{
+    tabs.forEach(t => t.style.display = '');
+    seps.forEach(s => s.style.display = '');
+    return;
+  }}
+  seps.forEach(s => s.style.display = 'none');
+  tabs.forEach(t => {{
+    const text = (t.dataset.search || t.textContent).toLowerCase();
+    t.style.display = text.includes(q) ? '' : 'none';
+  }});
 }}
 async function switchLevel(level) {{
   currentLevel = level;
