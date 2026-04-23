@@ -537,7 +537,7 @@ async function init() {
 
   if (INDEX_LIST.length > 0) {
     const first = INDEX_LIST[0];
-    document.getElementById('current-asset-label').textContent = first.index_name + ' (' + first.etf_code + ')';
+    document.getElementById('current-asset-label').textContent = formatAssetLabel(first);
   }
 
   chart = echarts.init(document.getElementById('chart-container'));
@@ -554,11 +554,22 @@ function toggleNav() {
   btn.textContent = navExpanded ? '收起标的 ▲' : '展开标的 ▼';
 }
 
+function formatAssetLabel(idx) {
+  const suffix = idx.market === 'SH' ? '.SH' : (idx.market === 'SZ' ? '.SZ' : '');
+  if (idx.type === 'stock') {
+    return idx.index_name + ' (' + idx.etf_code + suffix + ')';
+  }
+  if (idx.index_code && idx.index_code !== idx.etf_code) {
+    return idx.index_name + ' (' + idx.index_code + ' / ETF: ' + idx.etf_code + ')';
+  }
+  return idx.index_name + ' (' + idx.etf_code + suffix + ')';
+}
+
 function selectIndex(code) {
   currentIndex = code;
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.code === code));
   const idx = INDEX_LIST.find(x => x.etf_code === code);
-  if (idx) document.getElementById('current-asset-label').textContent = idx.index_name + ' (' + code + ')';
+  if (idx) document.getElementById('current-asset-label').textContent = formatAssetLabel(idx);
   if (navExpanded) toggleNav();
   render();
 }
@@ -1654,7 +1665,8 @@ def generate_dashboard(data_dir: str = None,
     for i in indices:
         entry = {"etf_code": i.etf_code, "index_name": i.index_name,
                  "etf_name": i.etf_name, "category": i.category,
-                 "type": i.type}
+                 "type": i.type, "index_code": i.index_code,
+                 "market": i.market}
         daily_key = f"{i.etf_code}_daily"
         m30_key = f"{i.etf_code}_30min"
         dd = all_data.get(daily_key, {})
@@ -1854,7 +1866,8 @@ def generate_mobile_dashboard(data_dir: str = None,
     for idx in indices:
         entry = {"etf_code": idx.etf_code, "index_name": idx.index_name,
                  "etf_name": idx.etf_name, "category": idx.category,
-                 "type": idx.type}
+                 "type": idx.type, "index_code": idx.index_code,
+                 "market": idx.market}
         daily_key = f"{idx.etf_code}_daily"
         m30_key = f"{idx.etf_code}_30min"
         dd = all_data.get(daily_key, {})
@@ -2293,8 +2306,18 @@ function renderMobileOverview() {{
 }}
 renderMobileGlobalSignals();
 renderMobileOverview();
+function formatAssetLabel(idx) {{
+  const suffix = idx.market === 'SH' ? '.SH' : (idx.market === 'SZ' ? '.SZ' : '');
+  if (idx.type === 'stock') {{
+    return idx.index_name + ' (' + idx.etf_code + suffix + ')';
+  }}
+  if (idx.index_code && idx.index_code !== idx.etf_code) {{
+    return idx.index_name + ' (' + idx.index_code + ' / ETF: ' + idx.etf_code + ')';
+  }}
+  return idx.index_name + ' (' + idx.etf_code + suffix + ')';
+}}
 if (INDEX_LIST.length > 0) {{
-  document.getElementById('mCurrentAsset').textContent = INDEX_LIST[0].index_name;
+  document.getElementById('mCurrentAsset').textContent = formatAssetLabel(INDEX_LIST[0]);
 }}
 
 function getData() {{
@@ -2335,7 +2358,7 @@ async function switchIndex(code) {{
   document.getElementById('idxSearch').value = '';
   filterIdxTabs('');
   const idx = INDEX_LIST.find(x => x.etf_code === code);
-  if (idx) document.getElementById('mCurrentAsset').textContent = idx.index_name;
+  if (idx) document.getElementById('mCurrentAsset').textContent = formatAssetLabel(idx);
   if (mNavOpen) toggleMobileNav();
   await loadAndRender();
 }}
