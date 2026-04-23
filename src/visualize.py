@@ -380,9 +380,12 @@ function renderGlobalSignals() {
       ? '<span title="' + (s.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌已失效</span>'
       : pending ? '<span style="color:#d29922">⏳待确认</span>'
       : '<span style="color:' + confirmedColor + '">' + confirmedIcon + '已确认</span>';
+    const idxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
+    const trend = idxInfo ? (idxInfo.trend || '') : '';
+    const trendIcon = trend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (trend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>');
     let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
-    r += '<td style="padding:6px 8px;font-weight:600;' + strike + '"><a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="跳转查看K线">' + s.etf_name + '</a></td>';
+    r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="跳转查看K线">' + s.etf_name + '</a></td>';
     r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
@@ -2186,9 +2189,12 @@ function renderMobileGlobalSignals() {{
     const mGsBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const mGsConfClr = mGsBuyType ? '#f85149' : '#3fb950';
     const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>');
+    const mIdxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
+    const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
+    const mTrendIcon = mTrend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (mTrend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>');
     let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
     r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
-    r += `<td style="padding:3px 4px;font-weight:600;${{strike}}"><a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
+    r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
     r += `<td style="padding:3px 4px;text-align:center">${{confStr}}</td>`;
     r += '</tr>';
