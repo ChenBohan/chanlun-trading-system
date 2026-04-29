@@ -18,7 +18,7 @@ import json
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from .data_fetcher import load_index_watchlist, IndexConfig, _PROJECT_ROOT
@@ -27,6 +27,17 @@ from .chanlun_engine import (
     RawBar, Stroke, Hub, BuySellPoint, Segment,
     synthesize_multi_level,
 )
+
+_TZ_CHINA = timezone(timedelta(hours=8))
+
+
+def _is_ashare_market_open() -> bool:
+    """Check if A-share market is currently in trading hours (Beijing time)."""
+    now = datetime.now(_TZ_CHINA)
+    if now.weekday() >= 5:
+        return False
+    t = now.hour * 60 + now.minute
+    return (9 * 60 + 30 <= t < 11 * 60 + 30) or (13 * 60 <= t < 15 * 60)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -168,6 +179,8 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 entry["structure"] = struct_list
             bsp_markers.append(entry)
 
+    tentative = 1 if (_is_ashare_market_open() and len(bars) > 0) else 0
+
     return {
         "dates": dates,
         "kline": kline_data,
@@ -184,6 +197,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         "hub_position": result.position_vs_hub,
         "hub_detail": result.hub_position_detail,
         "trend_completion": result.trend_completion,
+        "tentative": tentative,
         "stats": {
             "bars": len(bars),
             "merged": len(result.merged_bars),
@@ -668,11 +682,14 @@ function updateConclusionBar(data) {
 function updateStructBar(data) {
   const bar = document.getElementById('struct-bar');
   const s = data.stats;
+  const tentTag = data.tentative > 0
+    ? '<span style="color:#d29922;font-weight:bold" title="盘中数据，最后一根K线尚未确认">⚠ 盘中暂定</span>'
+    : '';
   bar.innerHTML = `
     <span>K线 ${s.bars}</span><span>合并 ${s.merged}</span>
     <span>分型 ${s.fractals}</span><span>笔 ${s.strokes}</span>
     <span>线段 ${s.segments}</span><span>笔中枢 ${s.hubs}</span>
-    <span>信号 ${s.bsp}</span>
+    <span>信号 ${s.bsp}</span>${tentTag}
   `;
 }
 
@@ -829,6 +846,22 @@ function updateSignalPanel(data) {
 function renderChart(data) {
   const upColor = '#f85149';
   const downColor = '#3fb950';
+
+  // Mark tentative (incomplete) bars with dashed border and reduced opacity
+  if (data.tentative > 0 && data.kline.length > 0) {
+    const lastIdx = data.kline.length - 1;
+    const lastBar = data.kline[lastIdx];
+    const isUp = lastBar[1] >= lastBar[0]; // close >= open
+    data.kline[lastIdx] = {
+      value: lastBar,
+      itemStyle: {
+        color: isUp ? 'rgba(248,81,73,0.35)' : 'rgba(63,185,80,0.35)',
+        borderColor: isUp ? 'rgba(248,81,73,0.6)' : 'rgba(63,185,80,0.6)',
+        borderType: 'dashed',
+        borderWidth: 2,
+      }
+    };
+  }
 
   // Hub mark areas
   const hubAreas = data.hubs.map(h => ({
@@ -2159,6 +2192,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     <div class="legend-item"><div class="legend-color" style="background:rgba(88,166,255,0.4)"></div>笔中枢</div>
     <div class="legend-item"><div class="legend-color" style="background:#f85149"></div>买▲</div>
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>卖▼</div>
+    <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.35);border:1px dashed rgba(248,81,73,0.6)"></div>暂定</div>
   </div>
   <div class="chart-area"><canvas id="macdCanvas" height="120"></canvas></div>
   <div class="legend">
@@ -2485,13 +2519,17 @@ function updateInfoBar(data) {{
     return `<span style="color:${{color}}">• ${{p}}</span>`;
   }}).join(' ');
 
+  const d = getData();
+  const tentTag = (d && d.tentative > 0)
+    ? '<span style="color:#d29922;font-weight:bold;font-size:11px" title="盘中数据，最后一根K线尚未确认"> ⚠盘中暂定</span>'
+    : '';
   bar.innerHTML = `
     <span style="background:${{scoreBg}};color:${{scoreClr}};padding:1px 6px;border-radius:3px;font-weight:700">${{sc}}</span>
     <span class="tag ${{tCls}}">${{(idx.trend||'-').replace('趋势','')}}</span> ${{tcText}}
     ${{idx.latest_signal && idx.latest_signal !== '-' ? '<span class="tag ' + dSigCls + '">' + idx.latest_signal + '</span>' : ''}}
     <span style="color:#484f58">|</span>
     <span class="tag ${{m30Cls}}">${{(idx.m30_trend||'-').replace('趋势','')}}</span> ${{m30TcText}}
-    ${{idx.m30_signal && idx.m30_signal !== '-' ? '<span class="tag ' + m30SigCls + '">' + idx.m30_signal + '</span>' : ''}}
+    ${{idx.m30_signal && idx.m30_signal !== '-' ? '<span class="tag ' + m30SigCls + '">' + idx.m30_signal + '</span>' : ''}}${{tentTag}}
     <br><span style="font-size:11px;line-height:1.4">${{conHtml}}</span>
   `;
 }}
@@ -2554,17 +2592,22 @@ function renderKline(data) {{
   }});
 
   // Candlesticks
+  const tentLast = data.tentative > 0 ? kline.length - 1 : -1;
   for (let gi = viewStart; gi < viewEnd; gi++) {{
     const [o, c, lo, hi] = kline[gi];
     const x = scaleX(gi);
     const bw = Math.max(cw * 0.6, 1);
     const isUp = c >= o;
+    const isTent = gi === tentLast;
+    ctx.globalAlpha = isTent ? 0.45 : 1.0;
     ctx.strokeStyle = ctx.fillStyle = isUp ? '#f85149' : '#3fb950';
     ctx.lineWidth = 1;
+    if (isTent) {{ ctx.setLineDash([3, 2]); }}
     ctx.beginPath(); ctx.moveTo(x, scaleY(hi)); ctx.lineTo(x, scaleY(lo)); ctx.stroke();
     const top = scaleY(Math.max(o, c));
     const bot = scaleY(Math.min(o, c));
     ctx.fillRect(x - bw / 2, top, bw, Math.max(bot - top, 1));
+    if (isTent) {{ ctx.setLineDash([]); ctx.globalAlpha = 1.0; }}
   }}
 
   // Segments polyline (thick purple)
@@ -2682,11 +2725,15 @@ function renderMACD(data) {{
   ctx.fillStyle = '#8b949e'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
   ctx.fillText('0', pad.l - 4, zeroY + 3);
 
+  const tentMacdLast = data.tentative > 0 ? macds.length - 1 : -1;
   macds.forEach((m, i) => {{
     const x = scaleXi(i); const bw = Math.max(cw * 0.5, 1);
+    const isTent = i === tentMacdLast;
+    ctx.globalAlpha = isTent ? 0.45 : 1.0;
     ctx.fillStyle = m >= 0 ? '#f85149' : '#3fb950';
     const y1 = zeroY, y2 = scaleY(m);
     ctx.fillRect(x - bw / 2, Math.min(y1, y2), bw, Math.abs(y2 - y1) || 1);
+    if (isTent) {{ ctx.globalAlpha = 1.0; }}
   }});
 
   ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1.2;

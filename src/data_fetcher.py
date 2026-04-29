@@ -19,10 +19,12 @@ import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
+
+_TZ_CHINA = timezone(timedelta(hours=8))
 
 
 # ════════════════════════════════════════════════════════════════════
