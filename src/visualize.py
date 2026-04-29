@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from typing import Optional
 
@@ -1603,66 +1605,140 @@ def _actionability_score(daily_data: dict, m30_data: dict, syn: dict) -> tuple[i
 
 
 # ════════════════════════════════════════════════════════════════════
-# Generate HTML
+# Shared analysis pipeline (used by both desktop & mobile dashboards)
 # ════════════════════════════════════════════════════════════════════
 
-def generate_dashboard(data_dir: str = None,
-                       output_path: str = None) -> str:
-    """Run analysis on all indices and generate HTML dashboard.
+def _analyze_one_index_worker(args: tuple) -> dict:
+    """Worker function for multiprocess analysis. Must be top-level for pickling."""
+    etf_code, idx_dir, levels_cfg = args
+    echarts_items = {}
+    level_results = {}
 
-    Args:
-        data_dir: directory containing ETF CSV data (default: PROJECT_ROOT/data)
-        output_path: output HTML path (default: PROJECT_ROOT/reports/dashboard.html)
+    for level_key, csv_name, _label in levels_cfg:
+        csv_path = os.path.join(idx_dir, csv_name)
+        if not os.path.exists(csv_path):
+            continue
+        bars = load_bars_from_csv(csv_path)
+        result = analyze(bars, level_key)
+        echarts_data = _result_to_echarts_data(result)
+        echarts_items[f"{etf_code}_{level_key}"] = echarts_data
+        level_results[level_key] = result
 
-    Returns:
-        path to the generated HTML file
+    syn_dict = None
+    syn_text = None
+    if "daily" in level_results:
+        syn = synthesize_multi_level(
+            level_results["daily"],
+            level_results.get("30min"),
+            level_results.get("5min"),
+        )
+        syn_dict = _synthesis_to_dict(syn)
+        syn_text = f"{syn.direction_alignment} | {syn.overall_bias}"
+
+    return {
+        "etf_code": etf_code,
+        "echarts": echarts_items,
+        "synthesis": syn_dict,
+        "syn_text": syn_text,
+    }
+
+
+def run_analysis_pipeline(data_dir: str = None,
+                          max_workers: int = None) -> dict:
+    """Run chanlun analysis on all indices and return shared results.
+
+    Supports multiprocess parallelism for analyze() calls.
+    The returned dict can be passed to generate_dashboard() and
+    generate_mobile_dashboard() to avoid redundant computation.
+
+    Returns dict with keys: all_data, synthesis_data, index_list,
+    latest_data_time, indices.
     """
     if data_dir is None:
         data_dir = os.path.join(_PROJECT_ROOT, "data")
-    if output_path is None:
-        output_path = os.path.join(_PROJECT_ROOT, "reports", "dashboard.html")
-
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     indices = load_index_watchlist()
-    all_data = {}
-    levels = [("daily", "daily.csv", "日线"),
-              ("30min", "30min.csv", "30分钟"),
-              ("5min", "5min.csv", "5分钟")]
+    levels_cfg = [("daily", "daily.csv", "日线"),
+                  ("30min", "30min.csv", "30分钟"),
+                  ("5min", "5min.csv", "5分钟")]
 
-    total = len(indices) * len(levels)
-    done = 0
+    total = len(indices) * len(levels_cfg)
+    t0 = time.perf_counter()
 
-    synthesis_data = {}
-
+    tasks = []
     for idx in indices:
         idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}")
-        level_results: dict[str, AnalysisResult] = {}
-        for level_key, csv_name, level_label in levels:
-            done += 1
-            csv_path = os.path.join(idx_dir, csv_name)
-            if not os.path.exists(csv_path):
-                print(f"  [{done}/{total}] SKIP {idx.etf_name} {level_label} (no data)")
-                continue
+        tasks.append((idx.etf_code, idx_dir, levels_cfg))
 
-            print(f"  [{done}/{total}] {idx.etf_name} {level_label}...", end=" ", flush=True)
-            bars = load_bars_from_csv(csv_path)
-            result = analyze(bars, level_key)
-            level_results[level_key] = result
-            echarts_data = _result_to_echarts_data(result)
-            key = f"{idx.etf_code}_{level_key}"
-            all_data[key] = echarts_data
-            print(f"OK ({result.trend}, {len(result.buy_sell_points)} signals)")
+    all_data = {}
+    synthesis_data = {}
 
-        if "daily" in level_results:
-            syn = synthesize_multi_level(
-                level_results["daily"],
-                level_results.get("30min"),
-                level_results.get("5min"),
-            )
-            synthesis_data[idx.etf_code] = _synthesis_to_dict(syn)
-            print(f"  → 联立: {syn.direction_alignment} | {syn.overall_bias}")
+    if max_workers and max_workers > 1:
+        print(f"  Analyzing {total} tasks with {max_workers} processes...")
+        done = 0
+        with ProcessPoolExecutor(max_workers=max_workers) as pool:
+            future_map = {pool.submit(_analyze_one_index_worker, t): t[0]
+                          for t in tasks}
+            for future in as_completed(future_map):
+                result = future.result()
+                code = result["etf_code"]
+                all_data.update(result["echarts"])
+                if result["synthesis"]:
+                    synthesis_data[code] = result["synthesis"]
+                done += len(result["echarts"])
+                name = future_map[future]
+                syn_info = f" → {result['syn_text']}" if result["syn_text"] else ""
+                print(f"  [{done}/{total}] {name} ({len(result['echarts'])} levels){syn_info}")
+    else:
+        done = 0
+        for idx in indices:
+            idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}")
+            level_results: dict[str, AnalysisResult] = {}
+            for level_key, csv_name, level_label in levels_cfg:
+                done += 1
+                csv_path = os.path.join(idx_dir, csv_name)
+                if not os.path.exists(csv_path):
+                    print(f"  [{done}/{total}] SKIP {idx.etf_name} {level_label} (no data)")
+                    continue
+                print(f"  [{done}/{total}] {idx.etf_name} {level_label}...", end=" ", flush=True)
+                bars = load_bars_from_csv(csv_path)
+                result = analyze(bars, level_key)
+                level_results[level_key] = result
+                echarts_data = _result_to_echarts_data(result)
+                all_data[f"{idx.etf_code}_{level_key}"] = echarts_data
+                print(f"OK ({result.trend}, {len(result.buy_sell_points)} signals)")
 
+            if "daily" in level_results:
+                syn = synthesize_multi_level(
+                    level_results["daily"],
+                    level_results.get("30min"),
+                    level_results.get("5min"),
+                )
+                synthesis_data[idx.etf_code] = _synthesis_to_dict(syn)
+                print(f"  → 联立: {syn.direction_alignment} | {syn.overall_bias}")
+
+    elapsed = time.perf_counter() - t0
+    print(f"  Analysis complete: {len(all_data)} charts in {elapsed:.1f}s")
+
+    index_list = _build_index_list(indices, all_data, synthesis_data)
+
+    latest_data_time = ""
+    for key, data in all_data.items():
+        dates = data.get("dates", [])
+        if dates and dates[-1] > latest_data_time:
+            latest_data_time = dates[-1]
+
+    return {
+        "all_data": all_data,
+        "synthesis_data": synthesis_data,
+        "index_list": index_list,
+        "latest_data_time": latest_data_time,
+        "indices": indices,
+    }
+
+
+def _build_index_list(indices, all_data, synthesis_data):
+    """Build the sorted index_list from analysis results."""
     index_list = []
     _valid_sig = {"1B", "1S", "2B", "2S", "3B", "3S"}
     for i in indices:
@@ -1681,7 +1757,6 @@ def generate_dashboard(data_dir: str = None,
         entry["summary"] = summary
         entry.update(overview)
 
-        # Find most recent signal datetime from daily & 30min only for sorting
         latest_sig_dt = ""
         for lk in ("daily", "30min"):
             d = all_data.get(f"{i.etf_code}_{lk}", {})
@@ -1708,15 +1783,46 @@ def generate_dashboard(data_dir: str = None,
     broad.sort(key=_sort_key, reverse=True)
     sector.sort(key=_sort_key, reverse=True)
     stocks.sort(key=_sort_key, reverse=True)
-    index_list = broad + sector + stocks
+    return broad + sector + stocks
 
-    latest_data_time = ""
-    for key, data in all_data.items():
-        dates = data.get("dates", [])
-        if dates:
-            last_dt = dates[-1]
-            if last_dt > latest_data_time:
-                latest_data_time = last_dt
+
+# ════════════════════════════════════════════════════════════════════
+# Generate HTML
+# ════════════════════════════════════════════════════════════════════
+
+def generate_dashboard(data_dir: str = None,
+                       output_path: str = None,
+                       cache: dict = None) -> str:
+    """Generate HTML dashboard. Reuses pre-computed analysis if cache is provided.
+
+    Args:
+        data_dir: directory containing ETF CSV data (default: PROJECT_ROOT/data)
+        output_path: output HTML path (default: PROJECT_ROOT/reports/dashboard.html)
+        cache: pre-computed results from run_analysis_pipeline() to avoid redundant analysis
+
+    Returns:
+        path to the generated HTML file
+    """
+    if data_dir is None:
+        data_dir = os.path.join(_PROJECT_ROOT, "data")
+    if output_path is None:
+        output_path = os.path.join(_PROJECT_ROOT, "reports", "dashboard.html")
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    if cache is not None:
+        all_data = cache["all_data"]
+        synthesis_data = cache["synthesis_data"]
+        index_list = cache["index_list"]
+        latest_data_time = cache["latest_data_time"]
+        indices = cache["indices"]
+    else:
+        pipe = run_analysis_pipeline(data_dir=data_dir)
+        all_data = pipe["all_data"]
+        synthesis_data = pipe["synthesis_data"]
+        index_list = pipe["index_list"]
+        latest_data_time = pipe["latest_data_time"]
+        indices = pipe["indices"]
 
     # Collect global signals (1B/1S/2B/2S/3B/3S) across all indices
     # Filter out weak 3B/3S — they have low operational value per theory.
@@ -1818,11 +1924,12 @@ def generate_dashboard(data_dir: str = None,
 # ════════════════════════════════════════════════════════════════════
 
 def generate_mobile_dashboard(data_dir: str = None,
-                              output_path: str = None) -> str:
+                              output_path: str = None,
+                              cache: dict = None) -> str:
     """Generate a mobile-optimized HTML dashboard with Canvas K-line charts.
 
-    Uses identical data as the desktop (ECharts) version via _result_to_echarts_data
-    and _synthesis_to_dict. Only the rendering differs (Canvas vs ECharts).
+    Reuses pre-computed analysis from cache if provided,
+    avoiding redundant 492 analyze() calls.
     """
     if data_dir is None:
         data_dir = os.path.join(_PROJECT_ROOT, "data")
@@ -1831,97 +1938,23 @@ def generate_mobile_dashboard(data_dir: str = None,
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    indices = load_index_watchlist()
-    levels_cfg = [("daily", "daily.csv", "日线"),
-                  ("30min", "30min.csv", "30分钟"),
-                  ("5min", "5min.csv", "5分钟")]
-
-    all_data = {}
-    synthesis_data = {}
-
-    for idx in indices:
-        idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}")
-        level_results: dict[str, AnalysisResult] = {}
-
-        for level_key, csv_name, level_label in levels_cfg:
-            csv_path = os.path.join(idx_dir, csv_name)
-            if not os.path.exists(csv_path):
-                continue
-            result = analyze(load_bars_from_csv(csv_path), level_key)
-            level_results[level_key] = result
-            echarts_data = _result_to_echarts_data(result)
-            key = f"{idx.etf_code}_{level_key}"
-            all_data[key] = echarts_data
-            print(f"  [{idx.etf_name} {level_label}] {result.trend} | "
-                  f"{len(result.buy_sell_points)} signals")
-
-        if "daily" in level_results:
-            syn = synthesize_multi_level(
-                level_results["daily"],
-                level_results.get("30min"),
-                level_results.get("5min"),
-            )
-            synthesis_data[idx.etf_code] = _synthesis_to_dict(syn)
-            print(f"  → 联立: {syn.direction_alignment} | {syn.overall_bias}")
-
-    index_list = []
-    _valid_sig_m = {"1B", "1S", "2B", "2S", "3B", "3S"}
-    for idx in indices:
-        entry = {"etf_code": idx.etf_code, "index_name": idx.index_name,
-                 "etf_name": idx.etf_name, "category": idx.category,
-                 "type": idx.type, "index_code": idx.index_code,
-                 "market": idx.market}
-        daily_key = f"{idx.etf_code}_daily"
-        m30_key = f"{idx.etf_code}_30min"
-        dd = all_data.get(daily_key, {})
-        m30 = all_data.get(m30_key, {})
-        syn = synthesis_data.get(idx.etf_code, {})
-        score, summary = _actionability_score(dd, m30, syn)
-        overview = _build_index_overview(dd, m30, syn)
-        entry["score"] = score
-        entry["summary"] = summary
-        entry.update(overview)
-
-        latest_sig_dt = ""
-        for lk in ("daily", "30min"):
-            d = all_data.get(f"{idx.etf_code}_{lk}", {})
-            dates = d.get("dates", [])
-            for p in d.get("bsp", []):
-                if p.get("type") not in _valid_sig_m:
-                    continue
-                if p.get("type") in ("3B", "3S") and p.get("strength") == "weak":
-                    continue
-                pi = p.get("idx", -1)
-                if 0 <= pi < len(dates):
-                    dt = dates[pi]
-                    if dt > latest_sig_dt:
-                        latest_sig_dt = dt
-        entry["latest_sig_dt"] = latest_sig_dt
-        index_list.append(entry)
-
-    def _sort_key_m(x):
-        return (x.get("latest_sig_dt", ""), x["score"])
-
-    broad = [x for x in index_list if x.get("type") == "broad"]
-    sector = [x for x in index_list if x.get("type") == "sector"]
-    stocks = [x for x in index_list if x.get("type") == "stock"]
-    broad.sort(key=_sort_key_m, reverse=True)
-    sector.sort(key=_sort_key_m, reverse=True)
-    stocks.sort(key=_sort_key_m, reverse=True)
-    index_list = broad + sector + stocks
-
-    latest_data_time = ""
-    for key, data in all_data.items():
-        dates = data.get("dates", [])
-        if dates:
-            last_dt = dates[-1]
-            if last_dt > latest_data_time:
-                latest_data_time = last_dt
+    if cache is not None:
+        all_data = cache["all_data"]
+        synthesis_data = cache["synthesis_data"]
+        index_list = cache["index_list"]
+        latest_data_time = cache["latest_data_time"]
+        indices = cache["indices"]
+    else:
+        pipe = run_analysis_pipeline(data_dir=data_dir)
+        all_data = pipe["all_data"]
+        synthesis_data = pipe["synthesis_data"]
+        index_list = pipe["index_list"]
+        latest_data_time = pipe["latest_data_time"]
+        indices = pipe["indices"]
 
     gen_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     data_time = latest_data_time or "-"
 
-    # Write per-index data files for lazy loading (shared with desktop)
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
     for key, chart_data in all_data.items():

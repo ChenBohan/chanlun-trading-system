@@ -138,18 +138,25 @@ def cmd_batch(args):
 
 def cmd_run(args):
     """Full pipeline: fetch → analyze → dashboard."""
+    import time as _time
     from src.data_fetcher import (
         load_index_watchlist, fetch_all_indices,
         save_fetch_results, print_fetch_summary,
     )
-    from src.visualize import generate_dashboard, generate_mobile_dashboard
+    from src.visualize import (
+        generate_dashboard, generate_mobile_dashboard,
+        run_analysis_pipeline,
+    )
 
     print("=" * 60)
     print("缠论交易系统 v2 — 完整流水线")
     print("=" * 60)
 
+    t_start = _time.perf_counter()
+
     # Step 1: Fetch
-    print("\n[Step 1/3] 数据拉取...")
+    print("\n[Step 1/4] 数据拉取...")
+    t0 = _time.perf_counter()
     indices = load_index_watchlist()
     results = fetch_all_indices(
         indices=indices, beg=args.beg,
@@ -157,16 +164,32 @@ def cmd_run(args):
     )
     print_fetch_summary(results)
     save_fetch_results(results, fmt="csv")
+    t_fetch = _time.perf_counter() - t0
 
-    # Step 2: Dashboard
-    print("\n[Step 2/3] 生成仪表盘...")
-    generate_dashboard()
+    # Step 2: Analyze all (shared between desktop & mobile)
+    print("\n[Step 2/4] 缠论分析（多进程）...")
+    t0 = _time.perf_counter()
+    analyze_workers = min(args.analyze_workers, len(indices))
+    cache = run_analysis_pipeline(max_workers=analyze_workers)
+    t_analyze = _time.perf_counter() - t0
 
-    # Step 3: Mobile dashboard
-    print("\n[Step 3/3] 生成移动版仪表盘...")
-    generate_mobile_dashboard()
+    # Step 3: Desktop dashboard (reuses analysis cache)
+    print("\n[Step 3/4] 生成桌面仪表盘...")
+    t0 = _time.perf_counter()
+    generate_dashboard(cache=cache)
+    t_desktop = _time.perf_counter() - t0
 
-    print("\n完整流水线执行完毕。")
+    # Step 4: Mobile dashboard (reuses analysis cache, zero re-analysis)
+    print("\n[Step 4/4] 生成移动版仪表盘...")
+    t0 = _time.perf_counter()
+    generate_mobile_dashboard(cache=cache)
+    t_mobile = _time.perf_counter() - t0
+
+    t_total = _time.perf_counter() - t_start
+    print(f"\n完整流水线执行完毕。")
+    print(f"  数据拉取: {t_fetch:.1f}s | 缠论分析: {t_analyze:.1f}s | "
+          f"桌面仪表盘: {t_desktop:.1f}s | 移动仪表盘: {t_mobile:.1f}s | "
+          f"总计: {t_total:.1f}s")
 
 
 def main():
@@ -211,7 +234,11 @@ def main():
     p_run.add_argument("--delay", type=float, default=0.2,
                         help="API 调用间隔秒数 (默认: 0.2)")
     p_run.add_argument("--workers", type=int, default=8,
-                        help="并发线程数 (默认: 8)")
+                        help="数据拉取并发线程数 (默认: 8)")
+    _default_analyze = max(4, (os.cpu_count() or 4) // 2)
+    p_run.add_argument("--analyze-workers", type=int, default=_default_analyze,
+                        dest="analyze_workers",
+                        help=f"分析阶段并行进程数 (默认: {_default_analyze}, 0=串行)")
 
     args = parser.parse_args()
 
