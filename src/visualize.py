@@ -170,6 +170,8 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "wolf": p.wolf_warning,
                 "zone": p.macd_zone,
                 "strength": p.strength,
+                "str_score": p.strength_score,
+                "str_details": p.strength_details,
                 "pos_advice": p.position_advice,
                 "status": p.status,
                 "inv_reason": p.invalidation_reason,
@@ -995,16 +997,31 @@ function renderChart(data) {
     const confMap = {'high': '🔴 高', 'medium': '🟡 中', 'low': '⚪ 低'};
     const strMap = {strongest: '🔥最强', strong: '💪强势', standard: '📌标准', weak: '⚠弱'};
     const statusMap = {'active': '✅ 有效', 'confirmed': '✅ 已确认', 'invalidated': '❌ 失效', 'pending': '⏳ 待确认'};
-    let h = '<div style="max-width:360px;font-size:13px;line-height:1.6">';
+    let h = '<div style="max-width:400px;font-size:13px;line-height:1.6">';
     const typeColor = p.is_buy ? '#f85149' : '#3fb950';
     h += '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">#' + p.bsp_idx + ' ' + p.label + '</div>';
     h += '<div style="color:#8b949e;margin:2px 0">日期: ' + (data.dates[p.idx] || '') + ' | 价格: ' + p.price.toFixed(3) + '</div>';
     h += '<table style="width:100%;border-collapse:collapse;margin:4px 0">';
     h += '<tr><td style="color:#8b949e;padding:2px 6px 2px 0">置信度</td><td>' + (confMap[p.conf] || p.conf || '-') + '</td>';
-    h += '<td style="color:#8b949e;padding:2px 6px 2px 12px">强弱</td><td>' + (strMap[p.strength] || p.strength || '-') + '</td></tr>';
+    h += '<td style="color:#8b949e;padding:2px 6px 2px 12px">强弱</td><td>' + (strMap[p.strength] || p.strength || '-');
+    if (p.str_score !== undefined && p.str_score !== null) h += ' <span style="color:#8b949e;font-size:11px">(总分' + p.str_score + ')</span>';
+    h += '</td></tr>';
     h += '<tr><td style="color:#8b949e;padding:2px 6px 2px 0">状态</td><td>' + (statusMap[p.status] || p.status) + '</td>';
     h += '<td style="color:#8b949e;padding:2px 6px 2px 12px">防狼</td><td>' + (p.wolf ? '<span style="color:#d29922">⚠ ' + p.wolf + '</span>' : '✓ 安全') + '</td></tr>';
     h += '</table>';
+    if (p.str_details && p.str_details.length > 0) {
+      h += '<table style="width:100%;border-collapse:collapse;margin:4px 0;font-size:12px">';
+      h += '<tr style="border-bottom:1px solid #30363d"><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">维度</th><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">判断</th><th style="color:#8b949e;text-align:right;padding:2px 4px;font-weight:normal">分值</th></tr>';
+      p.str_details.forEach(function(d) {
+        const sc = d.score;
+        const scColor = sc > 0 ? '#3fb950' : (sc < 0 ? '#f85149' : '#8b949e');
+        const scStr = sc > 0 ? '+' + sc : String(sc);
+        h += '<tr><td style="color:#d2a8ff;padding:1px 4px;white-space:nowrap">' + d.dim + '</td>';
+        h += '<td style="color:#c9d1d9;padding:1px 4px">' + d.label + '</td>';
+        h += '<td style="color:' + scColor + ';text-align:right;padding:1px 4px;font-weight:bold">' + scStr + '</td></tr>';
+      });
+      h += '</table>';
+    }
     if (p.ranges && p.ranges.length >= 2) {
       const r0 = p.ranges[0], r1 = p.ranges[1];
       const ratio = r0.area > 0 ? (r1.area / r0.area * 100).toFixed(1) : '-';
@@ -1020,7 +1037,7 @@ function renderChart(data) {
     if (p.status === 'invalidated' && p.inv_reason) {
       h += '<div style="margin:3px 0;color:#da3633">失效原因: ' + p.inv_reason + '</div>';
     }
-    h += '<div style="margin:4px 0 0;color:#8b949e;font-size:12px;border-top:1px solid #30363d;padding-top:4px">' + (p.desc || '') + '</div>';
+    h += '<div style="margin:4px 0 0;color:#8b949e;font-size:11px;border-top:1px solid #30363d;padding-top:4px">' + (p.desc || '') + '</div>';
     h += '</div>';
     return h;
   }
@@ -2988,10 +3005,25 @@ function showBspTooltip(bp, screenX, screenY) {{
   h += '<div style="color:#8b949e;margin:2px 0">日期: ' + dateStr + ' | 价格: ' + bp.price.toFixed(3) + '</div>';
   h += '<table style="width:100%;border-collapse:collapse;margin:4px 0">';
   h += '<tr><td style="color:#8b949e;padding:2px 4px 2px 0;white-space:nowrap">置信度</td><td>' + (confMap[bp.conf] || bp.conf || '-') + '</td>';
-  h += '<td style="color:#8b949e;padding:2px 4px 2px 8px;white-space:nowrap">强弱</td><td>' + (strMap[bp.strength] || bp.strength || '-') + '</td></tr>';
+  h += '<td style="color:#8b949e;padding:2px 4px 2px 8px;white-space:nowrap">强弱</td><td>' + (strMap[bp.strength] || bp.strength || '-');
+  if (bp.str_score !== undefined && bp.str_score !== null) h += ' <span style="color:#8b949e;font-size:11px">(总分' + bp.str_score + ')</span>';
+  h += '</td></tr>';
   h += '<tr><td style="color:#8b949e;padding:2px 4px 2px 0;white-space:nowrap">状态</td><td>' + (statusMap[bp.status] || bp.status) + '</td>';
   h += '<td style="color:#8b949e;padding:2px 4px 2px 8px;white-space:nowrap">防狼</td><td>' + (bp.wolf ? '<span style="color:#d29922">⚠ ' + bp.wolf + '</span>' : '✓ 安全') + '</td></tr>';
   h += '</table>';
+  if (bp.str_details && bp.str_details.length > 0) {{
+    h += '<table style="width:100%;border-collapse:collapse;margin:4px 0;font-size:12px">';
+    h += '<tr style="border-bottom:1px solid #30363d"><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">维度</th><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">判断</th><th style="color:#8b949e;text-align:right;padding:2px 4px;font-weight:normal">分值</th></tr>';
+    bp.str_details.forEach(function(dd) {{
+      var sc = dd.score;
+      var scColor = sc > 0 ? '#3fb950' : (sc < 0 ? '#f85149' : '#8b949e');
+      var scStr = sc > 0 ? '+' + sc : String(sc);
+      h += '<tr><td style="color:#d2a8ff;padding:1px 4px;white-space:nowrap">' + dd.dim + '</td>';
+      h += '<td style="color:#c9d1d9;padding:1px 4px">' + dd.label + '</td>';
+      h += '<td style="color:' + scColor + ';text-align:right;padding:1px 4px;font-weight:bold">' + scStr + '</td></tr>';
+    }});
+    h += '</table>';
+  }}
   if (bp.ranges && bp.ranges.length >= 2) {{
     const r0 = bp.ranges[0], r1 = bp.ranges[1];
     const ratio = r0.area > 0 ? (r1.area / r0.area * 100).toFixed(1) : '-';
