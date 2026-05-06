@@ -296,20 +296,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 #chart-container { width: 100%; height: calc(100vh - 380px); min-height: 420px; }
 
-.detail-tabs { display: flex; padding: 12px 32px 0; gap: 8px; border-top: 1px solid #30363d; }
-.detail-tab { padding: 8px 18px; border-radius: 6px 6px 0 0; cursor: pointer; border: none;
-              background: none; color: #8b949e; font-size: 14px;
-              border-bottom: 2px solid transparent; transition: all 0.15s; }
-.detail-tab:hover { color: #c9d1d9; }
-.detail-tab.active { color: #58a6ff; border-bottom-color: #58a6ff; background: #161b22; }
-.detail-panel { display: none; padding: 16px 32px; }
-.detail-panel.active { display: block; }
+.detail-panel { padding: 16px 32px; }
 
 #synthesis-panel h3 { font-size: 18px; color: #c9d1d9; margin-bottom: 12px; }
 #synthesis-panel h4 { font-size: 16px; margin-top: 12px; }
 
-#signal-panel { max-height: 400px; overflow-y: auto; }
-#signal-panel h3 { font-size: 18px; color: #c9d1d9; margin-bottom: 12px; }
 .signal-table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .signal-table th { text-align: left; padding: 10px 14px; color: #8b949e; border-bottom: 2px solid #21262d;
                    font-weight: 600; font-size: 14px; letter-spacing: 0.5px;
@@ -332,8 +323,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   <span class="gen-time">数据：__DATA_TIME__ | 生成：__GEN_TIME__</span>
 </div>
 
-<div id="global-signals-table" style="margin:0 32px 16px;overflow-x:auto"></div>
-
 <div style="display:flex;align-items:center;margin:24px 32px 0;gap:12px">
   <h2 style="color:#c9d1d9;font-size:17px;margin:0">📈 技术分析详情</h2>
   <span id="current-asset-label" style="color:#58a6ff;font-size:14px;font-weight:600"></span>
@@ -352,15 +341,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 <div id="chart-container"></div>
 
-<div class="detail-tabs" id="detail-tabs">
-  <button class="detail-tab active" data-panel="synthesis-panel">多级别联立</button>
-  <button class="detail-tab" data-panel="signal-panel">买卖点信号</button>
-</div>
 <div id="synthesis-panel" class="detail-panel active"></div>
-<div id="signal-panel" class="detail-panel"></div>
-
-<h2 style="color:#c9d1d9;margin:24px 32px 8px;font-size:17px;border-bottom:1px solid #30363d;padding-bottom:6px">📊 标的可操作性总览</h2>
-<div id="overview-table" style="margin:0 32px 16px;overflow-x:auto"></div>
 
 <script>
 // ─── Data: lazy-loaded per index via script injection ───
@@ -368,7 +349,6 @@ var DATA_CACHE = {};
 const DATA_KEYS = __ALL_DATA_JSON__;
 const INDEX_LIST = __INDEX_LIST_JSON__;
 const SYNTHESIS = __SYNTHESIS_JSON__;
-const GLOBAL_SIGNALS = __GLOBAL_SIGNALS_JSON__;
 
 function getChartData(key) { return DATA_CACHE[key] || null; }
 
@@ -387,161 +367,8 @@ let currentIndex = INDEX_LIST[0].etf_code;
 let currentLevel = 'daily';
 let chart = null;
 
-// ─── Global Signals Table (tabbed by level, split into type-1/2/3 sub-tables) ───
-let gsActiveTab = '日线';
-function renderGlobalSignals() {
-  const el = document.getElementById('global-signals-table');
-  const levels = ['日线', '30分钟', '5分钟'];
-  const hasAny = levels.some(lv => {
-    const d = GLOBAL_SIGNALS[lv]; return d && ((d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length > 0);
-  });
-  if (!hasAny) { el.innerHTML = ''; return; }
-
-  const confIcons = {'high': '🔴高', 'medium': '🟡中', 'low': '⚪低'};
-  const typeColors = {'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'};
-  const strengthMap = {'strongest': '🔥最强', 'strong': '💪强势', 'standard': '📌标准', 'weak': '⚠弱'};
-
-  function signalRow(s, i) {
-    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
-    const tClr = typeColors[s.type] || '#c9d1d9';
-    const confStr = confIcons[s.conf] || s.conf || '-';
-    const wolfStr = s.wolf ? '⚠' : '✓';
-    const wolfClr = s.wolf ? '#d29922' : '#3fb950';
-    const strStr = strengthMap[s.strength] || s.strength || '-';
-    const inv = s.status === 'invalidated';
-    const pending = s.status === 'pending';
-    const rowOpacity = inv ? 'opacity:0.45;' : '';
-    const strike = inv ? 'text-decoration:line-through;' : '';
-    const isBuyType = ['1B','2B','3B','PB'].includes(s.type);
-    const confirmedColor = isBuyType ? '#f85149' : '#3fb950';
-    const confirmedIcon = isBuyType ? '🔴' : '🟢';
-    const statusHtml = inv
-      ? '<span title="' + (s.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌已失效</span>'
-      : pending ? '<span style="color:#d29922">⏳待确认</span>'
-      : '<span style="color:' + confirmedColor + '">' + confirmedIcon + '已确认</span>';
-    const idxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
-    const trend = idxInfo ? (idxInfo.trend || '') : '';
-    const trendIcon = trend.includes('破坏') ? '<span style="color:#d29922">⚠</span>' : (trend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (trend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>'));
-    let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
-    r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
-    r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="跳转查看K线">' + s.etf_name + '</a></td>';
-    r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
-    r += '<td style="padding:6px 8px;font-size:12px">' + (s.pos_advice || '-') + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center;color:' + wolfClr + '">' + wolfStr + '</td>';
-    r += '</tr>';
-    return r;
-  }
-
-  function makeTable(title, signals) {
-    let t = '<h4 style="color:#c9d1d9;margin:12px 0 6px;font-size:14px">' + title + ' (' + signals.length + ')</h4>';
-    t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden;margin-bottom:6px">';
-    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
-    t += '<th style="padding:8px;text-align:left">时间</th>';
-    t += '<th style="padding:8px;text-align:left">标的</th>';
-    t += '<th style="padding:8px;text-align:center">类型</th>';
-    t += '<th style="padding:8px;text-align:center">状态</th>';
-    t += '<th style="padding:8px;text-align:center">置信度</th>';
-    t += '<th style="padding:8px;text-align:center">强弱</th>';
-    t += '<th style="padding:8px;text-align:left">仓位建议</th>';
-    t += '<th style="padding:8px;text-align:center">防狼</th>';
-    t += '</tr></thead><tbody>';
-    signals.forEach((s, i) => { t += signalRow(s, i); });
-    if (signals.length === 0) {
-      t += '<tr><td colspan="8" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
-    }
-    t += '</tbody></table>';
-    return t;
-  }
-
-  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新买卖点</h3>';
-  h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
-  levels.forEach(lv => {
-    const d = GLOBAL_SIGNALS[lv] || {};
-    const total = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
-    const active = lv === gsActiveTab;
-    const bg = active ? '#21262d' : 'transparent';
-    const clr = active ? '#58a6ff' : '#8b949e';
-    const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="gsActiveTab='${lv}';renderGlobalSignals()" style="padding:6px 16px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:13px;border-radius:6px 6px 0 0">${lv} (${total})</button>`;
-  });
-  h += '</div>';
-
-  const data = GLOBAL_SIGNALS[gsActiveTab] || {};
-  h += makeTable('🔴 第一类买卖点（趋势背驰，最新5个）', data.type1 || []);
-  h += makeTable('🟠 第二类买卖点（回调确认，最新5个）', data.type2 || []);
-  h += makeTable('🔵 第三类买卖点（中枢突破，最新20个）', data.type3 || []);
-  el.innerHTML = h;
-}
-
-// ─── Overview Table ───
-function renderOverview() {
-  const el = document.getElementById('overview-table');
-  const ncols = 5;
-  let h = '<table style="width:100%;border-collapse:collapse;font-size:14px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden">';
-  h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:13px">';
-  h += '<th style="padding:10px 12px;text-align:left">标的</th>';
-  h += '<th style="padding:10px 8px;text-align:center;width:50px">评分</th>';
-  h += '<th style="padding:10px 8px;text-align:center">长线（日线）</th>';
-  h += '<th style="padding:10px 8px;text-align:center">短线（30分钟）</th>';
-  h += '<th style="padding:10px 12px;text-align:left;min-width:220px">操作建议</th>';
-  h += '</tr></thead><tbody>';
-  let lastType = null;
-  INDEX_LIST.forEach((idx, i) => {
-    if (idx.type !== lastType) {
-      const label = idx.type === 'broad' ? '📊 宽基指数' : (idx.type === 'stock' ? '📈 个股' : '🏭 行业ETF');
-      h += `<tr style="background:#1a1e24"><td colspan="${ncols}" style="padding:8px 12px;font-size:13px;font-weight:700;color:#58a6ff;letter-spacing:1px">${label}</td></tr>`;
-      lastType = idx.type;
-    }
-    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
-    const trendColor = (idx.trend||'').includes('破坏') ? '#d29922' : ((idx.trend||'').includes('上涨') ? '#f85149' : ((idx.trend||'').includes('下跌') ? '#3fb950' : '#8b949e'));
-    const trendIcon = (idx.trend||'').includes('破坏') ? '⚠' : ((idx.trend||'').includes('上涨') ? '↑' : ((idx.trend||'').includes('下跌') ? '↓' : '—'));
-    const isUp = (idx.trend||'').includes('上涨') && !(idx.trend||'').includes('破坏');
-    const tcActiveColor = isUp ? '#f85149' : '#3fb950';
-    const tcDoneColor = isUp ? '#3fb950' : '#f85149';
-    const tcText = (idx.status||'').includes('疑似') ? '<br><span style="font-size:11px;color:#d29922">⚠️ 疑似完成</span>' : ((idx.status||'').includes('已确认') ? `<br><span style="font-size:11px;color:${tcDoneColor}">✅ 已完成</span>` : `<br><span style="font-size:11px;color:${tcActiveColor}">🔄 进行中</span>`);
-    const m30TrendColor = (idx.m30_trend||'').includes('上涨') ? '#f85149' : ((idx.m30_trend||'').includes('下跌') ? '#3fb950' : '#8b949e');
-    const m30Icon = (idx.m30_trend||'').includes('上涨') ? '↑' : ((idx.m30_trend||'').includes('下跌') ? '↓' : '—');
-    const m30IsUp = (idx.m30_trend||'').includes('上涨');
-    const m30ActiveColor = m30IsUp ? '#f85149' : '#3fb950';
-    const m30DoneColor = m30IsUp ? '#3fb950' : '#f85149';
-    const m30TcText = (idx.m30_status||'').includes('疑似') ? '<br><span style="font-size:11px;color:#d29922">⚠️ 疑似完成</span>' : ((idx.m30_status||'').includes('已确认') ? `<br><span style="font-size:11px;color:${m30DoneColor}">✅ 已完成</span>` : `<br><span style="font-size:11px;color:${m30ActiveColor}">🔄 进行中</span>`);
-    const m30Sig = idx.m30_signal || '-';
-    const m30Type = idx.m30_signal_type || '';
-    const m30SigColor = m30Type.includes('B') ? '#f85149' : (m30Type.includes('S') ? '#3fb950' : '#8b949e');
-    const sc = idx.score || 0;
-    const scoreBg = sc >= 140 ? '#3a1a1a' : (sc >= 110 ? '#2a2a1a' : (sc >= 80 ? '#1a2a1a' : '#1a1a2a'));
-    const scoreClr = sc >= 140 ? '#f85149' : (sc >= 110 ? '#d29922' : (sc >= 80 ? '#3fb950' : '#8b949e'));
-    h += `<tr style="background:${bg};cursor:pointer" onclick="selectIndex('${idx.etf_code}')">`;
-    h += `<td style="padding:8px 12px;font-weight:600;white-space:nowrap">${idx.index_name}<br><span style="color:#484f58;font-size:11px">${idx.etf_code || ''}</span></td>`;
-    h += `<td style="padding:8px;text-align:center"><span style="background:${scoreBg};color:${scoreClr};padding:3px 8px;border-radius:4px;font-weight:700;font-size:13px">${sc}</span></td>`;
-    const dSig = idx.latest_signal || '-';
-    const dSigType = idx.latest_signal_type || '';
-    const dSigColor = dSigType.includes('B') ? '#f85149' : (dSigType.includes('S') ? '#3fb950' : '#8b949e');
-    h += `<td style="padding:8px;text-align:center;white-space:nowrap"><span style="color:${trendColor};font-weight:600">${trendIcon} ${(idx.trend||'-').replace('趋势','')}</span>${tcText}<br><span style="color:${dSigColor};font-size:12px">${dSig}</span></td>`;
-    h += `<td style="padding:8px;text-align:center;white-space:nowrap"><span style="color:${m30TrendColor};font-weight:600">${m30Icon} ${(idx.m30_trend||'-').replace('趋势','')}</span>${m30TcText}<br><span style="color:${m30SigColor};font-size:12px">${m30Sig}</span></td>`;
-    const conParts = (idx.conclusion||'-').split(' · ');
-    let conHtml = conParts.map(p => {
-      let color = '#c9d1d9';
-      if (p.includes('买点') || p.includes('加仓') || p.includes('满仓') || p.includes('多头共振')) color = '#f85149';
-      else if (p.includes('卖点') || p.includes('清仓') || p.includes('减仓') || p.includes('空头共振')) color = '#3fb950';
-      else if (p.startsWith('⚠')) color = '#d29922';
-      return `<span style="color:${color}">• ${p}</span>`;
-    }).join('<br>');
-    h += `<td style="padding:8px 12px;font-size:12px;line-height:1.6">${conHtml}</td>`;
-    h += '</tr>';
-  });
-  h += '</tbody></table>';
-  el.innerHTML = h;
-}
-
 // ─── Initialize ───
 async function init() {
-  renderGlobalSignals();
-  renderOverview();
-
   const nav = document.getElementById('index-nav');
   let lastType = null;
   INDEX_LIST.forEach((idx, i) => {
@@ -567,15 +394,6 @@ async function init() {
 
   document.querySelectorAll('.level-btn').forEach(btn => {
     btn.onclick = () => selectLevel(btn.dataset.level);
-  });
-
-  document.querySelectorAll('.detail-tab').forEach(btn => {
-    btn.onclick = () => {
-      document.querySelectorAll('.detail-tab').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.detail-panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById(btn.dataset.panel).classList.add('active');
-    };
   });
 
   if (INDEX_LIST.length > 0) {
@@ -638,7 +456,6 @@ async function render() {
   updateStructBar(data);
   renderChart(data);
   updateSynthesisPanel();
-  updateSignalPanel(data);
 }
 
 function updateConclusionBar(data) {
@@ -804,72 +621,6 @@ function updateSynthesisPanel() {
   panel.innerHTML = html;
 }
 
-function updateSignalPanel(data) {
-  const panel = document.getElementById('signal-panel');
-  if (!data.bsp || data.bsp.length === 0) {
-    panel.innerHTML = '<h3>买卖点信号：无</h3>';
-    return;
-  }
-  const sorted = [...data.bsp].sort((a, b) => b.idx - a.idx);
-  const activeCount = sorted.filter(p => p.status !== 'invalidated').length;
-  const invCount = sorted.length - activeCount;
-  const countLabel = invCount > 0 ? sorted.length + ' 个，其中 ' + invCount + ' 个已失效' : sorted.length + ' 个';
-  let html = '<h3>买卖点信号（共 ' + countLabel + '）</h3>';
-  html += '<table class="signal-table"><thead><tr>';
-  html += '<th>#</th><th>类型</th><th>状态</th><th>日期</th><th>价格</th><th>位置</th><th>面积对比</th><th>强弱</th><th>仓位</th><th>置信</th><th>防狼</th><th>依据</th>';
-  html += '</tr></thead><tbody>';
-  sorted.forEach(p => {
-    const cls = p.is_buy ? 'sig-buy' : 'sig-sell';
-    const confCls = p.conf === 'high' ? 'conf-high' : (p.conf === 'medium' ? 'conf-medium' : 'conf-low');
-    const confLabel = p.conf === 'high' ? '高' : (p.conf === 'medium' ? '中' : '低');
-    let locStr = '';
-    if (p.stroke_idx >= 0) {
-      locStr = 'S' + p.stroke_idx;
-      if (p.seg_idx >= 0) locStr += '/D' + p.seg_idx;
-    }
-    const wolfStr = p.wolf ? '<span style="color:#d29922">⚠</span>' : '<span style="color:#3fb950">✓</span>';
-    const strMap = {strongest: '🔥最强', strong: '💪强势', standard: '📌标准', weak: '⚠弱'};
-    const strStr = p.strength ? ('<span style="color:#f0883e">' + (strMap[p.strength]||p.strength) + '</span>') : '-';
-    let areaStr = '-';
-    if (p.ranges && p.ranges.length >= 2) {
-      const r0 = p.ranges[0], r1 = p.ranges[1];
-      const ratio = r0.area > 0 ? (r1.area / r0.area * 100).toFixed(0) : '-';
-      areaStr = '<span style="color:#58a6ff">' + r0.label + '=' + r0.area + '</span> vs '
-              + '<span style="color:#f85149">' + r1.label + '=' + r1.area + '</span>'
-              + ' (' + ratio + '%)';
-    }
-    const posStr = p.pos_advice ? p.pos_advice.split(' — ')[0] : '-';
-    const posTitle = p.pos_advice || '';
-    const inv = p.status === 'invalidated';
-    const pending = p.status === 'pending';
-    const confirmed = p.status === 'confirmed';
-    const rowStyle = inv ? ' style="opacity:0.45;text-decoration:line-through"' : '';
-    const pIsBuy = p.is_buy;
-    const pConfColor = pIsBuy ? '#f85149' : '#3fb950';
-    const pConfIcon = pIsBuy ? '🔴' : '🟢';
-    const statusCell = inv
-      ? '<td title="' + (p.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌失效</td>'
-      : pending
-        ? '<td style="color:#d29922">⏳待确认</td>'
-        : '<td style="color:' + pConfColor + '">' + pConfIcon + '已确认</td>';
-    html += '<tr' + rowStyle + '>';
-    html += '<td style="color:#484f58;font-weight:bold">#' + p.bsp_idx + '</td>';
-    html += '<td class="' + cls + '" style="font-weight:bold">' + p.label + '</td>';
-    html += statusCell;
-    html += '<td>' + data.dates[p.idx] + '</td>';
-    html += '<td>' + p.price.toFixed(3) + '</td>';
-    html += '<td style="color:#d2a8ff">' + locStr + '</td>';
-    html += '<td style="font-size:13px">' + areaStr + '</td>';
-    html += '<td>' + strStr + '</td>';
-    html += `<td title="${posTitle}" style="color:#f0883e">${posStr}</td>`;
-    html += '<td class="' + confCls + '">' + confLabel + '</td>';
-    html += '<td>' + wolfStr + '</td>';
-    html += '<td style="font-size:13px;color:#8b949e">' + p.desc + '</td>';
-    html += '</tr>';
-  });
-  html += '</tbody></table>';
-  panel.innerHTML = html;
-}
 
 function renderChart(data) {
   const upColor = '#f85149';
@@ -1927,69 +1678,6 @@ def generate_dashboard(data_dir: str = None,
         latest_data_time = pipe["latest_data_time"]
         indices = pipe["indices"]
 
-    # Collect global signals (1B/1S/2B/2S/3B/3S) across all indices
-    # Filter out weak 3B/3S — they have low operational value per theory.
-    level_labels = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
-    idx_name_map = {i.etf_code: i.etf_name for i in indices}
-    global_signals: list[dict] = []
-    valid_types = {"1B", "1S", "2B", "2S", "3B", "3S"}
-    for key, data in all_data.items():
-        parts = key.rsplit("_", 1)
-        if len(parts) != 2:
-            continue
-        etf_code, level_key = parts
-        etf_name = idx_name_map.get(etf_code, etf_code)
-        level_cn = level_labels.get(level_key, level_key)
-        for p in data.get("bsp", []):
-            if p["type"] not in valid_types:
-                continue
-            if p["type"] in ("3B", "3S") and p.get("strength") == "weak":
-                continue
-            dt_str = data["dates"][p["idx"]] if p["idx"] < len(data["dates"]) else ""
-            entry = {
-                "dt": dt_str,
-                "etf_code": etf_code,
-                "etf_name": etf_name,
-                "level": level_cn,
-                "level_key": level_key,
-                "type": p["type"],
-                "label": p["label"],
-                "price": p["price"],
-                "conf": p.get("conf", ""),
-                "strength": p.get("strength", ""),
-                "pos_advice": p.get("pos_advice", ""),
-                "desc": p.get("desc", ""),
-                "wolf": p.get("wolf", ""),
-                "status": p.get("status", "active"),
-                "inv_reason": p.get("inv_reason", ""),
-            }
-            if p.get("ranges") and len(p["ranges"]) >= 2:
-                r0, r1 = p["ranges"][0], p["ranges"][1]
-                ratio = round(r1["area"] / r0["area"] * 100) if r0["area"] > 0 else 0
-                entry["area_cmp"] = f"{r1['label']}/{r0['label']}={r1['area']/r0['area']:.2f}"
-            else:
-                entry["area_cmp"] = ""
-            global_signals.append(entry)
-    global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    type_limits = {"type1": 5, "type2": 5, "type3": 20}
-    levels = ["日线", "30分钟", "5分钟"]
-    global_signals_by_level_type: dict[str, dict[str, list]] = {
-        lv: {"type1": [], "type2": [], "type3": []} for lv in levels
-    }
-    for s in global_signals:
-        lv = s["level"]
-        if lv not in global_signals_by_level_type:
-            continue
-        if s["type"] in ("1B", "1S"):
-            bucket = "type1"
-        elif s["type"] in ("2B", "2S"):
-            bucket = "type2"
-        else:
-            bucket = "type3"
-        if len(global_signals_by_level_type[lv][bucket]) < type_limits[bucket]:
-            global_signals_by_level_type[lv][bucket].append(s)
-    global_signals_top = global_signals_by_level_type
-
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
     html = html.replace("__DATA_TIME__", latest_data_time or "-")
@@ -2011,7 +1699,6 @@ def generate_dashboard(data_dir: str = None,
                          json.dumps(sorted(all_data.keys()), ensure_ascii=False))
     html = html.replace("__INDEX_LIST_JSON__", json.dumps(index_list, ensure_ascii=False))
     html = html.replace("__SYNTHESIS_JSON__", json.dumps(synthesis_data, ensure_ascii=False))
-    html = html.replace("__GLOBAL_SIGNALS_JSON__", json.dumps(global_signals_top, ensure_ascii=False))
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
@@ -2070,60 +1757,6 @@ def generate_mobile_dashboard(data_dir: str = None,
     data_keys_json = json.dumps(sorted(all_data.keys()), ensure_ascii=False)
     index_list_json = json.dumps(index_list, ensure_ascii=False)
     synthesis_json = json.dumps(synthesis_data, ensure_ascii=False)
-
-    # Collect global signals for mobile (same logic as desktop)
-    level_labels_m = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
-    idx_name_map_m = {i.etf_code: i.etf_name for i in indices}
-    mobile_global_signals: list[dict] = []
-    valid_types_m = {"1B", "1S", "2B", "2S", "3B", "3S"}
-    for key, data in all_data.items():
-        parts = key.rsplit("_", 1)
-        if len(parts) != 2:
-            continue
-        etf_code, level_key = parts
-        etf_name = idx_name_map_m.get(etf_code, etf_code)
-        level_cn = level_labels_m.get(level_key, level_key)
-        for p in data.get("bsp", []):
-            if p["type"] not in valid_types_m:
-                continue
-            if p["type"] in ("3B", "3S") and p.get("strength") == "weak":
-                continue
-            dt_str = data["dates"][p["idx"]] if p["idx"] < len(data["dates"]) else ""
-            entry_m = {
-                "dt": dt_str, "etf_code": etf_code, "etf_name": etf_name,
-                "level": level_cn, "level_key": level_key,
-                "type": p["type"], "label": p["label"],
-                "price": p["price"], "conf": p.get("conf", ""),
-                "status": p.get("status", "active"),
-                "inv_reason": p.get("inv_reason", ""),
-            }
-            if p.get("ranges") and len(p["ranges"]) >= 2:
-                r0, r1 = p["ranges"][0], p["ranges"][1]
-                ratio = round(r1["area"] / r0["area"] * 100) if r0["area"] > 0 else 0
-                entry_m["area_cmp"] = f"{r1['label']}/{r0['label']}={r1['area']/r0['area']:.2f}"
-            else:
-                entry_m["area_cmp"] = ""
-            mobile_global_signals.append(entry_m)
-    mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    mobile_type_limits = {"type1": 5, "type2": 5, "type3": 20}
-    mobile_levels = ["日线", "30分钟", "5分钟"]
-    mobile_gs_by_level_type: dict[str, dict[str, list]] = {
-        lv: {"type1": [], "type2": [], "type3": []} for lv in mobile_levels
-    }
-    for s in mobile_global_signals:
-        lv = s["level"]
-        if lv not in mobile_gs_by_level_type:
-            continue
-        if s["type"] in ("1B", "1S"):
-            bucket = "type1"
-        elif s["type"] in ("2B", "2S"):
-            bucket = "type2"
-        else:
-            bucket = "type3"
-        if len(mobile_gs_by_level_type[lv][bucket]) < mobile_type_limits[bucket]:
-            mobile_gs_by_level_type[lv][bucket].append(s)
-    mobile_global_signals_top = mobile_gs_by_level_type
-    mobile_global_signals_json = json.dumps(mobile_global_signals_top, ensure_ascii=False)
 
     tab_parts = []
     last_type = None
@@ -2201,10 +1834,6 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 #synthesis-panel h3 {{ font-size: 14px; color: #58a6ff; margin-bottom: 6px; }}
 #synthesis-panel h4 {{ font-size: 13px; margin-top: 8px; }}
 
-/* Signal panel */
-#signal-panel {{ padding: 8px 12px; border-top: 1px solid #21262d; }}
-#signal-panel h3 {{ font-size: 14px; color: #58a6ff; margin-bottom: 6px; }}
-
 /* Tables */
 .signal-table {{ width: 100%; border-collapse: collapse; font-size: 11px;
                  display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }}
@@ -2225,8 +1854,6 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 <div class="container">
 <h1>缠论交易系统 v2</h1>
 <div class="subtitle">移动版 · 数据 {data_time} · 生成 {gen_time} · 日线→30分→5分</div>
-
-<div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 
 <div style="display:flex;align-items:center;margin:12px 0 6px;gap:8px;border-bottom:1px solid #30363d;padding-bottom:4px">
   <span style="color:#c9d1d9;font-size:14px;font-weight:bold">📈 技术分析详情</span>
@@ -2271,12 +1898,9 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
   </div>
   <div class="chart-area"><canvas id="volumeCanvas" height="80"></canvas></div>
   <div id="synthesis-panel"></div>
-  <div id="signal-panel"></div>
   <div id="bspTooltip" style="display:none;position:fixed;z-index:1000;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;max-width:88vw;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-size:12px;line-height:1.6;color:#c9d1d9;pointer-events:auto"></div>
 </div>
 
-<div style="color:#c9d1d9;font-size:14px;font-weight:bold;border-bottom:1px solid #30363d;padding-bottom:4px;margin:12px 0 6px">📊 标的可操作性总览</div>
-<div id="mobileOverview" style="margin-bottom:12px"></div>
 </div>
 
 <script>
@@ -2284,8 +1908,6 @@ var DATA_CACHE = {{}};
 const DATA_KEYS = {data_keys_json};
 const INDEX_LIST = {index_list_json};
 const SYNTHESIS = {synthesis_json};
-const GLOBAL_SIGNALS = {mobile_global_signals_json};
-
 function getChartData(key) {{ return DATA_CACHE[key] || null; }}
 
 function loadChartData(key) {{
@@ -2308,148 +1930,6 @@ const MIN_VIEW = 20;
 let dataLoading = false;
 let bspHitAreas = [];
 
-let mgsTab = '日线';
-function renderMobileGlobalSignals() {{
-  const el = document.getElementById('mobileGlobalSignals');
-  const levels = ['日线', '30分钟', '5分钟'];
-  const confIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
-  const tClrs = {{'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'}};
-
-  function mgsRow(s, i) {{
-    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
-    const tc = tClrs[s.type] || '#c9d1d9';
-    const confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
-    const dtShort = s.dt ? s.dt.substring(5) : '-';
-    const inv = s.status === 'invalidated';
-    const pending = s.status === 'pending';
-    const rowOpacity = inv ? 'opacity:0.45;' : '';
-    const strike = inv ? 'text-decoration:line-through;' : '';
-    const mGsBuyType = ['1B','2B','3B','PB'].includes(s.type);
-    const mGsConfClr = mGsBuyType ? '#f85149' : '#3fb950';
-    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>');
-    const mIdxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
-    const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
-    const mTrendIcon = mTrend.includes('破坏') ? '<span style="color:#d29922">⚠</span>' : (mTrend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (mTrend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>'));
-    let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
-    r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
-    r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
-    r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
-    r += `<td style="padding:3px 4px;text-align:center">${{confStr}}</td>`;
-    r += '</tr>';
-    return r;
-  }}
-
-  function mgsTable(title, signals) {{
-    let t = '<div style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px">' + title + ' (' + signals.length + ')</div>';
-    t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
-    t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
-    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
-    t += '<th style="padding:4px;text-align:left">时间</th>';
-    t += '<th style="padding:4px;text-align:left">标的</th>';
-    t += '<th style="padding:4px;text-align:center">类型</th>';
-    t += '<th style="padding:4px;text-align:center">置信</th>';
-    t += '</tr></thead><tbody>';
-    signals.forEach((s, i) => {{ t += mgsRow(s, i); }});
-    if (signals.length === 0) {{
-      t += '<tr><td colspan="4" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>';
-    }}
-    t += '</tbody></table></div>';
-    return t;
-  }}
-
-  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点</div>';
-  h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
-  levels.forEach(lv => {{
-    const d = GLOBAL_SIGNALS[lv] || {{}};
-    const total = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
-    const active = lv === mgsTab;
-    const bg = active ? '#21262d' : 'transparent';
-    const clr = active ? '#58a6ff' : '#8b949e';
-    const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="mgsTab='${{lv}}';renderMobileGlobalSignals()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{total}})</button>`;
-  }});
-  h += '</div>';
-
-  const data = GLOBAL_SIGNALS[mgsTab] || {{}};
-  h += mgsTable('🔴 第一类买卖点（最新5个）', data.type1 || []);
-  h += mgsTable('🟠 第二类买卖点（最新5个）', data.type2 || []);
-  h += mgsTable('🔵 第三类买卖点（最新20个）', data.type3 || []);
-  el.innerHTML = h;
-}}
-
-function renderMobileOverview() {{
-  const el = document.getElementById('mobileOverview');
-  const thSt = 'padding:6px 4px;text-align:center;font-size:11px;color:#8b949e;white-space:nowrap;position:sticky;top:0;background:#21262d;z-index:1';
-  let h = '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
-  h += '<table style="width:100%;border-collapse:collapse;font-size:12px;color:#c9d1d9;background:#161b22">';
-  h += `<thead><tr style="background:#21262d">`;
-  h += `<th style="${{thSt}};text-align:left;padding-left:8px;min-width:56px">标的</th>`;
-  h += `<th style="${{thSt}};width:36px">评分</th>`;
-  h += `<th style="${{thSt}}">长线（日线）</th>`;
-  h += `<th style="${{thSt}}">短线（30分钟）</th>`;
-  h += `</tr></thead><tbody>`;
-  let lastType = null;
-  INDEX_LIST.forEach((idx, i) => {{
-    if (idx.type !== lastType) {{
-      const label = idx.type === 'broad' ? '📊 宽基指数' : (idx.type === 'stock' ? '📈 个股' : '🏭 行业ETF');
-      h += `<tr style="background:#1a1e24"><td colspan="4" style="padding:5px 8px;font-size:11px;font-weight:700;color:#58a6ff;letter-spacing:1px">${{label}}</td></tr>`;
-      lastType = idx.type;
-    }}
-    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
-
-    const isUp = (idx.trend||'').includes('上涨');
-    const trendColor = isUp ? '#f85149' : ((idx.trend||'').includes('下跌') ? '#3fb950' : '#8b949e');
-    const trendIcon = isUp ? '↑' : ((idx.trend||'').includes('下跌') ? '↓' : '—');
-    const tcActiveColor = isUp ? '#f85149' : '#3fb950';
-    const tcDoneColor = isUp ? '#3fb950' : '#f85149';
-    const tcTag = (idx.status||'').includes('疑似') ? `<span style="color:#d29922">⚠️疑似完成</span>`
-      : ((idx.status||'').includes('已确认') ? `<span style="color:${{tcDoneColor}}">✅完成</span>`
-      : `<span style="color:${{tcActiveColor}}">🔄进行</span>`);
-    const dSigType = idx.latest_signal_type || '';
-    const dSigColor = dSigType.includes('B') ? '#f85149' : (dSigType.includes('S') ? '#3fb950' : '#8b949e');
-    const dSig = idx.latest_signal || '-';
-
-    const m30IsUp = (idx.m30_trend||'').includes('上涨');
-    const m30Color = m30IsUp ? '#f85149' : ((idx.m30_trend||'').includes('下跌') ? '#3fb950' : '#8b949e');
-    const m30Icon = m30IsUp ? '↑' : ((idx.m30_trend||'').includes('下跌') ? '↓' : '—');
-    const m30ActiveColor = m30IsUp ? '#f85149' : '#3fb950';
-    const m30DoneColor = m30IsUp ? '#3fb950' : '#f85149';
-    const m30TcTag = (idx.m30_status||'').includes('疑似') ? `<span style="color:#d29922">⚠️疑似完成</span>`
-      : ((idx.m30_status||'').includes('已确认') ? `<span style="color:${{m30DoneColor}}">✅完成</span>`
-      : `<span style="color:${{m30ActiveColor}}">🔄进行</span>`);
-    const m30SigType = idx.m30_signal_type || '';
-    const m30SigColor = m30SigType.includes('B') ? '#f85149' : (m30SigType.includes('S') ? '#3fb950' : '#8b949e');
-    const m30Sig = idx.m30_signal || '-';
-
-    const sc = idx.score || 0;
-    const scoreBg = sc >= 140 ? '#3a1a1a' : (sc >= 110 ? '#2a2a1a' : (sc >= 80 ? '#1a2a1a' : '#1a1a2a'));
-    const scoreClr = sc >= 140 ? '#f85149' : (sc >= 110 ? '#d29922' : (sc >= 80 ? '#3fb950' : '#8b949e'));
-
-    const conParts = (idx.conclusion||'-').split(' · ');
-    const conHtml = conParts.map(p => {{
-      let color = '#c9d1d9';
-      if (p.includes('买点') || p.includes('加仓') || p.includes('满仓') || p.includes('多头共振')) color = '#f85149';
-      else if (p.includes('卖点') || p.includes('清仓') || p.includes('减仓') || p.includes('空头共振')) color = '#3fb950';
-      else if (p.startsWith('⚠')) color = '#d29922';
-      return `<span style="color:${{color}}">• ${{p}}</span>`;
-    }}).join(' ');
-
-    const tdSt = 'padding:6px 4px;text-align:center;vertical-align:top;white-space:nowrap;font-size:11px';
-    h += `<tr style="background:${{bg}};cursor:pointer" onclick="switchIndex('${{idx.etf_code}}')">`;
-    h += `<td style="${{tdSt}};text-align:left;padding-left:8px;font-weight:600;font-size:12px;color:#c9d1d9">${{idx.index_name}}<br><span style="color:#484f58;font-size:10px">${{idx.etf_code||''}}</span></td>`;
-    h += `<td style="${{tdSt}}"><span style="background:${{scoreBg}};color:${{scoreClr}};padding:2px 5px;border-radius:3px;font-weight:700;font-size:12px">${{sc}}</span></td>`;
-    h += `<td style="${{tdSt}}"><span style="color:${{trendColor}};font-weight:600">${{trendIcon}} ${{(idx.trend||'-').replace('趋势','')}}</span><br>${{tcTag}}<br><span style="color:${{dSigColor}};font-size:10px">${{dSig}}</span></td>`;
-    h += `<td style="${{tdSt}}"><span style="color:${{m30Color}};font-weight:600">${{m30Icon}} ${{(idx.m30_trend||'-').replace('趋势','')}}</span><br>${{m30TcTag}}<br><span style="color:${{m30SigColor}};font-size:10px">${{m30Sig}}</span></td>`;
-    h += `</tr>`;
-    h += `<tr style="background:${{bg}};cursor:pointer;border-bottom:1px solid #21262d" onclick="switchIndex('${{idx.etf_code}}')">`;
-    h += `<td colspan="4" style="padding:2px 8px 6px;font-size:11px;line-height:1.4">${{conHtml}}</td>`;
-    h += `</tr>`;
-  }});
-  h += '</tbody></table></div>';
-  el.innerHTML = `<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden">${{h}}</div>`;
-}}
-renderMobileGlobalSignals();
-renderMobileOverview();
 function formatAssetLabel(idx) {{
   const suffix = idx.market === 'SH' ? '.SH' : (idx.market === 'SZ' ? '.SZ' : '');
   if (idx.type === 'stock') {{
@@ -2541,7 +2021,6 @@ function render() {{
   renderMACD(d);
   renderVolume(d);
   updateSynthesisPanel();
-  updateSignalPanel(d);
 }}
 
 async function loadAndRender() {{
@@ -2929,65 +2408,6 @@ function updateSynthesisPanel() {{
     }});
   }}
 
-  panel.innerHTML = html;
-}}
-
-function updateSignalPanel(data) {{
-  const panel = document.getElementById('signal-panel');
-  if (!data.bsp || data.bsp.length === 0) {{
-    panel.innerHTML = '<h3>买卖点信号：无</h3>';
-    return;
-  }}
-  const sorted = [...data.bsp].sort((a, b) => b.idx - a.idx);
-  const mActiveCount = sorted.filter(p => p.status !== 'invalidated').length;
-  const mInvCount = sorted.length - mActiveCount;
-  const mCountLabel = mInvCount > 0 ? sorted.length + ' 个，' + mInvCount + ' 已失效' : sorted.length + ' 个';
-  let html = '<h3>买卖点信号（' + mCountLabel + '）</h3>';
-  html += '<table class="signal-table"><thead><tr>';
-  html += '<th>#</th><th>日期</th><th>位</th><th>类型</th><th>状态</th><th>价格</th><th>强弱</th><th>仓位</th><th>信心</th><th>狼</th><th>依据</th><th>面积</th>';
-  html += '</tr></thead><tbody>';
-  sorted.forEach(p => {{
-    const cls = p.is_buy ? 'sig-buy' : 'sig-sell';
-    const confCls = p.conf === 'high' ? 'conf-high' : (p.conf === 'medium' ? 'conf-medium' : 'conf-low');
-    const confLabel = p.conf === 'high' ? '高' : (p.conf === 'medium' ? '中' : '低');
-    let locStr = '';
-    if (p.stroke_idx >= 0) {{ locStr = 'S' + p.stroke_idx; if (p.seg_idx >= 0) locStr += '/D' + p.seg_idx; }}
-    const wolfStr = p.wolf ? '<span style="color:#d29922">⚠</span>' : '<span style="color:#3fb950">✓</span>';
-    const strMap = {{strongest: '🔥', strong: '💪', standard: '📌', weak: '⚠'}};
-    const strStr = p.strength ? (strMap[p.strength]||p.strength) : '-';
-    let areaStr = '-';
-    if (p.ranges && p.ranges.length >= 2) {{
-      const r0 = p.ranges[0], r1 = p.ranges[1];
-      const ratio = r0.area > 0 ? (r1.area / r0.area * 100).toFixed(0) : '-';
-      areaStr = r0.label + '=' + r0.area + ' vs ' + r1.label + '=' + r1.area + ' (' + ratio + '%)';
-    }}
-    const posStr = p.pos_advice ? p.pos_advice.split(' — ')[0] : '-';
-    const mInv = p.status === 'invalidated';
-    const mPending = p.status === 'pending';
-    const mRowStyle = mInv ? ' style="opacity:0.45"' : '';
-    const mIsBuyType = p.is_buy;
-    const mConfClr = mIsBuyType ? '#f85149' : '#3fb950';
-    const mStatusCell = mInv
-      ? '<td style="color:#da3633;font-size:10px">✗</td>'
-      : mPending
-        ? '<td style="color:#d29922;font-size:10px">⏳</td>'
-        : '<td style="color:' + mConfClr + ';font-size:10px">✓</td>';
-    html += '<tr' + mRowStyle + '>';
-    html += '<td style="color:#484f58;font-weight:bold">#' + p.bsp_idx + '</td>';
-    html += '<td>' + data.dates[p.idx] + '</td>';
-    html += '<td style="color:#d2a8ff">' + locStr + '</td>';
-    html += '<td class="' + cls + '">' + p.label + '</td>';
-    html += mStatusCell;
-    html += '<td>' + p.price.toFixed(3) + '</td>';
-    html += '<td>' + strStr + '</td>';
-    html += `<td title="${{p.pos_advice||''}}" style="color:#f0883e">${{posStr}}</td>`;
-    html += '<td class="' + confCls + '">' + confLabel + '</td>';
-    html += '<td>' + wolfStr + '</td>';
-    html += '<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis">' + p.desc + '</td>';
-    html += '<td style="max-width:100px;overflow:hidden;text-overflow:ellipsis">' + areaStr + '</td>';
-    html += '</tr>';
-  }});
-  html += '</tbody></table>';
   panel.innerHTML = html;
 }}
 
