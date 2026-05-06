@@ -2030,7 +2030,7 @@ _STRENGTH_ZH_ALL = {
 }
 
 
-def _grade_type1(div: dict) -> tuple[str, str, list[str]]:
+def _grade_type1(div: dict) -> tuple[str, str, list[str], int, list[dict]]:
     """Grade Type 1 buy/sell point quality.
 
     Per 108课详解, 图解缠论2/3, 土匪注解, 缠论辅导:
@@ -2041,61 +2041,91 @@ def _grade_type1(div: dict) -> tuple[str, str, list[str]]:
     """
     score = 0
     tags: list[str] = []
+    details: list[dict] = []
 
     dims = div.get("div_dims", 2)
     ratio = div.get("ratio", 1.0)
     hub_count = div.get("hub_count", 1)
 
+    d1_score = 0
+    d1_label = ""
     if dims == 3:
-        score += 3
+        d1_score = 3
+        d1_label = "三维背驰"
         tags.append("三维背驰")
     else:
-        score += 1
+        d1_score = 1
+        d1_label = "二维背驰"
         tags.append("二维背驰")
+    score += d1_score
+    details.append({"dim": "背驰维度", "label": d1_label, "score": d1_score})
 
+    d2_score = 0
+    d2_label = f"面积比{ratio:.2f}"
     if ratio < 0.4:
-        score += 3
+        d2_score = 3
+        d2_label = f"强背驰({ratio:.2f})"
         tags.append("强背驰")
     elif ratio < 0.6:
-        score += 2
+        d2_score = 2
+        d2_label = f"较强({ratio:.2f})"
     elif ratio < 0.75:
-        score += 1
+        d2_score = 1
+        d2_label = f"一般({ratio:.2f})"
     else:
-        score -= 1
+        d2_score = -1
+        d2_label = f"弱背驰({ratio:.2f})"
         tags.append("弱背驰")
+    score += d2_score
+    details.append({"dim": "背驰强度", "label": d2_label, "score": d2_score})
 
+    d3_score = 0
+    d3_label = ""
     if hub_count >= 3:
-        score += 3
-        tags.append(f"{hub_count}中枢趋势")
+        d3_score = 3
+        d3_label = f"{hub_count}中枢趋势"
+        tags.append(d3_label)
     elif hub_count == 2:
-        score += 2
+        d3_score = 2
+        d3_label = "双中枢趋势"
         tags.append("双中枢趋势")
     else:
-        score -= 1
+        d3_score = -1
+        d3_label = "单中枢"
         tags.append("单中枢")
+    score += d3_score
+    details.append({"dim": "中枢数量", "label": d3_label, "score": d3_score})
 
     a_dif = abs(div.get("a_dif", 0))
     c_dif = abs(div.get("c_dif", 0))
+    d4_score = 0
+    d4_label = ""
     if a_dif > 0:
         dif_r = c_dif / a_dif
         if dif_r < 0.5:
-            score += 2
+            d4_score = 2
+            d4_label = f"DIF强收敛({dif_r:.2f})"
             tags.append("DIF强收敛")
         elif dif_r < 0.8:
-            score += 1
-    # else: no contribution
+            d4_score = 1
+            d4_label = f"DIF收敛({dif_r:.2f})"
+        else:
+            d4_label = f"DIF一般({dif_r:.2f})"
+    if d4_score != 0 or d4_label:
+        score += d4_score
+        details.append({"dim": "DIF收敛", "label": d4_label, "score": d4_score})
 
     if score >= 8:
-        return "strongest", "high", tags
+        return "strongest", "high", tags, score, details
     elif score >= 5:
-        return "strong", "high", tags
+        return "strong", "high", tags, score, details
     elif score >= 2:
-        return "standard", "medium", tags
+        return "standard", "medium", tags, score, details
     else:
-        return "weak", "low", tags
+        return "weak", "low", tags, score, details
 
 
-def _grade_pb_ps(div: dict) -> tuple[str, str, list[str]]:
+def _grade_pb_ps(div: dict) -> tuple[str, str, list[str], int, list[dict]]:
     """Grade consolidation divergence (PB/PS) quality.
 
     Per knowledge base: consolidation divergence is inherently weaker than
@@ -2103,34 +2133,48 @@ def _grade_pb_ps(div: dict) -> tuple[str, str, list[str]]:
     """
     score = 0
     tags: list[str] = []
+    details: list[dict] = []
 
     dims = div.get("div_dims", 2)
     ratio = div.get("ratio", 1.0)
 
+    d1_score = 0
+    d1_label = ""
     if dims == 3:
-        score += 2
+        d1_score = 2
+        d1_label = "三维盘背"
         tags.append("三维盘背")
     else:
+        d1_label = "二维盘背"
         tags.append("二维盘背")
+    score += d1_score
+    details.append({"dim": "背驰维度", "label": d1_label, "score": d1_score})
 
+    d2_score = 0
+    d2_label = f"面积比{ratio:.2f}"
     if ratio < 0.5:
-        score += 2
+        d2_score = 2
+        d2_label = f"强盘背({ratio:.2f})"
         tags.append("强盘背")
     elif ratio < 0.7:
-        score += 1
-    # else: no bonus
+        d2_score = 1
+        d2_label = f"较强({ratio:.2f})"
+    else:
+        d2_label = f"一般({ratio:.2f})"
+    score += d2_score
+    details.append({"dim": "背驰强度", "label": d2_label, "score": d2_score})
 
     if score >= 4:
-        return "strong", "medium", tags
+        return "strong", "medium", tags, score, details
     elif score >= 2:
-        return "standard", "medium", tags
+        return "standard", "medium", tags, score, details
     else:
-        return "weak", "low", tags
+        return "weak", "low", tags, score, details
 
 
 def _grade_type2(t1: 'BuySellPoint', first_move: 'Stroke',
                  pullback: 'Stroke', ref_hub: 'Hub | None',
-                 is_buy: bool) -> tuple[str, str, list[str]]:
+                 is_buy: bool) -> tuple[str, str, list[str], int, list[dict]]:
     """Grade Type 2 buy/sell point quality.
 
     Per 108课 §2.4, 图解缠论2, 缠论辅导:
@@ -2140,6 +2184,7 @@ def _grade_type2(t1: 'BuySellPoint', first_move: 'Stroke',
     """
     score = 0
     tags: list[str] = []
+    details: list[dict] = []
 
     if is_buy:
         move_range = first_move.end.high - t1.price
@@ -2152,77 +2197,119 @@ def _grade_type2(t1: 'BuySellPoint', first_move: 'Stroke',
         merged = ref_hub and pullback.end.high < ref_hub.zd
         dif_val = pullback.dif_extreme
 
+    d1_score = 0
+    d1_label = ""
     if merged:
-        score += 3
-        tags.append("二买三买合一" if is_buy else "二卖三卖合一")
+        d1_score = 3
+        d1_label = "二买三买合一" if is_buy else "二卖三卖合一"
+        tags.append(d1_label)
+    else:
+        d1_label = "未合一"
+    score += d1_score
+    details.append({"dim": "位置关系", "label": d1_label, "score": d1_score})
 
+    d2_score = 0
+    d2_label = ""
     if move_range > 0:
         pb_ratio = pb_depth / move_range
         if pb_ratio < 0.236:
-            score += 4
+            d2_score = 4
+            d2_label = f"极浅回调({pb_ratio:.1%})"
             tags.append("极浅回调")
         elif pb_ratio < 0.382:
-            score += 3
+            d2_score = 3
+            d2_label = f"浅回调({pb_ratio:.1%})"
             tags.append("浅回调")
         elif pb_ratio < 0.500:
-            score += 2
+            d2_score = 2
+            d2_label = f"中等({pb_ratio:.1%})"
         elif pb_ratio < 0.618:
-            score += 1
+            d2_score = 1
+            d2_label = f"偏深({pb_ratio:.1%})"
         elif pb_ratio < 0.786:
-            pass
+            d2_label = f"深回调({pb_ratio:.1%})"
         else:
-            score -= 1
+            d2_score = -1
+            d2_label = f"深回调({pb_ratio:.1%})"
             tags.append("深回调")
+    else:
+        d2_label = "无回调"
+    score += d2_score
+    details.append({"dim": "回调深度", "label": d2_label, "score": d2_score})
 
+    d3_score = 0
+    d3_label = ""
     if is_buy:
         if dif_val > 0:
-            score += 1
+            d3_score = 1
+            d3_label = f"DIF>0({dif_val:.4f})"
             tags.append("DIF>0")
         elif dif_val < 0:
-            score -= 1
+            d3_score = -1
+            d3_label = f"DIF<0({dif_val:.4f})"
+        else:
+            d3_label = "DIF≈0"
     else:
         if dif_val < 0:
-            score += 1
+            d3_score = 1
+            d3_label = f"DIF<0({dif_val:.4f})"
             tags.append("DIF<0")
         elif dif_val > 0:
-            score -= 1
+            d3_score = -1
+            d3_label = f"DIF>0({dif_val:.4f})"
+        else:
+            d3_label = "DIF≈0"
+    score += d3_score
+    details.append({"dim": "DIF位置", "label": d3_label, "score": d3_score})
 
     # Volume confirmation (图解缠论3 §6): breakout with volume expansion
+    d4_score = 0
+    d4_label = ""
     if first_move.avg_volume > 0 and pullback.avg_volume > 0:
-        vol_ratio = first_move.avg_volume / pullback.avg_volume
         if is_buy:
-            # For type 2 buy: first_move is the rebound from T1.
-            # Stronger if pullback (second move) shrinks relative to first_move.
             pb_vol_ratio = pullback.avg_volume / first_move.avg_volume
             if pb_vol_ratio < 0.6:
-                score += 2
-                tags.append(f"缩量回调✓({pb_vol_ratio:.0%})")
+                d4_score = 2
+                d4_label = f"缩量回调✓({pb_vol_ratio:.0%})"
+                tags.append(d4_label)
             elif pb_vol_ratio < 0.8:
-                score += 1
-                tags.append(f"温和缩量({pb_vol_ratio:.0%})")
+                d4_score = 1
+                d4_label = f"温和缩量({pb_vol_ratio:.0%})"
+                tags.append(d4_label)
             elif pb_vol_ratio > 1.5:
-                score -= 1
-                tags.append(f"放量回调⚠({pb_vol_ratio:.0%})")
+                d4_score = -1
+                d4_label = f"放量回调⚠({pb_vol_ratio:.0%})"
+                tags.append(d4_label)
+            else:
+                d4_label = f"量能正常({pb_vol_ratio:.0%})"
         else:
             pb_vol_ratio = pullback.avg_volume / first_move.avg_volume
             if pb_vol_ratio < 0.6:
-                score += 2
-                tags.append(f"缩量反弹✓({pb_vol_ratio:.0%})")
+                d4_score = 2
+                d4_label = f"缩量反弹✓({pb_vol_ratio:.0%})"
+                tags.append(d4_label)
             elif pb_vol_ratio < 0.8:
-                score += 1
-                tags.append(f"温和缩量({pb_vol_ratio:.0%})")
+                d4_score = 1
+                d4_label = f"温和缩量({pb_vol_ratio:.0%})"
+                tags.append(d4_label)
             elif pb_vol_ratio > 1.5:
-                score -= 1
-                tags.append(f"放量反弹⚠({pb_vol_ratio:.0%})")
+                d4_score = -1
+                d4_label = f"放量反弹⚠({pb_vol_ratio:.0%})"
+                tags.append(d4_label)
+            else:
+                d4_label = f"量能正常({pb_vol_ratio:.0%})"
+    if d4_label:
+        score += d4_score
+        details.append({"dim": "量价配合", "label": d4_label, "score": d4_score})
 
     if score >= 6:
-        return "strongest", "high", tags
+        return "strongest", "high", tags, score, details
     elif score >= 3:
-        return "strong", "high", tags
+        return "strong", "high", tags, score, details
     elif score >= 1:
-        return "standard", "medium", tags
+        return "standard", "medium", tags, score, details
     else:
-        return "weak", "low", tags
+        return "weak", "low", tags, score, details
 
 
 def find_buy_sell_points(
@@ -2269,7 +2356,7 @@ def find_buy_sell_points(
         struct = div.get("structure", [])
         dims = div.get("div_dims", 1)
         dim_tag = f" ({dims}/3维)" if dims > 0 else ""
-        t1_strength, t1_conf, t1_tags = _grade_type1(div)
+        t1_strength, t1_conf, t1_tags, t1_raw_score, t1_details = _grade_type1(div)
         tag_str = "，".join(t1_tags)
         if div["direction"] == -1:
             points.append(BuySellPoint(
@@ -2285,6 +2372,8 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=t1_strength,
+                strength_score=t1_raw_score,
+                strength_details=t1_details,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -2302,6 +2391,8 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=t1_strength,
+                strength_score=t1_raw_score,
+                strength_details=t1_details,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -2333,7 +2424,7 @@ def find_buy_sell_points(
                        "end_dt": div["curr_end_dt"]})
         dims = div.get("div_dims", 1)
         dim_tag = f" ({dims}/3维)" if dims > 0 else ""
-        pb_strength, pb_conf, pb_tags = _grade_pb_ps(div)
+        pb_strength, pb_conf, pb_tags, pb_raw_score, pb_details = _grade_pb_ps(div)
         pb_tag_str = "，".join(pb_tags) if pb_tags else ""
         if div["direction"] == -1:
             points.append(BuySellPoint(
@@ -2349,6 +2440,8 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=pb_strength,
+                strength_score=pb_raw_score,
+                strength_details=pb_details,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -2366,6 +2459,8 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=pb_strength,
+                strength_score=pb_raw_score,
+                strength_details=pb_details,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -2386,7 +2481,7 @@ def find_buy_sell_points(
             loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
             pb_low = first_pullback.end.low
             ref_hub = hub_by_idx.get(t1.hub_idx)
-            strength, conf, t2_tags = _grade_type2(
+            strength, conf, t2_tags, t2_raw_score, t2_details = _grade_type2(
                 t1, first_up, first_pullback, ref_hub, is_buy=True)
             t2_tag_str = "，".join(t2_tags) if t2_tags else ""
 
@@ -2403,6 +2498,8 @@ def find_buy_sell_points(
                 hub_idx=t1.hub_idx,
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=strength,
+                strength_score=t2_raw_score,
+                strength_details=t2_details,
                 invalidation_price=t1.price,
             ))
 
@@ -2419,7 +2516,7 @@ def find_buy_sell_points(
             loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
             rl_high = first_rally.end.high
             ref_hub = hub_by_idx.get(t1.hub_idx)
-            strength, conf, t2_tags = _grade_type2(
+            strength, conf, t2_tags, t2_raw_score, t2_details = _grade_type2(
                 t1, first_down, first_rally, ref_hub, is_buy=False)
             t2_tag_str = "，".join(t2_tags) if t2_tags else ""
 
@@ -2436,6 +2533,8 @@ def find_buy_sell_points(
                 hub_idx=t1.hub_idx,
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=strength,
+                strength_score=t2_raw_score,
+                strength_details=t2_details,
                 invalidation_price=t1.price,
             ))
 
