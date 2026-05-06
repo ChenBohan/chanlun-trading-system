@@ -1151,15 +1151,16 @@ function renderChart(data) {
       const total = data.dates.length;
       const zoomStart = total > VISIBLE_BARS ? Math.max(0, 100 - (VISIBLE_BARS / total * 100)) : 0;
       return [
-        { type: 'inside', xAxisIndex: [0, 1], start: zoomStart, end: 100 },
-        { type: 'slider', xAxisIndex: [0, 1], bottom: 10, height: 20,
+        { type: 'inside', xAxisIndex: [0, 1, 2], start: zoomStart, end: 100 },
+        { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 10, height: 20,
           borderColor: '#30363d', fillerColor: 'rgba(88,166,255,0.1)',
           textStyle: { color: '#8b949e' } },
       ];
     })(),
     grid: [
-      { left: 60, right: 30, top: 20, bottom: '30%' },
-      { left: 60, right: 30, top: '75%', bottom: 50 },
+      { left: 60, right: 30, top: 20, bottom: '38%' },
+      { left: 60, right: 30, top: '66%', bottom: '20%' },
+      { left: 60, right: 30, top: '83%', bottom: 50 },
     ],
     xAxis: [
       { type: 'category', data: data.dates, gridIndex: 0, boundaryGap: true,
@@ -1170,6 +1171,10 @@ function renderChart(data) {
         axisLine: { lineStyle: { color: '#30363d' } },
         axisLabel: { show: false },
         splitLine: { show: false } },
+      { type: 'category', data: data.dates, gridIndex: 2, boundaryGap: true,
+        axisLine: { lineStyle: { color: '#30363d' } },
+        axisLabel: { show: false },
+        splitLine: { show: false } },
     ],
     yAxis: [
       { scale: true, gridIndex: 0,
@@ -1177,6 +1182,10 @@ function renderChart(data) {
         axisLabel: { color: '#8b949e', fontSize: 10 },
         splitLine: { lineStyle: { color: '#21262d' } } },
       { scale: true, gridIndex: 1,
+        axisLine: { lineStyle: { color: '#30363d' } },
+        axisLabel: { color: '#8b949e', fontSize: 10 },
+        splitLine: { lineStyle: { color: '#21262d' } } },
+      { scale: true, gridIndex: 2,
         axisLine: { lineStyle: { color: '#30363d' } },
         axisLabel: { color: '#8b949e', fontSize: 10 },
         splitLine: { lineStyle: { color: '#21262d' } } },
@@ -1294,6 +1303,17 @@ function renderChart(data) {
         xAxisIndex: 1, yAxisIndex: 1,
         lineStyle: { color: '#f0883e', width: 1 },
         symbol: 'none',
+      },
+      // Volume
+      {
+        name: '成交量',
+        type: 'bar',
+        data: data.volumes.map((v, i) => ({
+          value: v,
+          itemStyle: { color: data.kline[i][1] >= data.kline[i][0] ? upColor : downColor },
+        })),
+        xAxisIndex: 2, yAxisIndex: 2,
+        barWidth: '60%',
       },
     ],
   };
