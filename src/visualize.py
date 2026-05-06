@@ -40,6 +40,15 @@ def _is_ashare_market_open() -> bool:
     return (9 * 60 + 30 <= t < 11 * 60 + 30) or (13 * 60 <= t < 15 * 60)
 
 
+def _is_daily_bar_tentative() -> bool:
+    """For daily K-line: bar is tentative if today is a trading day and market hasn't closed (before 15:00)."""
+    now = datetime.now(_TZ_CHINA)
+    if now.weekday() >= 5:
+        return False
+    t = now.hour * 60 + now.minute
+    return t < 15 * 60
+
+
 # ════════════════════════════════════════════════════════════════════
 # Data Serialization for ECharts
 # ════════════════════════════════════════════════════════════════════
@@ -83,6 +92,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "coords": [[si, start_price], [ei, end_price]],
                 "dir": s.direction,
                 "idx": s.idx,
+                "vol_trend": s.volume_trend,
             })
 
     # Segments as connected polyline turning points (首尾相接) with labels
@@ -127,6 +137,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "gg": h.gg, "dd": h.dd,
                 "idx": h.idx,
                 "evo": h.evolution_type,
+                "vol_trend": h.volume_trend,
             })
 
     # Buy/sell points as markers
@@ -179,7 +190,16 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 entry["structure"] = struct_list
             bsp_markers.append(entry)
 
-    tentative = 1 if (_is_ashare_market_open() and len(bars) > 0) else 0
+    # For daily K-lines: tentative if last bar is today and market hasn't closed
+    # For intraday: tentative if market is currently open
+    tentative = 0
+    if len(bars) > 0:
+        today_str = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
+        last_dt = bars[-1].dt.split(" ")[0] if " " in bars[-1].dt else bars[-1].dt
+        if last_dt == today_str and _is_daily_bar_tentative():
+            tentative = 1
+        elif _is_ashare_market_open():
+            tentative = 1
 
     return {
         "dates": dates,
@@ -197,6 +217,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         "hub_position": result.position_vs_hub,
         "hub_detail": result.hub_position_detail,
         "trend_completion": result.trend_completion,
+        "volume_profile": result.volume_profile,
         "tentative": tentative,
         "stats": {
             "bars": len(bars),
@@ -685,11 +706,15 @@ function updateStructBar(data) {
   const tentTag = data.tentative > 0
     ? '<span style="color:#d29922;font-weight:bold" title="盘中数据，最后一根K线尚未确认">⚠ 盘中暂定</span>'
     : '';
+  const vp = data.volume_profile || {};
+  const vpIcons = {'active': '🔥活跃', 'normal': '➖正常', 'inactive': '❄️低迷'};
+  const vpTrend = {'expanding': '放量', 'shrinking': '缩量', 'flat': '平稳'};
+  const vpStr = vp.activity ? `<span title="近5日/MA20=${vp.ratio}">${vpIcons[vp.activity]||''} ${vpTrend[vp.trend]||''}</span>` : '';
   bar.innerHTML = `
     <span>K线 ${s.bars}</span><span>合并 ${s.merged}</span>
     <span>分型 ${s.fractals}</span><span>笔 ${s.strokes}</span>
     <span>线段 ${s.segments}</span><span>笔中枢 ${s.hubs}</span>
-    <span>信号 ${s.bsp}</span>${tentTag}
+    <span>信号 ${s.bsp}</span>${tentTag}${vpStr ? '<span>│</span>' + vpStr : ''}
   `;
 }
 
@@ -874,13 +899,17 @@ function renderChart(data) {
     yAxis: h.zg,
   }));
 
-  // Stroke lines as markLine data with index labels
-  const strokeMarkData = data.strokes.map(s => ([
-    { coord: [data.dates[s.coords[0][0]], s.coords[0][1]] },
-    { coord: [data.dates[s.coords[1][0]], s.coords[1][1]],
-      label: { show: true, formatter: 'S' + s.idx, fontSize: 12, fontWeight: 'bold', color: '#d29922',
-               position: 'middle', distance: -14 } },
-  ]));
+  // Stroke lines as markLine data with index labels + volume trend
+  const strokeVolIcons = {'shrink': '↓', 'expand': '↑'};
+  const strokeMarkData = data.strokes.map(s => {
+    const volSuffix = strokeVolIcons[s.vol_trend] || '';
+    return [
+      { coord: [data.dates[s.coords[0][0]], s.coords[0][1]] },
+      { coord: [data.dates[s.coords[1][0]], s.coords[1][1]],
+        label: { show: true, formatter: 'S' + s.idx + volSuffix, fontSize: 12, fontWeight: 'bold', color: '#d29922',
+                 position: 'middle', distance: -14 } },
+    ];
+  });
 
   // Segment polyline: sparse array with values only at turning points
   const segData = new Array(data.dates.length).fill(null);
@@ -907,16 +936,19 @@ function renderChart(data) {
              distance: 0 },
   }));
 
-  // Hub labels (stroke-level) with evolution type
+  // Hub labels (stroke-level) with evolution type + volume trend
   const evoColors = {'延伸': '#8b949e', '新生（上）': '#f85149', '新生（下）': '#3fb950', '扩展': '#d29922'};
+  const volTrendIcons = {'shrink': '📉缩', 'expand': '📈放', 'flat': ''};
   const hubLabelPts = data.hubs.map(h => {
     const midX = Math.round((h.x0 + Math.min(h.x1, data.dates.length - 1)) / 2);
     const evoTag = h.evo ? ' ' + h.evo : '';
+    const volTag = volTrendIcons[h.vol_trend] || '';
+    const label = '中枢' + (h.idx + 1) + evoTag + (volTag ? ' ' + volTag : '');
     const evoClr = evoColors[h.evo] || '#58a6ff';
     return {
       coord: [data.dates[midX], h.zg],
       symbol: 'circle', symbolSize: 1, itemStyle: { color: 'transparent' },
-      label: { show: true, formatter: '中枢' + (h.idx + 1) + evoTag,
+      label: { show: true, formatter: label,
                fontSize: 10, color: evoClr,
                backgroundColor: 'rgba(13,17,23,0.7)',
                padding: [1, 4], borderRadius: 2, position: 'top', distance: 5 },
@@ -2606,8 +2638,10 @@ function renderKline(data) {{
     ctx.beginPath(); ctx.moveTo(x0, scaleY(h.zd)); ctx.lineTo(x1, scaleY(h.zd)); ctx.stroke();
     ctx.setLineDash([]);
     const evoClr = evoColors[h.evo] || '#58a6ff';
+    const mVolIcons = {{'shrink': '📉', 'expand': '📈'}};
+    const volMark = mVolIcons[h.vol_trend] || '';
     ctx.fillStyle = evoClr; ctx.font = '8px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText('枢' + (h.idx + 1) + (h.evo ? ' ' + h.evo : ''), x1 + 2, scaleY(h.zg) + 8);
+    ctx.fillText('枢' + (h.idx + 1) + (h.evo ? ' ' + h.evo : '') + volMark, x1 + 2, scaleY(h.zg) + 8);
     ctx.fillStyle = '#58a6ff';
     ctx.fillText('ZG=' + h.zg.toFixed(2), x1 + 2, scaleY(h.zg) + 17);
     ctx.fillText('ZD=' + h.zd.toFixed(2), x1 + 2, scaleY(h.zd) + 10);
@@ -2659,7 +2693,8 @@ function renderKline(data) {{
     ctx.fillText('D' + lb.idx, scaleX(lb.x), scaleY(lb.y) - 8);
   }});
 
-  // Strokes
+  // Strokes with volume trend markers
+  const sVolIcons = {{'shrink': '↓', 'expand': '↑'}};
   ctx.strokeStyle = '#f0883e'; ctx.lineWidth = 1.5;
   data.strokes.forEach(s => {{
     const si = s.coords[0][0], ei = s.coords[1][0];
@@ -2669,7 +2704,8 @@ function renderKline(data) {{
     ctx.beginPath(); ctx.moveTo(x1, scaleY(s.coords[0][1])); ctx.lineTo(x2, scaleY(s.coords[1][1])); ctx.stroke();
     ctx.fillStyle = '#d29922'; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mx = (x1 + x2) / 2;
-    ctx.fillText('S' + s.idx, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
+    const volSuf = sVolIcons[s.vol_trend] || '';
+    ctx.fillText('S' + s.idx + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
   }});
 
   // Buy/Sell markers

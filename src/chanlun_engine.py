@@ -75,6 +75,9 @@ class Stroke:
     macd_area: float = 0.0
     dif_extreme: float = 0.0   # max DIF (up) or min DIF (down) within stroke
     hist_peak: float = 0.0     # max |histogram| bar within stroke
+    avg_volume: float = 0.0    # average volume of bars within stroke
+    total_volume: int = 0      # total volume of bars within stroke
+    volume_trend: str = ""     # "shrink" / "expand" / "flat"
 
 
 @dataclass
@@ -113,6 +116,8 @@ class Hub:
     dd: float             # lowest price in hub range
     strokes: list[Stroke] = field(default_factory=list)
     evolution_type: str = ""   # "延伸"/"新生（上）"/"新生（下）"/"扩展"/""
+    avg_volume: float = 0.0    # average volume across all strokes in hub
+    volume_trend: str = ""     # "shrink"=蓄势 / "expand"=分歧加剧 / "flat"
 
     @property
     def start_dt(self) -> str:
@@ -200,6 +205,10 @@ class AnalysisResult:
     #   "area_2x_estimates": list of potential divergence estimates
     #   "double_pullback_warnings": list of double 0-axis pullback patterns
     #   "ma_area_divergences": list of MA-area cross-verified divergences
+    volume_profile: dict = field(default_factory=dict)
+    # {"activity": "active"|"normal"|"inactive",
+    #  "recent_avg": float, "ma20_avg": float, "ratio": float,
+    #  "trend": "expanding"|"shrinking"|"flat"}
 
 
 @dataclass
@@ -564,12 +573,15 @@ def _fix_stroke_extreme_violations(
 
 def compute_stroke_macd(strokes: list[Stroke], bars: list[RawBar],
                         merged: list[MergedBar]):
-    """Compute MACD metrics for each stroke.
+    """Compute MACD and volume metrics for each stroke.
 
     For each stroke, computes:
       - macd_area:   histogram area (same-direction; fallback to absolute)
       - dif_extreme: max DIF for up-strokes, min DIF for down-strokes
       - hist_peak:   maximum |histogram| bar value within the stroke
+      - avg_volume:  average volume of bars within stroke
+      - total_volume: total volume of bars within stroke
+      - volume_trend: "shrink"/"expand"/"flat" based on first/second half comparison
     """
     dt_to_idx = {b.dt: b.idx for b in bars}
 
@@ -580,12 +592,14 @@ def compute_stroke_macd(strokes: list[Stroke], bars: list[RawBar],
         abs_area = 0.0
         peak_hist = 0.0
         dif_vals = []
+        volumes = []
         for ki in range(si, min(ei + 1, len(bars))):
             v = bars[ki].macd_hist
             abs_area += abs(v)
             if abs(v) > peak_hist:
                 peak_hist = abs(v)
             dif_vals.append(bars[ki].dif)
+            volumes.append(bars[ki].volume)
             if (s.direction == 1 and v > 0) or (s.direction == -1 and v < 0):
                 dir_area += abs(v)
         s.macd_area = dir_area if dir_area > 0 else abs_area
@@ -594,6 +608,27 @@ def compute_stroke_macd(strokes: list[Stroke], bars: list[RawBar],
             s.dif_extreme = max(dif_vals) if s.direction == 1 else min(dif_vals)
         else:
             s.dif_extreme = 0.0
+
+        # Volume metrics
+        if volumes:
+            s.total_volume = sum(volumes)
+            s.avg_volume = s.total_volume / len(volumes)
+            mid = len(volumes) // 2
+            if mid >= 2:
+                first_half = sum(volumes[:mid]) / mid
+                second_half = sum(volumes[mid:]) / (len(volumes) - mid)
+                if first_half > 0:
+                    ratio = second_half / first_half
+                    if ratio < 0.7:
+                        s.volume_trend = "shrink"
+                    elif ratio > 1.3:
+                        s.volume_trend = "expand"
+                    else:
+                        s.volume_trend = "flat"
+                else:
+                    s.volume_trend = "flat"
+            else:
+                s.volume_trend = "flat"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1441,11 +1476,23 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
                 c_peak = max(s.hist_peak for s in seg_c)
                 hist_peak_diverged = c_peak < a_peak
 
+                # Volume decline comparison (P3)
+                a_avg_vol = (sum(s.avg_volume for s in seg_a) / len(seg_a)
+                             if seg_a else 0)
+                c_avg_vol = (sum(s.avg_volume for s in seg_c) / len(seg_c)
+                             if seg_c else 0)
+                vol_diverged = (c_avg_vol < a_avg_vol * 0.8
+                                if a_avg_vol > 0 else False)
+
                 dims = sum([area_diverged, dif_diverged, hist_peak_diverged])
                 if dims < 2:
                     i = j + 1
                     continue
-                div_confidence = "high" if dims == 3 else "medium"
+                # Volume divergence boosts confidence but not required for trigger
+                if vol_diverged and dims == 2:
+                    div_confidence = "high"
+                else:
+                    div_confidence = "high" if dims == 3 else "medium"
 
                 trigger = seg_c[-1]
                 structure = [
@@ -1492,6 +1539,7 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
                     "c_start_dt": seg_c[0].start.dt,
                     "c_end_dt": seg_c[-1].end.dt,
                     "c_stroke_range": (seg_c[0].idx, seg_c[-1].idx),
+                    "vol_diverged": vol_diverged,
                     "structure": structure,
                 })
 
@@ -1553,10 +1601,17 @@ def check_consolidation_divergence(strokes: list[Stroke],
                     # Histogram peak comparison
                     hist_peak_diverged = curr_e.hist_peak < prev_e.hist_peak
 
+                    # Volume decline (P3)
+                    vol_diverged = (curr_e.avg_volume < prev_e.avg_volume * 0.8
+                                    if prev_e.avg_volume > 0 else False)
+
                     dims = sum([area_diverged, dif_diverged, hist_peak_diverged])
                     if dims < 2:
                         continue
-                    div_confidence = "high" if dims == 3 else "medium"
+                    if vol_diverged and dims == 2:
+                        div_confidence = "high"
+                    else:
+                        div_confidence = "high" if dims == 3 else "medium"
 
                     divergences.append({
                         "type": "consolidation",
@@ -1574,6 +1629,7 @@ def check_consolidation_divergence(strokes: list[Stroke],
                         "curr_hist_peak": round(curr_e.hist_peak, 4),
                         "div_dims": dims,
                         "div_confidence": div_confidence,
+                        "vol_diverged": vol_diverged,
                         "hub_idx": hub.idx,
                         "price": (curr_e.end.low if curr_e.direction == -1
                                   else curr_e.end.high),
@@ -2111,6 +2167,34 @@ def _grade_type2(t1: 'BuySellPoint', first_move: 'Stroke',
             tags.append("DIF<0")
         elif dif_val > 0:
             score -= 1
+
+    # Volume confirmation (图解缠论3 §6): breakout with volume expansion
+    if first_move.avg_volume > 0 and pullback.avg_volume > 0:
+        vol_ratio = first_move.avg_volume / pullback.avg_volume
+        if is_buy:
+            # For type 2 buy: first_move is the rebound from T1.
+            # Stronger if pullback (second move) shrinks relative to first_move.
+            pb_vol_ratio = pullback.avg_volume / first_move.avg_volume
+            if pb_vol_ratio < 0.6:
+                score += 2
+                tags.append(f"缩量回调✓({pb_vol_ratio:.0%})")
+            elif pb_vol_ratio < 0.8:
+                score += 1
+                tags.append(f"温和缩量({pb_vol_ratio:.0%})")
+            elif pb_vol_ratio > 1.5:
+                score -= 1
+                tags.append(f"放量回调⚠({pb_vol_ratio:.0%})")
+        else:
+            pb_vol_ratio = pullback.avg_volume / first_move.avg_volume
+            if pb_vol_ratio < 0.6:
+                score += 2
+                tags.append(f"缩量反弹✓({pb_vol_ratio:.0%})")
+            elif pb_vol_ratio < 0.8:
+                score += 1
+                tags.append(f"温和缩量({pb_vol_ratio:.0%})")
+            elif pb_vol_ratio > 1.5:
+                score -= 1
+                tags.append(f"放量反弹⚠({pb_vol_ratio:.0%})")
 
     if score >= 6:
         return "strongest", "high", tags
@@ -2880,6 +2964,27 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         elif dif_val < 0:
             score -= 1
 
+        # Dimension 6: Volume shrinkage during pullback (图解缠论3 §5)
+        if breakout_stroke.avg_volume > 0 and pullback.avg_volume > 0:
+            vol_ratio = pullback.avg_volume / breakout_stroke.avg_volume
+            if vol_ratio < 0.5:
+                score += 2
+                tags.append(f"缩量回抽✓({vol_ratio:.0%})")
+            elif vol_ratio < 0.7:
+                score += 1
+                tags.append(f"温和缩量({vol_ratio:.0%})")
+            elif vol_ratio > 1.5:
+                score -= 2
+                tags.append(f"放量回抽⚠({vol_ratio:.0%})")
+            elif vol_ratio > 1.2:
+                score -= 1
+                tags.append(f"量能偏大({vol_ratio:.0%})")
+
+        # Dimension 7: Hub volume accumulation pattern (图解缠论3 §5)
+        if hub.volume_trend == "shrink":
+            score += 1
+            tags.append("枢内缩量蓄势✓")
+
         if score >= 8:
             return "strongest", "high", tags
         elif score >= 5:
@@ -3103,6 +3208,27 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             tags.append("DIF<0")
         elif dif_val > 0:
             score -= 1
+
+        # Dimension 6: Volume during rally vs breakdown (图解缠论3 §5)
+        if breakdown_stroke.avg_volume > 0 and rally.avg_volume > 0:
+            vol_ratio = rally.avg_volume / breakdown_stroke.avg_volume
+            if vol_ratio < 0.5:
+                score += 2
+                tags.append(f"缩量反弹✓({vol_ratio:.0%})")
+            elif vol_ratio < 0.7:
+                score += 1
+                tags.append(f"温和缩量({vol_ratio:.0%})")
+            elif vol_ratio > 1.5:
+                score -= 2
+                tags.append(f"放量反弹⚠({vol_ratio:.0%})")
+            elif vol_ratio > 1.2:
+                score -= 1
+                tags.append(f"量能偏大({vol_ratio:.0%})")
+
+        # Dimension 7: Hub volume accumulation pattern (图解缠论3 §5)
+        if hub.volume_trend == "shrink":
+            score += 1
+            tags.append("枢内缩量蓄势✓")
 
         if score >= 8:
             return "strongest", "high", tags
@@ -3736,6 +3862,29 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
     # [7b] Hub evolution classification
     classify_hub_evolution(hubs)
 
+    # [7b2] Hub volume metrics
+    for h in hubs:
+        if h.strokes:
+            vols = [s.avg_volume for s in h.strokes if s.avg_volume > 0]
+            if vols:
+                h.avg_volume = sum(vols) / len(vols)
+                if len(vols) >= 4:
+                    mid = len(vols) // 2
+                    first_avg = sum(vols[:mid]) / mid
+                    second_avg = sum(vols[mid:]) / (len(vols) - mid)
+                    if first_avg > 0:
+                        ratio = second_avg / first_avg
+                        if ratio < 0.7:
+                            h.volume_trend = "shrink"
+                        elif ratio > 1.3:
+                            h.volume_trend = "expand"
+                        else:
+                            h.volume_trend = "flat"
+                    else:
+                        h.volume_trend = "flat"
+                else:
+                    h.volume_trend = "flat"
+
     # [7c] Merge expanded hubs for trend determination
     result.merged_hubs = merge_expanded_hubs(hubs)
 
@@ -3791,6 +3940,42 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
         diag["double_pullback_warnings"] = dp_warnings
     result.macd_diagnostics = diag
 
+    # [13] Volume profile — market activity assessment
+    if len(bars) >= 30:
+        volumes = [b.volume for b in bars if b.volume > 0]
+        if len(volumes) >= 30:
+            recent_5 = volumes[-5:]
+            ma20 = volumes[-20:]
+            recent_avg = sum(recent_5) / len(recent_5)
+            ma20_avg = sum(ma20) / len(ma20)
+            ratio = recent_avg / ma20_avg if ma20_avg > 0 else 1.0
+            if ratio > 1.5:
+                activity = "active"
+            elif ratio < 0.6:
+                activity = "inactive"
+            else:
+                activity = "normal"
+            # Volume trend: compare last 10 bars vs previous 10 bars
+            last10 = sum(volumes[-10:]) / 10
+            prev10 = sum(volumes[-20:-10]) / 10
+            if prev10 > 0:
+                trend_ratio = last10 / prev10
+                if trend_ratio > 1.3:
+                    vol_trend = "expanding"
+                elif trend_ratio < 0.7:
+                    vol_trend = "shrinking"
+                else:
+                    vol_trend = "flat"
+            else:
+                vol_trend = "flat"
+            result.volume_profile = {
+                "activity": activity,
+                "recent_avg": round(recent_avg, 0),
+                "ma20_avg": round(ma20_avg, 0),
+                "ratio": round(ratio, 2),
+                "trend": vol_trend,
+            }
+
     return result
 
 
@@ -3817,6 +4002,8 @@ def _format_div_dims(d: dict) -> str:
         parts.append("柱峰✓")
     else:
         parts.append("柱峰✗")
+    if d.get("vol_diverged"):
+        parts.append("量能✓")
     return " [" + " ".join(parts) + "]" if parts else ""
 
 
@@ -3875,6 +4062,15 @@ def format_report(result: AnalysisResult) -> str:
                 lines.append(f"- 当前价低于中枢下沿 {pct}%，空仓等待买点")
             else:
                 lines.append(f"- 中枢区间内位置 {pct}%，可高抛低吸做差价")
+        lines.append("")
+
+    if result.volume_profile:
+        vp = result.volume_profile
+        act_icon = {"active": "🔥", "normal": "➖", "inactive": "❄️"}.get(vp["activity"], "")
+        act_label = {"active": "活跃", "normal": "正常", "inactive": "低迷"}.get(vp["activity"], "")
+        trend_label = {"expanding": "放量", "shrinking": "缩量", "flat": "平稳"}.get(vp["trend"], "")
+        lines.append(f"## 量能活跃度")
+        lines.append(f"{act_icon} **{act_label}**（近5日/MA20 = {vp['ratio']:.2f}，趋势：{trend_label}）")
         lines.append("")
 
     if result.hubs:
