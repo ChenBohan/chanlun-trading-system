@@ -1814,7 +1814,7 @@
       "30min",
       "5min"
     ],
-    "data_start": "20180101",
+    "data_start": "20100101",
     "datalen_daily": 5000,
     "datalen_intraday": 2000,
     "rotation_window_days": 20,

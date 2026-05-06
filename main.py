@@ -202,7 +202,7 @@ def main():
 
     # fetch
     p_fetch = sub.add_parser("fetch", help="拉取K线数据")
-    p_fetch.add_argument("--beg", default="20180101", help="起始日期 YYYYMMDD")
+    p_fetch.add_argument("--beg", default="20100101", help="起始日期 YYYYMMDD")
     p_fetch.add_argument("--format", choices=["csv", "md"], default="csv",
                          help="输出格式 (默认: csv)")
     p_fetch.add_argument("--delay", type=float, default=0.2,
@@ -230,7 +230,7 @@ def main():
 
     # run
     p_run = sub.add_parser("run", help="完整流水线: 拉取 → 分析 → 仪表盘")
-    p_run.add_argument("--beg", default="20180101", help="起始日期 YYYYMMDD")
+    p_run.add_argument("--beg", default="20100101", help="起始日期 YYYYMMDD")
     p_run.add_argument("--delay", type=float, default=0.2,
                         help="API 调用间隔秒数 (默认: 0.2)")
     p_run.add_argument("--workers", type=int, default=8,
