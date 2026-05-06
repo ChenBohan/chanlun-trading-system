@@ -236,6 +236,62 @@ def _fetch_eastmoney(secid: str, klt: str, beg: str, end: str,
 
 
 # ════════════════════════════════════════════════════════════════════
+# Real-time Quote (Sina hq API) — for today's provisional bar
+# ════════════════════════════════════════════════════════════════════
+
+def _fetch_realtime_bar(sina_sym: str) -> Optional[KlineBar]:
+    """Fetch real-time quote from Sina hq API and build today's provisional bar.
+    Returns None if market has no data today (e.g. weekend/holiday).
+    """
+    url = f"https://hq.sinajs.cn/list={sina_sym}"
+    headers = {**_HEADERS, "Referer": "https://finance.sina.com.cn"}
+    try:
+        req = Request(url, headers=headers)
+        with urlopen(req, timeout=10) as resp:
+            raw = resp.read().decode("gbk")
+    except Exception:
+        return None
+
+    # Parse: var hq_str_shXXXXXX="name,open,prev_close,cur,...,date,time,status"
+    if '="' not in raw:
+        return None
+    content = raw.split('="')[1].rstrip('";\n')
+    if not content:
+        return None
+
+    parts = content.split(",")
+    if len(parts) < 32:
+        return None
+
+    try:
+        open_price = float(parts[1])
+        cur_price = float(parts[3])
+        high = float(parts[4])
+        low = float(parts[5])
+        volume = int(float(parts[8]))
+        amount = float(parts[9])
+        date_str = parts[30]  # YYYY-MM-DD
+    except (ValueError, IndexError):
+        return None
+
+    if open_price <= 0 or cur_price <= 0:
+        return None
+
+    prev_close = float(parts[2]) if parts[2] else 0.0
+    change = (cur_price - prev_close) if prev_close else 0.0
+    change_pct = (change / prev_close * 100) if prev_close else 0.0
+
+    return KlineBar(
+        datetime=date_str,
+        open=open_price, close=cur_price,
+        high=high, low=low,
+        volume=volume, amount=amount,
+        change_pct=round(change_pct, 4),
+        change=round(change, 4),
+    )
+
+
+# ════════════════════════════════════════════════════════════════════
 # Unified Fetch API
 # ════════════════════════════════════════════════════════════════════
 
@@ -262,6 +318,15 @@ def fetch_kline(code: str, period: str, market: str = "",
         end = datetime.now().strftime("%Y%m%d")
         secid = _eastmoney_secid(code, market)
         bars = _fetch_eastmoney(secid, cfg["em_klt"], beg or "20250101", end)
+
+    # For daily K-line from Sina, append today's provisional bar if missing
+    if bars and period == "daily":
+        today_str = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
+        last_date = bars[-1].datetime.split(" ")[0]
+        if last_date < today_str:
+            rt_bar = _fetch_realtime_bar(sina_sym)
+            if rt_bar and rt_bar.datetime == today_str:
+                bars.append(rt_bar)
 
     if beg and bars:
         beg_iso = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}"
