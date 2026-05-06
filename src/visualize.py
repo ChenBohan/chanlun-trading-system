@@ -419,7 +419,7 @@ function renderGlobalSignals() {
       : '<span style="color:' + confirmedColor + '">' + confirmedIcon + '已确认</span>';
     const idxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
     const trend = idxInfo ? (idxInfo.trend || '') : '';
-    const trendIcon = trend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (trend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>');
+    const trendIcon = trend.includes('破坏') ? '<span style="color:#d29922">⚠</span>' : (trend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (trend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>'));
     let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
     r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="跳转查看K线">' + s.etf_name + '</a></td>';
@@ -494,9 +494,9 @@ function renderOverview() {
       lastType = idx.type;
     }
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
-    const trendColor = (idx.trend||'').includes('上涨') ? '#f85149' : ((idx.trend||'').includes('下跌') ? '#3fb950' : '#8b949e');
-    const trendIcon = (idx.trend||'').includes('上涨') ? '↑' : ((idx.trend||'').includes('下跌') ? '↓' : '—');
-    const isUp = (idx.trend||'').includes('上涨');
+    const trendColor = (idx.trend||'').includes('破坏') ? '#d29922' : ((idx.trend||'').includes('上涨') ? '#f85149' : ((idx.trend||'').includes('下跌') ? '#3fb950' : '#8b949e'));
+    const trendIcon = (idx.trend||'').includes('破坏') ? '⚠' : ((idx.trend||'').includes('上涨') ? '↑' : ((idx.trend||'').includes('下跌') ? '↓' : '—'));
+    const isUp = (idx.trend||'').includes('上涨') && !(idx.trend||'').includes('破坏');
     const tcActiveColor = isUp ? '#f85149' : '#3fb950';
     const tcDoneColor = isUp ? '#3fb950' : '#f85149';
     const tcText = (idx.status||'').includes('疑似') ? '<br><span style="font-size:11px;color:#d29922">⚠️ 疑似完成</span>' : ((idx.status||'').includes('已确认') ? `<br><span style="font-size:11px;color:${tcDoneColor}">✅ 已完成</span>` : `<br><span style="font-size:11px;color:${tcActiveColor}">🔄 进行中</span>`);
@@ -552,9 +552,10 @@ async function init() {
     }
     const btn = document.createElement('button');
     btn.className = 'nav-btn' + (i === 0 ? ' active' : '');
-    const isUp = (idx.trend||'').includes('上涨');
-    const isDown = (idx.trend||'').includes('下跌');
-    const trendIcon = isUp ? '<span style="color:#f85149">▲</span>' : (isDown ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>');
+    const isBroken = (idx.trend||'').includes('破坏');
+    const isUp = !isBroken && (idx.trend||'').includes('上涨');
+    const isDown = !isBroken && (idx.trend||'').includes('下跌');
+    const trendIcon = isBroken ? '<span style="color:#d29922">⚠</span>' : (isUp ? '<span style="color:#f85149">▲</span>' : (isDown ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>'));
     btn.innerHTML = trendIcon + ' ' + idx.index_name;
     btn.title = (idx.summary || '') + ' | 评分:' + idx.score;
     btn.dataset.code = idx.etf_code;
@@ -729,7 +730,7 @@ function updateSynthesisPanel() {
   html += '<th>级别</th><th>走势</th><th>走势状态</th><th>中枢位置</th><th>DIF区域</th><th>中枢数</th><th>信号数</th><th>最新信号</th>';
   html += '</tr></thead><tbody>';
   (syn.levels || []).forEach(lv => {
-    const tCls = (lv.trend||'').includes('上涨') ? 'sig-buy' : ((lv.trend||'').includes('下跌') ? 'sig-sell' : '');
+    const tCls = (lv.trend||'').includes('破坏') ? '' : ((lv.trend||'').includes('上涨') ? 'sig-buy' : ((lv.trend||'').includes('下跌') ? 'sig-sell' : ''));
     const hpCls = (lv.hub_position||'').includes('上方') ? 'sig-buy' : ((lv.hub_position||'').includes('下方') ? 'sig-sell' : '');
     const sigStr = lv.latest_signal ? lv.latest_signal.label : '-';
     const tcIcons = {'进行中': '🔄', '疑似完成': '⚠️', '已确认完成': '✅'};
@@ -2311,7 +2312,7 @@ function renderMobileGlobalSignals() {{
     const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>');
     const mIdxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
     const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
-    const mTrendIcon = mTrend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (mTrend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>');
+    const mTrendIcon = mTrend.includes('破坏') ? '<span style="color:#d29922">⚠</span>' : (mTrend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (mTrend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>'));
     let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
     r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
@@ -2859,7 +2860,7 @@ function updateSynthesisPanel() {{
   html += '<th>级别</th><th>走势</th><th>状态</th><th>中枢位</th><th>DIF</th><th>枢数</th><th>信号</th><th>最新</th>';
   html += '</tr></thead><tbody>';
   (syn.levels || []).forEach(lv => {{
-    const tCls = (lv.trend||'').includes('上涨') ? 'sig-buy' : ((lv.trend||'').includes('下跌') ? 'sig-sell' : '');
+    const tCls = (lv.trend||'').includes('破坏') ? '' : ((lv.trend||'').includes('上涨') ? 'sig-buy' : ((lv.trend||'').includes('下跌') ? 'sig-sell' : ''));
     const hpCls = (lv.hub_position||'').includes('上方') ? 'sig-buy' : ((lv.hub_position||'').includes('下方') ? 'sig-sell' : '');
     const sigStr = lv.latest_signal ? lv.latest_signal.label : '-';
     const tcIcons = {{'进行中': '🔄', '疑似完成': '⚠️', '已确认完成': '✅'}};

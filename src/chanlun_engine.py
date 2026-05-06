@@ -1213,7 +1213,7 @@ def merge_expanded_seg_hubs(seg_hubs: list[SegHub]) -> list[SegHub]:
 # ════════════════════════════════════════════════════════════════════
 
 def determine_trend(hubs: list[Hub], strokes: list[Stroke]) -> str:
-    """Determine current trend type."""
+    """Determine current trend type based on hub structure AND current price position."""
     if not hubs:
         if strokes:
             return "上涨" if strokes[-1].direction == 1 else "下跌"
@@ -1232,11 +1232,27 @@ def determine_trend(hubs: list[Hub], strokes: list[Stroke]) -> str:
         return "盘整"
 
     h_prev, h_last = hubs[-2], hubs[-1]
+    # Structural trend from hub relationship
     if h_last.zd > h_prev.zg:
-        return "上涨趋势"
+        struct_trend = "上涨趋势"
     elif h_last.zg < h_prev.zd:
-        return "下跌趋势"
-    return "盘整"
+        struct_trend = "下跌趋势"
+    else:
+        struct_trend = "盘整"
+
+    # Override: if current price has broken far below/above all hubs,
+    # the structural trend is no longer valid
+    if strokes:
+        last = strokes[-1]
+        last_price = last.end.high if last.direction == 1 else last.end.low
+        lowest_hub_dd = min(h.dd for h in hubs)
+        highest_hub_gg = max(h.gg for h in hubs)
+        if struct_trend == "上涨趋势" and last_price < h_last.dd:
+            return "上涨趋势破坏"
+        if struct_trend == "下跌趋势" and last_price > h_last.gg:
+            return "下跌趋势破坏"
+
+    return struct_trend
 
 
 def assess_trend_completion(
@@ -3427,6 +3443,8 @@ def _level_summary(result: AnalysisResult) -> dict:
 
 def _classify_trend_direction(trend: str) -> int:
     """Map trend string to direction: 1=up, -1=down, 0=neutral."""
+    if "破坏" in trend:
+        return 0
     if "上涨" in trend:
         return 1
     if "下跌" in trend:
