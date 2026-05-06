@@ -2219,6 +2219,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     <div class="legend-item"><div class="legend-color" style="background:#58a6ff"></div>DIF</div>
     <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div>DEA</div>
   </div>
+  <div class="chart-area"><canvas id="volumeCanvas" height="80"></canvas></div>
   <div id="synthesis-panel"></div>
   <div id="signal-panel"></div>
   <div id="bspTooltip" style="display:none;position:fixed;z-index:1000;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;max-width:88vw;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-size:12px;line-height:1.6;color:#c9d1d9;pointer-events:auto"></div>
@@ -2488,6 +2489,7 @@ function render() {{
   updateInfoBar(d);
   renderKline(d);
   renderMACD(d);
+  renderVolume(d);
   updateSynthesisPanel();
   updateSignalPanel(d);
 }}
@@ -2767,6 +2769,44 @@ function renderMACD(data) {{
   ctx.stroke();
 }}
 
+function renderVolume(data) {{
+  const canvas = document.getElementById('volumeCanvas');
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const H = Math.min(rect.height || 80, 80);
+  canvas.width = rect.width * dpr; canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  ctx.clearRect(0, 0, W, H);
+
+  const n = viewEnd - viewStart;
+  if (!n) return;
+  const pad = {{t: 4, b: 4, l: 50, r: 12}};
+  const cw = (W - pad.l - pad.r) / n;
+  const vols = data.volumes.slice(viewStart, viewEnd);
+  const kline = data.kline.slice(viewStart, viewEnd);
+  const maxVol = Math.max(...vols) || 1;
+  const barH = H - pad.t - pad.b;
+
+  ctx.fillStyle = '#8b949e'; ctx.font = '8px monospace'; ctx.textAlign = 'right';
+  ctx.fillText('VOL', pad.l - 4, pad.t + 8);
+
+  const tentLast = data.tentative > 0 ? vols.length - 1 : -1;
+  vols.forEach((v, i) => {{
+    const x = pad.l + i * cw + cw / 2;
+    const bw = Math.max(cw * 0.6, 1);
+    const h = (v / maxVol) * barH;
+    const [o, c] = kline[i];
+    const isTent = i === tentLast;
+    ctx.globalAlpha = isTent ? 0.45 : 0.8;
+    ctx.fillStyle = c >= o ? '#f85149' : '#3fb950';
+    ctx.fillRect(x - bw / 2, H - pad.b - h, bw, h);
+  }});
+  ctx.globalAlpha = 1.0;
+}}
+
 function updateSynthesisPanel() {{
   const panel = document.getElementById('synthesis-panel');
   const syn = SYNTHESIS[currentIndex];
@@ -3040,7 +3080,8 @@ function setupInteraction() {{
       else {{ hideBspTooltip(); }}
     }}
   }}
-  [kCanvas, mCanvas].forEach(c => {{ c.addEventListener('wheel', handleWheel, {{passive: false}}); c.style.cursor = 'crosshair'; c.style.touchAction = 'none'; }});
+  const vCanvas = document.getElementById('volumeCanvas');
+  [kCanvas, mCanvas, vCanvas].filter(Boolean).forEach(c => {{ c.addEventListener('wheel', handleWheel, {{passive: false}}); c.style.cursor = 'crosshair'; c.style.touchAction = 'none'; }});
   kCanvas.addEventListener('mousedown', handleMouseDown);
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', handleMouseUp);
