@@ -2440,11 +2440,15 @@ def find_buy_sell_points(
             ))
 
     # ── Type 3: Hub breakout + pullback (三买/三卖) ──
-    # Compute trend_hub_rank: position of each hub within a consecutive
-    # same-direction trend (1 = first hub after direction change → best).
+    # Compute direction-aware trend_hub_rank:
+    #   buy_rank: consecutive up-hub count (relevant for 3B signals)
+    #   sell_rank: consecutive down-hub count (relevant for 3S signals)
+    # A 3B from a down-hub is counter-trend → buy_rank=1 ("盘整三买").
+    # A 3S from an up-hub is counter-trend → sell_rank=1 ("盘整三卖").
     # Also compute churn_penalty: frequent direction flips in recent hubs
     # indicate large-level consolidation, reducing 3B/3S value.
-    hub_rank: dict[int, int] = {}
+    hub_buy_rank: dict[int, int] = {}
+    hub_sell_rank: dict[int, int] = {}
     hub_churn: dict[int, int] = {}
     up_run = 0
     down_run = 0
@@ -2454,13 +2458,11 @@ def find_buy_sell_points(
         if evo == "新生（上）":
             up_run += 1
             down_run = 0
-            hub_rank[h.idx] = up_run
         elif evo == "新生（下）":
             down_run += 1
             up_run = 0
-            hub_rank[h.idx] = down_run
-        else:
-            hub_rank[h.idx] = max(up_run, down_run, 1)
+        hub_buy_rank[h.idx] = up_run if up_run > 0 else 1
+        hub_sell_rank[h.idx] = down_run if down_run > 0 else 1
 
         window = hubs[max(0, i - _CHURN_WINDOW + 1): i + 1]
         flips = 0
@@ -2474,14 +2476,15 @@ def find_buy_sell_points(
 
     for i, hub in enumerate(hubs):
         hub_end_idx = hub.strokes[-1].idx
-        rank = hub_rank.get(hub.idx, 1)
+        buy_rank = hub_buy_rank.get(hub.idx, 1)
+        sell_rank = hub_sell_rank.get(hub.idx, 1)
         churn = hub_churn.get(hub.idx, 0)
         next_hub = hubs[i + 1] if i + 1 < len(hubs) else None
 
         _check_type3_buy(hub, strokes, hub_end_idx, points, level,
-                         stroke_to_seg, rank, churn, next_hub)
+                         stroke_to_seg, buy_rank, churn, next_hub)
         _check_type3_sell(hub, strokes, hub_end_idx, points, level,
-                          stroke_to_seg, rank, churn, next_hub)
+                          stroke_to_seg, sell_rank, churn, next_hub)
 
     points.sort(key=lambda p: p.dt)
 
