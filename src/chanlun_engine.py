@@ -2557,8 +2557,11 @@ def find_buy_sell_points(
     # Compute direction-aware trend_hub_rank:
     #   buy_rank: consecutive up-hub count (relevant for 3B signals)
     #   sell_rank: consecutive down-hub count (relevant for 3S signals)
-    # A 3B from a down-hub is counter-trend → buy_rank=1 ("盘整三买").
-    # A 3S from an up-hub is counter-trend → sell_rank=1 ("盘整三卖").
+    # Rank semantics (buy side, sell side mirrors):
+    #   0 = "二三买合一": last hub in a downtrend (down_run≥2), strongest 3B
+    #   1 = "盘整三买": single hub or no consecutive direction run
+    #   2 = "趋势三买(第1中枢)": first confirmed uptrend hub
+    #   3+ = later trend hubs, progressively weaker / dangerous
     # Also compute churn_penalty: frequent direction flips in recent hubs
     # indicate large-level consolidation, reducing 3B/3S value.
     hub_buy_rank: dict[int, int] = {}
@@ -2575,8 +2578,18 @@ def find_buy_sell_points(
         elif evo == "新生（下）":
             down_run += 1
             up_run = 0
-        hub_buy_rank[h.idx] = up_run if up_run > 0 else 1
-        hub_sell_rank[h.idx] = down_run if down_run > 0 else 1
+        if up_run > 0:
+            hub_buy_rank[h.idx] = up_run
+        elif down_run >= 2:
+            hub_buy_rank[h.idx] = 0
+        else:
+            hub_buy_rank[h.idx] = 1
+        if down_run > 0:
+            hub_sell_rank[h.idx] = down_run
+        elif up_run >= 2:
+            hub_sell_rank[h.idx] = 0
+        else:
+            hub_sell_rank[h.idx] = 1
 
         window = hubs[max(0, i - _CHURN_WINDOW + 1): i + 1]
         flips = 0
@@ -3031,9 +3044,11 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         conf_details = []
 
         # === STRENGTH (operational value) ===
-        # S1: trend context
+        # S1: trend context (rank=0 is strongest: 二三买合一)
         s1 = 0; s1_l = ""
-        if trend_hub_rank == 1:
+        if trend_hub_rank == 0:
+            s1 = 7; s1_l = "二三买合一"; tags.append("二三买合一")
+        elif trend_hub_rank == 1:
             s1 = 1; s1_l = "盘整三买"; tags.append("盘整三买")
         elif trend_hub_rank == 2:
             s1 = 5; s1_l = "趋势三买"; tags.append("趋势三买")
