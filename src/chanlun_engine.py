@@ -160,6 +160,7 @@ class BuySellPoint:
     invalidation_price: float = 0.0  # price that invalidates this signal
     status: str = "active"  # "active" / "invalidated"
     invalidation_reason: str = ""  # reason for invalidation
+    trend_hub_rank: int = -1  # for 3B/3S: hub position in trend (0=end-of-opposite, 1=1st, ...); -1=N/A
 
 
 @dataclass
@@ -2557,10 +2558,10 @@ def find_buy_sell_points(
     # Compute direction-aware trend_hub_rank:
     #   buy_rank: consecutive up-hub count (relevant for 3B signals)
     #   sell_rank: consecutive down-hub count (relevant for 3S signals)
-    # Rank semantics (buy side, sell side mirrors):
-    #   0 = "二三买合一": last hub in a downtrend (down_run≥2), strongest 3B
-    #   1 = "盘整三买": single hub or no consecutive direction run
-    #   2 = "趋势三买(第1中枢)": first confirmed uptrend hub
+    # Rank semantics (buy side; sell side mirrors):
+    #   0 = "下跌末端三买": last hub in a downtrend (down_run≥2)
+    #   1 = "首个中枢三买": first up-hub (recommended per 108课详解 L79)
+    #   2 = "第二中枢三买": second up-hub (generally avoid per 扫地僧)
     #   3+ = later trend hubs, progressively weaker / dangerous
     # Also compute churn_penalty: frequent direction flips in recent hubs
     # indicate large-level consolidation, reducing 3B/3S value.
@@ -2979,7 +2980,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
     movements after leaving the hub. Scan stops at the next hub boundary.
 
     Quality dimensions (per 108课详解, 图解缠论2/3, 土匪注解):
-      1. trend_hub_rank: 1st hub in direction → best; ≥3 → weak/dangerous
+      1. trend_hub_rank: 0=downtrend-end, 1=1st up-hub (best per L79), 2+=weaker
       2. breakout_strength: how far the breakout stroke exceeds ZG
       3. pullback_depth: how far the pullback stays above ZG (shallower = stronger)
       4. hub_width: number of strokes in hub (narrow 3-stroke hubs → less reliable)
@@ -3044,16 +3045,21 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         conf_details = []
 
         # === STRENGTH (operational value) ===
-        # S1: trend context (rank=0 is strongest: 二三买合一)
+        # S1: trend context — scoring per 108课详解 L79:
+        #   "尽量只介入第一个中枢的第三类买点。因为第二个中枢以后,
+        #    形成大级别中枢的概率将急促加大"
+        # rank=0: last downtrend hub breakout (not necessarily 二三买合一)
+        # rank=1: first up-hub 3B (recommended by original text)
+        # rank=2: second up-hub 3B (generally avoid per 扫地僧)
         s1 = 0; s1_l = ""
         if trend_hub_rank == 0:
-            s1 = 7; s1_l = "二三买合一"; tags.append("二三买合一")
+            s1 = 5; s1_l = "下跌末端三买"; tags.append("下跌末端三买")
         elif trend_hub_rank == 1:
-            s1 = 1; s1_l = "盘整三买"; tags.append("盘整三买")
+            s1 = 5; s1_l = "首个中枢三买"; tags.append("首个中枢三买")
         elif trend_hub_rank == 2:
-            s1 = 5; s1_l = "趋势三买"; tags.append("趋势三买")
+            s1 = 2; s1_l = "第二中枢三买"; tags.append("第二中枢三买")
         elif trend_hub_rank == 3:
-            s1 = 2; s1_l = f"趋势三买(第{trend_hub_rank}中枢)"; tags.append(s1_l)
+            s1 = 0; s1_l = f"第三中枢三买"; tags.append(f"{s1_l}⚠")
         elif trend_hub_rank <= 5:
             s1 = -2; s1_l = f"趋势末端(第{trend_hub_rank}中枢)"; tags.append(f"{s1_l}⚠")
         else:
@@ -3226,6 +3232,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             conf_score=c_score,
             conf_details=c_dets,
             invalidation_price=hub.zg,
+            trend_hub_rank=trend_hub_rank,
         )
 
     scan_limit = next_hub.strokes[0].idx if next_hub else len(strokes) + 1
@@ -3341,16 +3348,16 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         conf_details = []
 
         # === STRENGTH ===
-        # S1: trend context (rank=0 is strongest: 二三卖合一)
+        # S1: trend context — symmetric with buy side
         s1 = 0; s1_l = ""
         if trend_hub_rank == 0:
-            s1 = 7; s1_l = "二三卖合一"; tags.append("二三卖合一")
+            s1 = 5; s1_l = "上涨末端三卖"; tags.append("上涨末端三卖")
         elif trend_hub_rank == 1:
-            s1 = 1; s1_l = "盘整三卖"; tags.append("盘整三卖")
+            s1 = 5; s1_l = "首个中枢三卖"; tags.append("首个中枢三卖")
         elif trend_hub_rank == 2:
-            s1 = 5; s1_l = "趋势三卖"; tags.append("趋势三卖")
+            s1 = 2; s1_l = "第二中枢三卖"; tags.append("第二中枢三卖")
         elif trend_hub_rank == 3:
-            s1 = 2; s1_l = f"趋势三卖(第{trend_hub_rank}中枢)"; tags.append(s1_l)
+            s1 = 0; s1_l = f"第三中枢三卖"; tags.append(f"{s1_l}⚠")
         elif trend_hub_rank <= 5:
             s1 = -2; s1_l = f"趋势末端(第{trend_hub_rank}中枢)"; tags.append(f"{s1_l}⚠")
         else:
@@ -3523,6 +3530,7 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             conf_score=c_score,
             conf_details=c_dets,
             invalidation_price=hub.zd,
+            trend_hub_rank=trend_hub_rank,
         )
 
     scan_limit = next_hub.strokes[0].idx if next_hub else len(strokes) + 1

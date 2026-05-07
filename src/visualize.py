@@ -177,6 +177,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "pos_advice": p.position_advice,
                 "status": p.status,
                 "inv_reason": p.invalidation_reason,
+                "hub_rank": p.trend_hub_rank,
             }
             if ranges:
                 entry["ranges"] = ranges
@@ -386,7 +387,7 @@ function renderGlobalSignals() {
   const typeColors = {'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'};
   const strengthMap = {'strongest': '🔥最强', 'strong': '💪强势', 'standard': '📌标准', 'weak': '⚠弱'};
 
-  function signalRow(s, i) {
+  function signalRow(s, i, isType3) {
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tClr = typeColors[s.type] || '#c9d1d9';
     let confStr = confIcons[s.conf] || s.conf || '-';
@@ -418,11 +419,22 @@ function renderGlobalSignals() {
     r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
     r += '<td style="padding:6px 8px;font-size:12px">' + (s.pos_advice || '-') + '</td>';
     r += '<td style="padding:6px 8px;text-align:center;color:' + wolfClr + '">' + wolfStr + '</td>';
+    if (isType3) {
+      const rk = s.hub_rank;
+      const rkLabels = {0:'⓪末端',1:'①首个',2:'②第二',3:'③第三'};
+      const rkColors = {0:'#f0883e',1:'#3fb950',2:'#d29922',3:'#8b949e'};
+      let rkStr = '-', rkClr = '#8b949e';
+      if (rk !== undefined && rk >= 0) {
+        rkStr = rkLabels[rk] || '⑤+第' + rk;
+        rkClr = rkColors[rk] || (rk <= 5 ? '#da3633' : '#6e7681');
+      }
+      r += '<td style="padding:6px 8px;text-align:center;font-size:12px;font-weight:600;color:' + rkClr + '">' + rkStr + '</td>';
+    }
     r += '</tr>';
     return r;
   }
 
-  function makeTable(title, signals) {
+  function makeTable(title, signals, isType3) {
     let t = '<h4 style="color:#c9d1d9;margin:12px 0 6px;font-size:14px">' + title + '</h4>';
     t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden;margin-bottom:6px">';
     t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
@@ -434,10 +446,12 @@ function renderGlobalSignals() {
     t += '<th style="padding:8px;text-align:center">强弱</th>';
     t += '<th style="padding:8px;text-align:left">仓位建议</th>';
     t += '<th style="padding:8px;text-align:center">防狼</th>';
+    if (isType3) t += '<th style="padding:8px;text-align:center">位次</th>';
     t += '</tr></thead><tbody>';
-    signals.forEach((s, i) => { t += signalRow(s, i); });
+    signals.forEach((s, i) => { t += signalRow(s, i, isType3); });
+    const cols = isType3 ? 9 : 8;
     if (signals.length === 0) {
-      t += '<tr><td colspan="8" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+      t += '<tr><td colspan="' + cols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
     }
     t += '</tbody></table>';
     return t;
@@ -457,9 +471,9 @@ function renderGlobalSignals() {
   h += '</div>';
 
   const data = GLOBAL_SIGNALS[gsActiveTab] || {};
-  h += makeTable('🔴 第一类买卖点（趋势背驰，最新5个）', data.type1 || []);
-  h += makeTable('🟠 第二类买卖点（回调确认，最新5个）', data.type2 || []);
-  h += makeTable('🔵 第三类买卖点（中枢突破，最新20个）', data.type3 || []);
+  h += makeTable('🔴 第一类买卖点（趋势背驰，最新5个）', data.type1 || [], false);
+  h += makeTable('🟠 第二类买卖点（回调确认，最新5个）', data.type2 || [], false);
+  h += makeTable('🔵 第三类买卖点（中枢突破，最新20个）', data.type3 || [], true);
   el.innerHTML = h;
 }
 
@@ -1820,6 +1834,7 @@ def generate_dashboard(data_dir: str = None,
                 "wolf": p.get("wolf", ""),
                 "status": p.get("status", "active"),
                 "inv_reason": p.get("inv_reason", ""),
+                "hub_rank": p.get("hub_rank", -1),
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
@@ -1957,6 +1972,7 @@ def generate_mobile_dashboard(data_dir: str = None,
                 "str_score": p.get("str_score"),
                 "status": p.get("status", "active"),
                 "inv_reason": p.get("inv_reason", ""),
+                "hub_rank": p.get("hub_rank", -1),
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
@@ -2160,7 +2176,7 @@ function renderMobileGlobalSignals() {{
   const tClrs = {{'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'}};
 
   const strMap = {{strongest: '🔥最强', strong: '💪强', standard: '📌标准', weak: '⚠弱'}};
-  function mgsRow(s, i) {{
+  function mgsRow(s, i, isType3) {{
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tc = tClrs[s.type] || '#c9d1d9';
     let confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
@@ -2184,11 +2200,22 @@ function renderMobileGlobalSignals() {{
     r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{strStr}}</td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{confStr}}</td>`;
+    if (isType3) {{
+      const rk = s.hub_rank;
+      const rkL = {{0:'⓪',1:'①',2:'②',3:'③'}};
+      const rkC = {{0:'#f0883e',1:'#3fb950',2:'#d29922',3:'#8b949e'}};
+      let rkS = '-', rkClr = '#8b949e';
+      if (rk !== undefined && rk >= 0) {{
+        rkS = rkL[rk] || '⑤+';
+        rkClr = rkC[rk] || (rk <= 5 ? '#da3633' : '#6e7681');
+      }}
+      r += `<td style="padding:3px 4px;text-align:center;font-size:10px;font-weight:600;color:${{rkClr}}">${{rkS}}</td>`;
+    }}
     r += '</tr>';
     return r;
   }}
 
-  function mgsTable(title, signals) {{
+  function mgsTable(title, signals, isType3) {{
     let t = '<div style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px">' + title + ' (' + signals.length + ')</div>';
     t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
     t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
@@ -2198,10 +2225,12 @@ function renderMobileGlobalSignals() {{
     t += '<th style="padding:4px;text-align:center">类型</th>';
     t += '<th style="padding:4px;text-align:center">强度</th>';
     t += '<th style="padding:4px;text-align:center">置信</th>';
+    if (isType3) t += '<th style="padding:4px;text-align:center">位次</th>';
     t += '</tr></thead><tbody>';
-    signals.forEach((s, i) => {{ t += mgsRow(s, i); }});
+    const cols = isType3 ? 6 : 5;
+    signals.forEach((s, i) => {{ t += mgsRow(s, i, isType3); }});
     if (signals.length === 0) {{
-      t += '<tr><td colspan="5" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>';
+      t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;
     }}
     t += '</tbody></table></div>';
     return t;
@@ -2221,9 +2250,9 @@ function renderMobileGlobalSignals() {{
   h += '</div>';
 
   const data = GLOBAL_SIGNALS[mgsTab] || {{}};
-  h += mgsTable('🔴 第一类买卖点（最新5个）', data.type1 || []);
-  h += mgsTable('🟠 第二类买卖点（最新5个）', data.type2 || []);
-  h += mgsTable('🔵 第三类买卖点（最新20个）', data.type3 || []);
+  h += mgsTable('🔴 第一类买卖点（最新5个）', data.type1 || [], false);
+  h += mgsTable('🟠 第二类买卖点（最新5个）', data.type2 || [], false);
+  h += mgsTable('🔵 第三类买卖点（最新20个）', data.type3 || [], true);
   el.innerHTML = h;
 }}
 renderMobileGlobalSignals();
