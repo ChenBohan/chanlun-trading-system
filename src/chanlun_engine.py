@@ -148,10 +148,13 @@ class BuySellPoint:
     # Each entry: {"label": str, "start_dt": str, "end_dt": str, "area": float}
     wolf_warning: str = ""  # 防狼术 warning (empty = safe, otherwise = warning text)
     macd_zone: str = ""     # "above_zero" / "below_zero" / "near_zero"
-    strength: str = ""      # "strongest"(二买三买合一) / "strong"(二买高于一买) / "standard"(标准二买)
-    strength_score: int = 0  # raw grading score before bucketing
+    strength: str = ""      # "strongest" / "strong" / "standard" / "weak"
+    strength_score: int = 0  # raw strength score (operational value)
     strength_details: list = field(default_factory=list)
-    # structured grading breakdown: [{"dim": str, "label": str, "score": int}, ...]
+    # [{"dim": str, "label": str, "score": int}, ...]
+    conf_score: int = 0      # raw confidence score (pattern certainty)
+    conf_details: list = field(default_factory=list)
+    # [{"dim": str, "label": str, "score": int}, ...]
     position_advice: str = ""  # position sizing advice (e.g. "轻仓试探1/3", "满仓")
     idx: int = -1  # sequential index, assigned in analyze()
     invalidation_price: float = 0.0  # price that invalidates this signal
@@ -2030,161 +2033,166 @@ _STRENGTH_ZH_ALL = {
 }
 
 
-def _grade_type1(div: dict) -> tuple[str, str, list[str], int, list[dict]]:
-    """Grade Type 1 buy/sell point quality.
+def _grade_type1(div: dict):
+    """Grade Type 1 buy/sell point: strength (value) + confidence (certainty).
 
-    Per 108课详解, 图解缠论2/3, 土匪注解, 缠论辅导:
-      1. div_dims: 3/3 vs 2/3 MACD divergence dimensions
-      2. area_ratio: magnitude of area divergence (lower = stronger)
-      3. hub_count: number of hubs in the trend (2+ = proper trend)
-      4. dif_ratio: DIF convergence ratio (lower = clearer divergence)
+    Strength = operational value if signal is correct:
+      area_ratio, hub_count
+    Confidence = certainty that the divergence is real:
+      div_dims, DIF convergence, area_ratio margin
     """
-    score = 0
     tags: list[str] = []
-    details: list[dict] = []
+    str_score = 0
+    str_details: list[dict] = []
+    conf_score = 0
+    conf_details: list[dict] = []
 
     dims = div.get("div_dims", 2)
     ratio = div.get("ratio", 1.0)
     hub_count = div.get("hub_count", 1)
 
-    d1_score = 0
-    d1_label = ""
-    if dims == 3:
-        d1_score = 3
-        d1_label = "三维背驰"
-        tags.append("三维背驰")
-    else:
-        d1_score = 1
-        d1_label = "二维背驰"
-        tags.append("二维背驰")
-    score += d1_score
-    details.append({"dim": "背驰维度", "label": d1_label, "score": d1_score})
-
-    d2_score = 0
-    d2_label = f"面积比{ratio:.2f}"
+    # === Strength dimensions ===
+    # S1: divergence magnitude
+    s1 = 0
     if ratio < 0.4:
-        d2_score = 3
-        d2_label = f"强背驰({ratio:.2f})"
-        tags.append("强背驰")
+        s1 = 3; s1_l = f"强背驰({ratio:.2f})"; tags.append("强背驰")
     elif ratio < 0.6:
-        d2_score = 2
-        d2_label = f"较强({ratio:.2f})"
+        s1 = 2; s1_l = f"较强({ratio:.2f})"
     elif ratio < 0.75:
-        d2_score = 1
-        d2_label = f"一般({ratio:.2f})"
+        s1 = 1; s1_l = f"一般({ratio:.2f})"
     else:
-        d2_score = -1
-        d2_label = f"弱背驰({ratio:.2f})"
-        tags.append("弱背驰")
-    score += d2_score
-    details.append({"dim": "背驰强度", "label": d2_label, "score": d2_score})
+        s1 = -1; s1_l = f"弱背驰({ratio:.2f})"; tags.append("弱背驰")
+    str_score += s1
+    str_details.append({"dim": "背驰强度", "label": s1_l, "score": s1})
 
-    d3_score = 0
-    d3_label = ""
+    # S2: hub count (more hubs = bigger move expected)
+    s2 = 0
     if hub_count >= 3:
-        d3_score = 3
-        d3_label = f"{hub_count}中枢趋势"
-        tags.append(d3_label)
+        s2 = 3; s2_l = f"{hub_count}中枢趋势"; tags.append(s2_l)
     elif hub_count == 2:
-        d3_score = 2
-        d3_label = "双中枢趋势"
-        tags.append("双中枢趋势")
+        s2 = 2; s2_l = "双中枢趋势"; tags.append("双中枢趋势")
     else:
-        d3_score = -1
-        d3_label = "单中枢"
-        tags.append("单中枢")
-    score += d3_score
-    details.append({"dim": "中枢数量", "label": d3_label, "score": d3_score})
+        s2 = -1; s2_l = "单中枢"; tags.append("单中枢")
+    str_score += s2
+    str_details.append({"dim": "中枢数量", "label": s2_l, "score": s2})
 
+    # === Confidence dimensions ===
+    # C1: divergence dimensions
+    c1 = 0
+    if dims == 3:
+        c1 = 3; c1_l = "三维背驰"; tags.append("三维背驰")
+    else:
+        c1 = 1; c1_l = "二维背驰"; tags.append("二维背驰")
+    conf_score += c1
+    conf_details.append({"dim": "背驰维度", "label": c1_l, "score": c1})
+
+    # C2: DIF convergence
     a_dif = abs(div.get("a_dif", 0))
     c_dif = abs(div.get("c_dif", 0))
-    d4_score = 0
-    d4_label = ""
     if a_dif > 0:
         dif_r = c_dif / a_dif
         if dif_r < 0.5:
-            d4_score = 2
-            d4_label = f"DIF强收敛({dif_r:.2f})"
-            tags.append("DIF强收敛")
+            c2 = 2; c2_l = f"DIF强收敛({dif_r:.2f})"; tags.append("DIF强收敛")
         elif dif_r < 0.8:
-            d4_score = 1
-            d4_label = f"DIF收敛({dif_r:.2f})"
+            c2 = 1; c2_l = f"DIF收敛({dif_r:.2f})"
         else:
-            d4_label = f"DIF一般({dif_r:.2f})"
-    if d4_score != 0 or d4_label:
-        score += d4_score
-        details.append({"dim": "DIF收敛", "label": d4_label, "score": d4_score})
+            c2 = 0; c2_l = f"DIF一般({dif_r:.2f})"
+        conf_score += c2
+        conf_details.append({"dim": "DIF收敛", "label": c2_l, "score": c2})
 
-    if score >= 8:
-        return "strongest", "high", tags, score, details
-    elif score >= 5:
-        return "strong", "high", tags, score, details
-    elif score >= 2:
-        return "standard", "medium", tags, score, details
+    # C3: area ratio certainty (marginal divergence = uncertain)
+    c3 = 0
+    if ratio < 0.5:
+        c3 = 2; c3_l = f"明确背驰({ratio:.2f})"
+    elif ratio < 0.7:
+        c3 = 1; c3_l = f"较明确({ratio:.2f})"
+    elif ratio >= 0.85:
+        c3 = -2; c3_l = f"边缘背驰({ratio:.2f})"; tags.append("边缘背驰⚠")
     else:
-        return "weak", "low", tags, score, details
+        c3 = 0; c3_l = f"尚可({ratio:.2f})"
+    conf_score += c3
+    conf_details.append({"dim": "背驰确定性", "label": c3_l, "score": c3})
+
+    strength = ("strongest" if str_score >= 5 else
+                "strong" if str_score >= 3 else
+                "standard" if str_score >= 1 else "weak")
+    conf = ("high" if conf_score >= 5 else
+            "medium" if conf_score >= 2 else "low")
+
+    return (strength, conf, tags,
+            str_score, str_details, conf_score, conf_details)
 
 
-def _grade_pb_ps(div: dict) -> tuple[str, str, list[str], int, list[dict]]:
-    """Grade consolidation divergence (PB/PS) quality.
+def _grade_pb_ps(div: dict):
+    """Grade consolidation divergence: strength + confidence.
 
-    Per knowledge base: consolidation divergence is inherently weaker than
-    trend divergence. Confidence caps at "medium" (never "high").
+    Strength = reversal magnitude potential (area ratio).
+    Confidence = certainty pattern is real (dims, ratio margin).
+    PB/PS are inherently weaker; strength caps at "strong".
     """
-    score = 0
     tags: list[str] = []
-    details: list[dict] = []
+    str_score = 0
+    str_details: list[dict] = []
+    conf_score = 0
+    conf_details: list[dict] = []
 
     dims = div.get("div_dims", 2)
     ratio = div.get("ratio", 1.0)
 
-    d1_score = 0
-    d1_label = ""
-    if dims == 3:
-        d1_score = 2
-        d1_label = "三维盘背"
-        tags.append("三维盘背")
-    else:
-        d1_label = "二维盘背"
-        tags.append("二维盘背")
-    score += d1_score
-    details.append({"dim": "背驰维度", "label": d1_label, "score": d1_score})
-
-    d2_score = 0
-    d2_label = f"面积比{ratio:.2f}"
+    # === Strength: area ratio ===
+    s1 = 0
     if ratio < 0.5:
-        d2_score = 2
-        d2_label = f"强盘背({ratio:.2f})"
-        tags.append("强盘背")
+        s1 = 2; s1_l = f"强盘背({ratio:.2f})"; tags.append("强盘背")
     elif ratio < 0.7:
-        d2_score = 1
-        d2_label = f"较强({ratio:.2f})"
+        s1 = 1; s1_l = f"较强({ratio:.2f})"
     else:
-        d2_label = f"一般({ratio:.2f})"
-    score += d2_score
-    details.append({"dim": "背驰强度", "label": d2_label, "score": d2_score})
+        s1 = 0; s1_l = f"一般({ratio:.2f})"
+    str_score += s1
+    str_details.append({"dim": "背驰强度", "label": s1_l, "score": s1})
 
-    if score >= 4:
-        return "strong", "medium", tags, score, details
-    elif score >= 2:
-        return "standard", "medium", tags, score, details
+    # === Confidence: dims + ratio margin ===
+    c1 = 0
+    if dims == 3:
+        c1 = 2; c1_l = "三维盘背"; tags.append("三维盘背")
     else:
-        return "weak", "low", tags, score, details
+        c1 = 0; c1_l = "二维盘背"; tags.append("二维盘背")
+    conf_score += c1
+    conf_details.append({"dim": "背驰维度", "label": c1_l, "score": c1})
+
+    c2 = 0
+    if ratio < 0.5:
+        c2 = 2; c2_l = f"明确盘背({ratio:.2f})"
+    elif ratio < 0.7:
+        c2 = 1; c2_l = f"较明确({ratio:.2f})"
+    elif ratio >= 0.85:
+        c2 = -1; c2_l = f"边缘盘背({ratio:.2f})"
+    else:
+        c2 = 0; c2_l = f"尚可({ratio:.2f})"
+    conf_score += c2
+    conf_details.append({"dim": "盘背确定性", "label": c2_l, "score": c2})
+
+    strength = ("strong" if str_score >= 2 else
+                "standard" if str_score >= 1 else "weak")
+    conf = ("medium" if conf_score >= 3 else
+            "medium" if conf_score >= 1 else "low")
+
+    return (strength, conf, tags,
+            str_score, str_details, conf_score, conf_details)
 
 
 def _grade_type2(t1: 'BuySellPoint', first_move: 'Stroke',
                  pullback: 'Stroke', ref_hub: 'Hub | None',
-                 is_buy: bool) -> tuple[str, str, list[str], int, list[dict]]:
-    """Grade Type 2 buy/sell point quality.
+                 is_buy: bool):
+    """Grade Type 2 buy/sell point: strength + confidence.
 
-    Per 108课 §2.4, 图解缠论2, 缠论辅导:
-      1. Position: above hub ZG (2B) / below hub ZD (2S) → merged with type 3
-      2. Pullback depth ratio: shallower = stronger
-      3. DIF position: favorable side of zero = stronger
+    Strength = operational value: merged position, pullback depth.
+    Confidence = pattern certainty: DIF, volume, invalidation proximity.
     """
-    score = 0
     tags: list[str] = []
-    details: list[dict] = []
+    str_score = 0
+    str_details: list[dict] = []
+    conf_score = 0
+    conf_details: list[dict] = []
 
     if is_buy:
         move_range = first_move.end.high - t1.price
@@ -2197,119 +2205,106 @@ def _grade_type2(t1: 'BuySellPoint', first_move: 'Stroke',
         merged = ref_hub and pullback.end.high < ref_hub.zd
         dif_val = pullback.dif_extreme
 
-    d1_score = 0
-    d1_label = ""
+    # === Strength dimensions ===
+    # S1: merged with T3
+    s1 = 0
     if merged:
-        d1_score = 3
-        d1_label = "二买三买合一" if is_buy else "二卖三卖合一"
-        tags.append(d1_label)
+        s1 = 3; s1_l = "二买三买合一" if is_buy else "二卖三卖合一"; tags.append(s1_l)
     else:
-        d1_label = "未合一"
-    score += d1_score
-    details.append({"dim": "位置关系", "label": d1_label, "score": d1_score})
+        s1_l = "未合一"
+    str_score += s1
+    str_details.append({"dim": "位置关系", "label": s1_l, "score": s1})
 
-    d2_score = 0
-    d2_label = ""
+    # S2: pullback depth
+    s2 = 0; s2_l = ""
+    pb_ratio = 0.0
     if move_range > 0:
         pb_ratio = pb_depth / move_range
         if pb_ratio < 0.236:
-            d2_score = 4
-            d2_label = f"极浅回调({pb_ratio:.1%})"
-            tags.append("极浅回调")
+            s2 = 4; s2_l = f"极浅回调({pb_ratio:.1%})"; tags.append("极浅回调")
         elif pb_ratio < 0.382:
-            d2_score = 3
-            d2_label = f"浅回调({pb_ratio:.1%})"
-            tags.append("浅回调")
+            s2 = 3; s2_l = f"浅回调({pb_ratio:.1%})"; tags.append("浅回调")
         elif pb_ratio < 0.500:
-            d2_score = 2
-            d2_label = f"中等({pb_ratio:.1%})"
+            s2 = 2; s2_l = f"中等({pb_ratio:.1%})"
         elif pb_ratio < 0.618:
-            d2_score = 1
-            d2_label = f"偏深({pb_ratio:.1%})"
+            s2 = 1; s2_l = f"偏深({pb_ratio:.1%})"
         elif pb_ratio < 0.786:
-            d2_label = f"深回调({pb_ratio:.1%})"
+            s2_l = f"深回调({pb_ratio:.1%})"
         else:
-            d2_score = -1
-            d2_label = f"深回调({pb_ratio:.1%})"
-            tags.append("深回调")
+            s2 = -1; s2_l = f"深回调({pb_ratio:.1%})"; tags.append("深回调")
     else:
-        d2_label = "无回调"
-    score += d2_score
-    details.append({"dim": "回调深度", "label": d2_label, "score": d2_score})
+        s2_l = "无回调"
+    str_score += s2
+    str_details.append({"dim": "回调深度", "label": s2_l, "score": s2})
 
-    d3_score = 0
-    d3_label = ""
+    # === Confidence dimensions ===
+    # C1: DIF position
+    c1 = 0; c1_l = ""
     if is_buy:
         if dif_val > 0:
-            d3_score = 1
-            d3_label = f"DIF>0({dif_val:.4f})"
-            tags.append("DIF>0")
+            c1 = 1; c1_l = f"DIF>0({dif_val:.4f})"; tags.append("DIF>0")
         elif dif_val < 0:
-            d3_score = -1
-            d3_label = f"DIF<0({dif_val:.4f})"
+            c1 = -1; c1_l = f"DIF<0({dif_val:.4f})"
         else:
-            d3_label = "DIF≈0"
+            c1_l = "DIF≈0"
     else:
         if dif_val < 0:
-            d3_score = 1
-            d3_label = f"DIF<0({dif_val:.4f})"
-            tags.append("DIF<0")
+            c1 = 1; c1_l = f"DIF<0({dif_val:.4f})"; tags.append("DIF<0")
         elif dif_val > 0:
-            d3_score = -1
-            d3_label = f"DIF>0({dif_val:.4f})"
+            c1 = -1; c1_l = f"DIF>0({dif_val:.4f})"
         else:
-            d3_label = "DIF≈0"
-    score += d3_score
-    details.append({"dim": "DIF位置", "label": d3_label, "score": d3_score})
+            c1_l = "DIF≈0"
+    conf_score += c1
+    conf_details.append({"dim": "DIF位置", "label": c1_l, "score": c1})
 
-    # Volume confirmation (图解缠论3 §6): breakout with volume expansion
-    d4_score = 0
-    d4_label = ""
+    # C2: volume confirmation
+    c2 = 0; c2_l = ""
     if first_move.avg_volume > 0 and pullback.avg_volume > 0:
+        pb_vol_ratio = pullback.avg_volume / first_move.avg_volume
         if is_buy:
-            pb_vol_ratio = pullback.avg_volume / first_move.avg_volume
             if pb_vol_ratio < 0.6:
-                d4_score = 2
-                d4_label = f"缩量回调✓({pb_vol_ratio:.0%})"
-                tags.append(d4_label)
+                c2 = 2; c2_l = f"缩量回调✓({pb_vol_ratio:.0%})"; tags.append(c2_l)
             elif pb_vol_ratio < 0.8:
-                d4_score = 1
-                d4_label = f"温和缩量({pb_vol_ratio:.0%})"
-                tags.append(d4_label)
+                c2 = 1; c2_l = f"温和缩量({pb_vol_ratio:.0%})"; tags.append(c2_l)
             elif pb_vol_ratio > 1.5:
-                d4_score = -1
-                d4_label = f"放量回调⚠({pb_vol_ratio:.0%})"
-                tags.append(d4_label)
+                c2 = -1; c2_l = f"放量回调⚠({pb_vol_ratio:.0%})"; tags.append(c2_l)
             else:
-                d4_label = f"量能正常({pb_vol_ratio:.0%})"
+                c2_l = f"量能正常({pb_vol_ratio:.0%})"
         else:
-            pb_vol_ratio = pullback.avg_volume / first_move.avg_volume
             if pb_vol_ratio < 0.6:
-                d4_score = 2
-                d4_label = f"缩量反弹✓({pb_vol_ratio:.0%})"
-                tags.append(d4_label)
+                c2 = 2; c2_l = f"缩量反弹✓({pb_vol_ratio:.0%})"; tags.append(c2_l)
             elif pb_vol_ratio < 0.8:
-                d4_score = 1
-                d4_label = f"温和缩量({pb_vol_ratio:.0%})"
-                tags.append(d4_label)
+                c2 = 1; c2_l = f"温和缩量({pb_vol_ratio:.0%})"; tags.append(c2_l)
             elif pb_vol_ratio > 1.5:
-                d4_score = -1
-                d4_label = f"放量反弹⚠({pb_vol_ratio:.0%})"
-                tags.append(d4_label)
+                c2 = -1; c2_l = f"放量反弹⚠({pb_vol_ratio:.0%})"; tags.append(c2_l)
             else:
-                d4_label = f"量能正常({pb_vol_ratio:.0%})"
-    if d4_label:
-        score += d4_score
-        details.append({"dim": "量价配合", "label": d4_label, "score": d4_score})
+                c2_l = f"量能正常({pb_vol_ratio:.0%})"
+    if c2_l:
+        conf_score += c2
+        conf_details.append({"dim": "量价配合", "label": c2_l, "score": c2})
 
-    if score >= 6:
-        return "strongest", "high", tags, score, details
-    elif score >= 3:
-        return "strong", "high", tags, score, details
-    elif score >= 1:
-        return "standard", "medium", tags, score, details
-    else:
-        return "weak", "low", tags, score, details
+    # C3: invalidation proximity
+    c3 = 0; c3_l = ""
+    if move_range > 0:
+        if pb_ratio >= 0.786:
+            c3 = -2; c3_l = f"接近失效位({pb_ratio:.1%})"
+        elif pb_ratio >= 0.618:
+            c3 = -1; c3_l = f"距失效位较近({pb_ratio:.1%})"
+        elif pb_ratio < 0.382:
+            c3 = 2; c3_l = f"远离失效位({pb_ratio:.1%})"
+        else:
+            c3 = 1; c3_l = f"距失效位安全({pb_ratio:.1%})"
+        conf_score += c3
+        conf_details.append({"dim": "失效距离", "label": c3_l, "score": c3})
+
+    strength = ("strongest" if str_score >= 6 else
+                "strong" if str_score >= 3 else
+                "standard" if str_score >= 1 else "weak")
+    conf = ("high" if conf_score >= 4 else
+            "medium" if conf_score >= 1 else "low")
+
+    return (strength, conf, tags,
+            str_score, str_details, conf_score, conf_details)
 
 
 def find_buy_sell_points(
@@ -2356,7 +2351,9 @@ def find_buy_sell_points(
         struct = div.get("structure", [])
         dims = div.get("div_dims", 1)
         dim_tag = f" ({dims}/3维)" if dims > 0 else ""
-        t1_strength, t1_conf, t1_tags, t1_raw_score, t1_details = _grade_type1(div)
+        (t1_strength, t1_conf, t1_tags,
+         t1_str_score, t1_str_details,
+         t1_conf_score, t1_conf_details) = _grade_type1(div)
         tag_str = "，".join(t1_tags)
         if div["direction"] == -1:
             points.append(BuySellPoint(
@@ -2372,8 +2369,10 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=t1_strength,
-                strength_score=t1_raw_score,
-                strength_details=t1_details,
+                strength_score=t1_str_score,
+                strength_details=t1_str_details,
+                conf_score=t1_conf_score,
+                conf_details=t1_conf_details,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -2391,8 +2390,10 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=t1_strength,
-                strength_score=t1_raw_score,
-                strength_details=t1_details,
+                strength_score=t1_str_score,
+                strength_details=t1_str_details,
+                conf_score=t1_conf_score,
+                conf_details=t1_conf_details,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -2424,7 +2425,9 @@ def find_buy_sell_points(
                        "end_dt": div["curr_end_dt"]})
         dims = div.get("div_dims", 1)
         dim_tag = f" ({dims}/3维)" if dims > 0 else ""
-        pb_strength, pb_conf, pb_tags, pb_raw_score, pb_details = _grade_pb_ps(div)
+        (pb_strength, pb_conf, pb_tags,
+         pb_str_score, pb_str_details,
+         pb_conf_score, pb_conf_details) = _grade_pb_ps(div)
         pb_tag_str = "，".join(pb_tags) if pb_tags else ""
         if div["direction"] == -1:
             points.append(BuySellPoint(
@@ -2440,8 +2443,10 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=pb_strength,
-                strength_score=pb_raw_score,
-                strength_details=pb_details,
+                strength_score=pb_str_score,
+                strength_details=pb_str_details,
+                conf_score=pb_conf_score,
+                conf_details=pb_conf_details,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -2459,8 +2464,10 @@ def find_buy_sell_points(
                 hub_idx=div["hub_idx"],
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=pb_strength,
-                strength_score=pb_raw_score,
-                strength_details=pb_details,
+                strength_score=pb_str_score,
+                strength_details=pb_str_details,
+                conf_score=pb_conf_score,
+                conf_details=pb_conf_details,
                 area_ranges=ranges,
                 structure=struct,
             ))
@@ -2481,7 +2488,9 @@ def find_buy_sell_points(
             loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
             pb_low = first_pullback.end.low
             ref_hub = hub_by_idx.get(t1.hub_idx)
-            strength, conf, t2_tags, t2_raw_score, t2_details = _grade_type2(
+            (strength, conf, t2_tags,
+             t2_str_score, t2_str_details,
+             t2_conf_score, t2_conf_details) = _grade_type2(
                 t1, first_up, first_pullback, ref_hub, is_buy=True)
             t2_tag_str = "，".join(t2_tags) if t2_tags else ""
 
@@ -2498,8 +2507,10 @@ def find_buy_sell_points(
                 hub_idx=t1.hub_idx,
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=strength,
-                strength_score=t2_raw_score,
-                strength_details=t2_details,
+                strength_score=t2_str_score,
+                strength_details=t2_str_details,
+                conf_score=t2_conf_score,
+                conf_details=t2_conf_details,
                 invalidation_price=t1.price,
             ))
 
@@ -2516,7 +2527,9 @@ def find_buy_sell_points(
             loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
             rl_high = first_rally.end.high
             ref_hub = hub_by_idx.get(t1.hub_idx)
-            strength, conf, t2_tags, t2_raw_score, t2_details = _grade_type2(
+            (strength, conf, t2_tags,
+             t2_str_score, t2_str_details,
+             t2_conf_score, t2_conf_details) = _grade_type2(
                 t1, first_down, first_rally, ref_hub, is_buy=False)
             t2_tag_str = "，".join(t2_tags) if t2_tags else ""
 
@@ -2533,8 +2546,10 @@ def find_buy_sell_points(
                 hub_idx=t1.hub_idx,
                 stroke_idx=s_idx, seg_idx=d_idx,
                 strength=strength,
-                strength_score=t2_raw_score,
-                strength_details=t2_details,
+                strength_score=t2_str_score,
+                strength_details=t2_str_details,
+                conf_score=t2_conf_score,
+                conf_details=t2_conf_details,
                 invalidation_price=t1.price,
             ))
 
@@ -3002,196 +3017,169 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         else:
             return "标准离开", 0
 
-    def _grade_3b(breakout_stroke, pullback):
+    def _grade_3b(breakout_stroke, pullback, dep_count=1):
         breakout_pct = (breakout_stroke.end.high - hub.zg) / hub_range
         margin_pct = (pullback.end.low - hub.zg) / hub_range
         breakout_abs = (breakout_stroke.end.high - hub.zg) / hub.zg if hub.zg else 0
         hub_width = len(hub.strokes)
         dif_val = breakout_stroke.dif_extreme
 
-        score = 0
         tags = []
-        details = []
+        str_score = 0
+        str_details = []
+        conf_score = 0
+        conf_details = []
 
-        # Dimension 1: trend context (per 108课/图解缠论2/土匪注解)
-        d1_score = 0
-        d1_label = ""
+        # === STRENGTH (operational value) ===
+        # S1: trend context
+        s1 = 0; s1_l = ""
         if trend_hub_rank == 1:
-            d1_score = 1
-            d1_label = "盘整三买"
-            tags.append("盘整三买")
+            s1 = 1; s1_l = "盘整三买"; tags.append("盘整三买")
         elif trend_hub_rank == 2:
-            d1_score = 5
-            d1_label = "趋势三买"
-            tags.append("趋势三买")
+            s1 = 5; s1_l = "趋势三买"; tags.append("趋势三买")
         elif trend_hub_rank == 3:
-            d1_score = 2
-            d1_label = f"趋势三买(第{trend_hub_rank}中枢)"
-            tags.append(d1_label)
+            s1 = 2; s1_l = f"趋势三买(第{trend_hub_rank}中枢)"; tags.append(s1_l)
         elif trend_hub_rank <= 5:
-            d1_score = -2
-            d1_label = f"趋势末端(第{trend_hub_rank}中枢)"
-            tags.append(f"{d1_label}⚠")
+            s1 = -2; s1_l = f"趋势末端(第{trend_hub_rank}中枢)"; tags.append(f"{s1_l}⚠")
         else:
-            d1_score = -4
-            d1_label = f"极晚期(第{trend_hub_rank}中枢)"
-            tags.append(f"{d1_label}⚠")
-        score += d1_score
+            s1 = -4; s1_l = f"极晚期(第{trend_hub_rank}中枢)"; tags.append(f"{s1_l}⚠")
+        str_score += s1
+        str_details.append({"dim": "趋势位置", "label": s1_l, "score": s1})
 
-        churn_score = 0
-        if churn >= 3:
-            churn_score = -3
-            d1_label += "+频繁翻转"
-            tags.append("频繁翻转⚠震荡市")
-        elif churn >= 2:
-            churn_score = -1
-            d1_label += "+方向不稳"
-            tags.append("方向不稳")
-        score += churn_score
-        details.append({"dim": "趋势位置", "label": d1_label,
-                         "score": d1_score + churn_score})
-
-        # Dimension 2: departure+pullback combination (per lesson 18/53)
+        # S2: departure+pullback combination
         combo_label, combo_score = _classify_departure_pullback_buy(
             breakout_stroke, pullback)
-        score += combo_score
+        str_score += combo_score
         if combo_score != 0:
             tags.append(combo_label)
-        details.append({"dim": "离开回抽", "label": combo_label,
-                         "score": combo_score})
+        str_details.append({"dim": "离开回抽", "label": combo_label,
+                             "score": combo_score})
 
-        # Flatness filter (图解缠论2 §2.3)
-        dep_range = abs(breakout_stroke.end.high - breakout_stroke.start.low)
-        pb_range = abs(pullback.start.high - pullback.end.low)
-        flat_score = 0
-        flat_label = "正常"
-        if hub_range > 0:
-            dep_flat = dep_range / hub_range < 0.3
-            pb_flat = pb_range / hub_range < 0.3
-            if dep_flat and pb_flat:
-                flat_score = -4
-                flat_label = "双横盘"
-                tags.append("双横盘⚠非三买")
-            elif dep_flat:
-                flat_score = -2
-                flat_label = "离开段偏弱"
-                tags.append("离开段偏弱⚠")
-        score += flat_score
-        if flat_score != 0:
-            details.append({"dim": "平坦过滤", "label": flat_label,
-                             "score": flat_score})
-
-        # Dimension 3: breakout strength
-        d3_score = 0
-        d3_label = f"{breakout_abs:.1%}"
+        # S3: breakout strength
+        s3 = 0
         if breakout_abs > 0.03:
-            d3_score = 2
-            d3_label = f"强突破({breakout_abs:.1%})"
-            tags.append("强突破")
+            s3 = 2; s3_l = f"强突破({breakout_abs:.1%})"; tags.append("强突破")
         elif breakout_abs > 0.01:
-            d3_score = 1
-            d3_label = f"一般({breakout_abs:.1%})"
+            s3 = 1; s3_l = f"一般({breakout_abs:.1%})"
         elif breakout_abs < 0.005:
-            d3_score = -1
-            d3_label = f"弱突破({breakout_abs:.1%})"
-            tags.append("弱突破⚠")
+            s3 = -1; s3_l = f"弱突破({breakout_abs:.1%})"; tags.append("弱突破⚠")
         else:
-            d3_label = f"偏弱({breakout_abs:.1%})"
-        score += d3_score
-        details.append({"dim": "突破力度", "label": d3_label, "score": d3_score})
+            s3_l = f"偏弱({breakout_abs:.1%})"
+        str_score += s3
+        str_details.append({"dim": "突破力度", "label": s3_l, "score": s3})
 
-        # Dimension 4: pullback depth
-        d4_score = 0
-        d4_label = f"余量{margin_pct:.0%}"
-        if margin_pct > 0.50:
-            d4_score = 1
-            d4_label = f"浅回抽(余{margin_pct:.0%})"
-            tags.append("浅回抽")
-        elif margin_pct < 0.05:
-            d4_score = -1
-            d4_label = f"深回抽(余{margin_pct:.0%})"
-            tags.append("深回抽⚠")
-        else:
-            d4_label = f"适中(余{margin_pct:.0%})"
-        score += d4_score
-        details.append({"dim": "回抽深度", "label": d4_label, "score": d4_score})
-
-        # Dimension 5: hub width
-        d5_score = 0
-        d5_label = f"{hub_width}笔"
-        if hub_width >= 7:
-            d5_score = 1
-            d5_label = f"充分换手({hub_width}笔)"
-            tags.append("充分换手")
-        elif hub_width <= 3:
-            d5_score = -1
-            d5_label = f"窄中枢({hub_width}笔)"
-            tags.append("窄中枢⚠")
-        else:
-            d5_label = f"一般({hub_width}笔)"
-        score += d5_score
-        details.append({"dim": "中枢宽度", "label": d5_label, "score": d5_score})
-
-        # Dimension 5b: MACD
-        d5b_score = 0
+        # S4: MACD position
+        s4 = 0
         if dif_val > 0:
-            d5b_score = 1
-            d5b_label = "DIF>0 多头区"
-            tags.append("DIF>0")
+            s4 = 1; s4_l = "DIF>0 多头区"; tags.append("DIF>0")
         elif dif_val < 0:
-            d5b_score = -1
-            d5b_label = "DIF<0 空头区"
+            s4 = -1; s4_l = "DIF<0 空头区"
         else:
-            d5b_label = "DIF≈0"
-        score += d5b_score
-        details.append({"dim": "MACD", "label": d5b_label, "score": d5b_score})
+            s4_l = "DIF≈0"
+        str_score += s4
+        str_details.append({"dim": "MACD", "label": s4_l, "score": s4})
 
-        # Dimension 6: Volume shrinkage during pullback (图解缠论3 §5)
-        d6_score = 0
-        d6_label = "-"
+        # S5: Volume during pullback
+        s5 = 0; s5_l = "-"
         if breakout_stroke.avg_volume > 0 and pullback.avg_volume > 0:
             vol_ratio = pullback.avg_volume / breakout_stroke.avg_volume
             if vol_ratio < 0.5:
-                d6_score = 2
-                d6_label = f"缩量回抽({vol_ratio:.0%})"
-                tags.append(f"缩量回抽✓({vol_ratio:.0%})")
+                s5 = 2; s5_l = f"缩量回抽({vol_ratio:.0%})"; tags.append(f"缩量回抽✓({vol_ratio:.0%})")
             elif vol_ratio < 0.7:
-                d6_score = 1
-                d6_label = f"温和缩量({vol_ratio:.0%})"
-                tags.append(f"温和缩量({vol_ratio:.0%})")
+                s5 = 1; s5_l = f"温和缩量({vol_ratio:.0%})"; tags.append(f"温和缩量({vol_ratio:.0%})")
             elif vol_ratio > 1.5:
-                d6_score = -2
-                d6_label = f"放量回抽({vol_ratio:.0%})"
-                tags.append(f"放量回抽⚠({vol_ratio:.0%})")
+                s5 = -2; s5_l = f"放量回抽({vol_ratio:.0%})"; tags.append(f"放量回抽⚠({vol_ratio:.0%})")
             elif vol_ratio > 1.2:
-                d6_score = -1
-                d6_label = f"量能偏大({vol_ratio:.0%})"
-                tags.append(f"量能偏大({vol_ratio:.0%})")
+                s5 = -1; s5_l = f"量能偏大({vol_ratio:.0%})"; tags.append(f"量能偏大({vol_ratio:.0%})")
             else:
-                d6_label = f"正常({vol_ratio:.0%})"
-        score += d6_score
-        details.append({"dim": "量能", "label": d6_label, "score": d6_score})
+                s5_l = f"正常({vol_ratio:.0%})"
+        str_score += s5
+        str_details.append({"dim": "量能", "label": s5_l, "score": s5})
 
-        # Dimension 7: Hub volume accumulation pattern (图解缠论3 §5)
         if hub.volume_trend == "shrink":
-            score += 1
-            details.append({"dim": "枢内蓄势", "label": "缩量蓄势",
-                             "score": 1})
+            str_score += 1
+            str_details.append({"dim": "枢内蓄势", "label": "缩量蓄势", "score": 1})
             tags.append("枢内缩量蓄势✓")
 
-        if score >= 8:
-            return "strongest", "high", tags, score, details
-        elif score >= 5:
-            return "strong", "high", tags, score, details
-        elif score >= 1:
-            return "standard", "medium", tags, score, details
+        # === CONFIDENCE (pattern certainty) ===
+        # C1: invalidation margin
+        c1 = 0
+        if margin_pct > 1.0:
+            c1 = 3; c1_l = f"远离失效位(余{margin_pct:.0%})"
+        elif margin_pct > 0.50:
+            c1 = 2; c1_l = f"安全(余{margin_pct:.0%})"; tags.append("浅回抽")
+        elif margin_pct > 0.10:
+            c1 = 1; c1_l = f"适中(余{margin_pct:.0%})"
+        elif margin_pct > 0.02:
+            c1 = 0; c1_l = f"偏近(余{margin_pct:.0%})"
         else:
-            return "weak", "low", tags, score, details
+            c1 = -2; c1_l = f"极近失效位(余{margin_pct:.0%})"; tags.append("深回抽⚠")
+        conf_score += c1
+        conf_details.append({"dim": "失效距离", "label": c1_l, "score": c1})
+
+        # C2: hub width
+        c2 = 0
+        if hub_width >= 7:
+            c2 = 1; c2_l = f"充分构建({hub_width}笔)"; tags.append("充分换手")
+        elif hub_width <= 3:
+            c2 = -1; c2_l = f"窄中枢({hub_width}笔)"; tags.append("窄中枢⚠")
+        else:
+            c2_l = f"一般({hub_width}笔)"
+        conf_score += c2
+        conf_details.append({"dim": "中枢宽度", "label": c2_l, "score": c2})
+
+        # C3: churn
+        c3 = 0
+        if churn >= 3:
+            c3 = -3; c3_l = "频繁翻转"; tags.append("频繁翻转⚠震荡市")
+        elif churn >= 2:
+            c3 = -1; c3_l = "方向不稳"; tags.append("方向不稳")
+        else:
+            c3_l = "方向清晰"; c3 = 1
+        conf_score += c3
+        conf_details.append({"dim": "方向稳定性", "label": c3_l, "score": c3})
+
+        # C4: flatness
+        dep_range = abs(breakout_stroke.end.high - breakout_stroke.start.low)
+        pb_range_val = abs(pullback.start.high - pullback.end.low)
+        c4 = 0; c4_l = "正常"
+        if hub_range > 0:
+            dep_flat = dep_range / hub_range < 0.3
+            pb_flat = pb_range_val / hub_range < 0.3
+            if dep_flat and pb_flat:
+                c4 = -4; c4_l = "双横盘"; tags.append("双横盘⚠非三买")
+            elif dep_flat:
+                c4 = -2; c4_l = "离开段偏弱"; tags.append("离开段偏弱⚠")
+            else:
+                c4 = 1; c4_l = "形态清晰"
+        conf_score += c4
+        if c4 != 1:
+            conf_details.append({"dim": "形态清晰度", "label": c4_l, "score": c4})
+
+        # C5: departure stroke count
+        c5 = 0
+        if dep_count >= 3:
+            c5 = 1; c5_l = f"多笔离开({dep_count}笔)"
+        else:
+            c5_l = "单笔离开"
+        conf_score += c5
+        if c5 != 0:
+            conf_details.append({"dim": "离开笔数", "label": c5_l, "score": c5})
+
+        strength = ("strongest" if str_score >= 8 else
+                    "strong" if str_score >= 5 else
+                    "standard" if str_score >= 1 else "weak")
+        conf = ("high" if conf_score >= 4 else
+                "medium" if conf_score >= 1 else "low")
+
+        return (strength, conf, tags,
+                str_score, str_details, conf_score, conf_details)
 
     def _make_3b(breakout_stroke, pullback, *, dep_count: int = 1,
                  pb_count: int = 1):
-        strength, conf, tags, raw_score, grade_details = _grade_3b(
-            breakout_stroke, pullback)
+        (strength, conf, tags,
+         str_score, str_dets, c_score, c_dets) = _grade_3b(
+            breakout_stroke, pullback, dep_count)
         s_idx = pullback.idx
         d_idx = stm.get(s_idx, -1)
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
@@ -3218,8 +3206,10 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             level=level, confidence=conf, hub_idx=hub.idx,
             stroke_idx=s_idx, seg_idx=d_idx,
             strength=strength,
-            strength_score=raw_score,
-            strength_details=grade_details,
+            strength_score=str_score,
+            strength_details=str_dets,
+            conf_score=c_score,
+            conf_details=c_dets,
             invalidation_price=hub.zg,
         )
 
@@ -3323,196 +3313,168 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         else:
             return "标准离开", 0
 
-    def _grade_3s(breakdown_stroke, rally):
-        breakdown_pct = (hub.zd - breakdown_stroke.end.low) / hub_range
+    def _grade_3s(breakdown_stroke, rally, dep_count=1):
         margin_pct = (hub.zd - rally.end.high) / hub_range
         breakdown_abs = (hub.zd - breakdown_stroke.end.low) / hub.zd if hub.zd else 0
         hub_width = len(hub.strokes)
         dif_val = breakdown_stroke.dif_extreme
 
-        score = 0
         tags = []
-        details = []
+        str_score = 0
+        str_details = []
+        conf_score = 0
+        conf_details = []
 
-        # Dimension 1: trend context
-        d1_score = 0
-        d1_label = ""
+        # === STRENGTH ===
+        # S1: trend context
+        s1 = 0; s1_l = ""
         if trend_hub_rank == 1:
-            d1_score = 1
-            d1_label = "盘整三卖"
-            tags.append("盘整三卖")
+            s1 = 1; s1_l = "盘整三卖"; tags.append("盘整三卖")
         elif trend_hub_rank == 2:
-            d1_score = 5
-            d1_label = "趋势三卖"
-            tags.append("趋势三卖")
+            s1 = 5; s1_l = "趋势三卖"; tags.append("趋势三卖")
         elif trend_hub_rank == 3:
-            d1_score = 2
-            d1_label = f"趋势三卖(第{trend_hub_rank}中枢)"
-            tags.append(d1_label)
+            s1 = 2; s1_l = f"趋势三卖(第{trend_hub_rank}中枢)"; tags.append(s1_l)
         elif trend_hub_rank <= 5:
-            d1_score = -2
-            d1_label = f"趋势末端(第{trend_hub_rank}中枢)"
-            tags.append(f"{d1_label}⚠")
+            s1 = -2; s1_l = f"趋势末端(第{trend_hub_rank}中枢)"; tags.append(f"{s1_l}⚠")
         else:
-            d1_score = -4
-            d1_label = f"极晚期(第{trend_hub_rank}中枢)"
-            tags.append(f"{d1_label}⚠")
-        score += d1_score
+            s1 = -4; s1_l = f"极晚期(第{trend_hub_rank}中枢)"; tags.append(f"{s1_l}⚠")
+        str_score += s1
+        str_details.append({"dim": "趋势位置", "label": s1_l, "score": s1})
 
-        churn_score = 0
-        if churn >= 3:
-            churn_score = -3
-            d1_label += "+频繁翻转"
-            tags.append("频繁翻转⚠震荡市")
-        elif churn >= 2:
-            churn_score = -1
-            d1_label += "+方向不稳"
-            tags.append("方向不稳")
-        score += churn_score
-        details.append({"dim": "趋势位置", "label": d1_label,
-                         "score": d1_score + churn_score})
-
-        # Dimension 2: departure+pullback combination (per lesson 18/53)
+        # S2: departure+pullback combination
         combo_label, combo_score = _classify_departure_pullback_sell(
             breakdown_stroke, rally)
-        score += combo_score
+        str_score += combo_score
         if combo_score != 0:
             tags.append(combo_label)
-        details.append({"dim": "离开回抽", "label": combo_label,
-                         "score": combo_score})
+        str_details.append({"dim": "离开回抽", "label": combo_label,
+                             "score": combo_score})
 
-        # Flatness filter
+        # S3: breakdown strength
+        s3 = 0
+        if breakdown_abs > 0.03:
+            s3 = 2; s3_l = f"强破位({breakdown_abs:.1%})"; tags.append("强破位")
+        elif breakdown_abs > 0.01:
+            s3 = 1; s3_l = f"一般({breakdown_abs:.1%})"
+        elif breakdown_abs < 0.005:
+            s3 = -1; s3_l = f"弱破位({breakdown_abs:.1%})"; tags.append("弱破位⚠")
+        else:
+            s3_l = f"偏弱({breakdown_abs:.1%})"
+        str_score += s3
+        str_details.append({"dim": "破位力度", "label": s3_l, "score": s3})
+
+        # S4: MACD
+        s4 = 0
+        if dif_val < 0:
+            s4 = 1; s4_l = "DIF<0 空头区"; tags.append("DIF<0")
+        elif dif_val > 0:
+            s4 = -1; s4_l = "DIF>0 多头区"
+        else:
+            s4_l = "DIF≈0"
+        str_score += s4
+        str_details.append({"dim": "MACD", "label": s4_l, "score": s4})
+
+        # S5: Volume
+        s5 = 0; s5_l = "-"
+        if breakdown_stroke.avg_volume > 0 and rally.avg_volume > 0:
+            vol_ratio = rally.avg_volume / breakdown_stroke.avg_volume
+            if vol_ratio < 0.5:
+                s5 = 2; s5_l = f"缩量反弹({vol_ratio:.0%})"; tags.append(f"缩量反弹✓({vol_ratio:.0%})")
+            elif vol_ratio < 0.7:
+                s5 = 1; s5_l = f"温和缩量({vol_ratio:.0%})"; tags.append(f"温和缩量({vol_ratio:.0%})")
+            elif vol_ratio > 1.5:
+                s5 = -2; s5_l = f"放量反弹({vol_ratio:.0%})"; tags.append(f"放量反弹⚠({vol_ratio:.0%})")
+            elif vol_ratio > 1.2:
+                s5 = -1; s5_l = f"量能偏大({vol_ratio:.0%})"; tags.append(f"量能偏大({vol_ratio:.0%})")
+            else:
+                s5_l = f"正常({vol_ratio:.0%})"
+        str_score += s5
+        str_details.append({"dim": "量能", "label": s5_l, "score": s5})
+
+        if hub.volume_trend == "shrink":
+            str_score += 1
+            str_details.append({"dim": "枢内蓄势", "label": "缩量蓄势", "score": 1})
+            tags.append("枢内缩量蓄势✓")
+
+        # === CONFIDENCE ===
+        # C1: invalidation margin
+        c1 = 0
+        if margin_pct > 1.0:
+            c1 = 3; c1_l = f"远离失效位(余{margin_pct:.0%})"
+        elif margin_pct > 0.50:
+            c1 = 2; c1_l = f"安全(余{margin_pct:.0%})"; tags.append("浅反弹")
+        elif margin_pct > 0.10:
+            c1 = 1; c1_l = f"适中(余{margin_pct:.0%})"
+        elif margin_pct > 0.02:
+            c1 = 0; c1_l = f"偏近(余{margin_pct:.0%})"
+        else:
+            c1 = -2; c1_l = f"极近失效位(余{margin_pct:.0%})"; tags.append("深反弹⚠")
+        conf_score += c1
+        conf_details.append({"dim": "失效距离", "label": c1_l, "score": c1})
+
+        # C2: hub width
+        c2 = 0
+        if hub_width >= 7:
+            c2 = 1; c2_l = f"充分构建({hub_width}笔)"; tags.append("充分换手")
+        elif hub_width <= 3:
+            c2 = -1; c2_l = f"窄中枢({hub_width}笔)"; tags.append("窄中枢⚠")
+        else:
+            c2_l = f"一般({hub_width}笔)"
+        conf_score += c2
+        conf_details.append({"dim": "中枢宽度", "label": c2_l, "score": c2})
+
+        # C3: churn
+        c3 = 0
+        if churn >= 3:
+            c3 = -3; c3_l = "频繁翻转"; tags.append("频繁翻转⚠震荡市")
+        elif churn >= 2:
+            c3 = -1; c3_l = "方向不稳"; tags.append("方向不稳")
+        else:
+            c3_l = "方向清晰"; c3 = 1
+        conf_score += c3
+        conf_details.append({"dim": "方向稳定性", "label": c3_l, "score": c3})
+
+        # C4: flatness
         dep_range = abs(breakdown_stroke.start.high - breakdown_stroke.end.low)
         rl_range = abs(rally.end.high - rally.start.low)
-        flat_score = 0
-        flat_label = "正常"
+        c4 = 0; c4_l = "正常"
         if hub_range > 0:
             dep_flat = dep_range / hub_range < 0.3
             rl_flat = rl_range / hub_range < 0.3
             if dep_flat and rl_flat:
-                flat_score = -4
-                flat_label = "双横盘"
-                tags.append("双横盘⚠非三卖")
+                c4 = -4; c4_l = "双横盘"; tags.append("双横盘⚠非三卖")
             elif dep_flat:
-                flat_score = -2
-                flat_label = "离开段偏弱"
-                tags.append("离开段偏弱⚠")
-        score += flat_score
-        if flat_score != 0:
-            details.append({"dim": "平坦过滤", "label": flat_label,
-                             "score": flat_score})
-
-        # Dimension 3: breakdown strength
-        d3_score = 0
-        d3_label = f"{breakdown_abs:.1%}"
-        if breakdown_abs > 0.03:
-            d3_score = 2
-            d3_label = f"强破位({breakdown_abs:.1%})"
-            tags.append("强破位")
-        elif breakdown_abs > 0.01:
-            d3_score = 1
-            d3_label = f"一般({breakdown_abs:.1%})"
-        elif breakdown_abs < 0.005:
-            d3_score = -1
-            d3_label = f"弱破位({breakdown_abs:.1%})"
-            tags.append("弱破位⚠")
-        else:
-            d3_label = f"偏弱({breakdown_abs:.1%})"
-        score += d3_score
-        details.append({"dim": "破位力度", "label": d3_label, "score": d3_score})
-
-        # Dimension 4: rally depth
-        d4_score = 0
-        d4_label = f"余量{margin_pct:.0%}"
-        if margin_pct > 0.50:
-            d4_score = 1
-            d4_label = f"浅反弹(余{margin_pct:.0%})"
-            tags.append("浅反弹")
-        elif margin_pct < 0.05:
-            d4_score = -1
-            d4_label = f"深反弹(余{margin_pct:.0%})"
-            tags.append("深反弹⚠")
-        else:
-            d4_label = f"适中(余{margin_pct:.0%})"
-        score += d4_score
-        details.append({"dim": "反弹深度", "label": d4_label, "score": d4_score})
-
-        # Dimension 5: hub width
-        d5_score = 0
-        d5_label = f"{hub_width}笔"
-        if hub_width >= 7:
-            d5_score = 1
-            d5_label = f"充分换手({hub_width}笔)"
-            tags.append("充分换手")
-        elif hub_width <= 3:
-            d5_score = -1
-            d5_label = f"窄中枢({hub_width}笔)"
-            tags.append("窄中枢⚠")
-        else:
-            d5_label = f"一般({hub_width}笔)"
-        score += d5_score
-        details.append({"dim": "中枢宽度", "label": d5_label, "score": d5_score})
-
-        # Dimension 5b: MACD
-        d5b_score = 0
-        if dif_val < 0:
-            d5b_score = 1
-            d5b_label = "DIF<0 空头区"
-            tags.append("DIF<0")
-        elif dif_val > 0:
-            d5b_score = -1
-            d5b_label = "DIF>0 多头区"
-        else:
-            d5b_label = "DIF≈0"
-        score += d5b_score
-        details.append({"dim": "MACD", "label": d5b_label, "score": d5b_score})
-
-        # Dimension 6: Volume during rally vs breakdown (图解缠论3 §5)
-        d6_score = 0
-        d6_label = "-"
-        if breakdown_stroke.avg_volume > 0 and rally.avg_volume > 0:
-            vol_ratio = rally.avg_volume / breakdown_stroke.avg_volume
-            if vol_ratio < 0.5:
-                d6_score = 2
-                d6_label = f"缩量反弹({vol_ratio:.0%})"
-                tags.append(f"缩量反弹✓({vol_ratio:.0%})")
-            elif vol_ratio < 0.7:
-                d6_score = 1
-                d6_label = f"温和缩量({vol_ratio:.0%})"
-                tags.append(f"温和缩量({vol_ratio:.0%})")
-            elif vol_ratio > 1.5:
-                d6_score = -2
-                d6_label = f"放量反弹({vol_ratio:.0%})"
-                tags.append(f"放量反弹⚠({vol_ratio:.0%})")
-            elif vol_ratio > 1.2:
-                d6_score = -1
-                d6_label = f"量能偏大({vol_ratio:.0%})"
-                tags.append(f"量能偏大({vol_ratio:.0%})")
+                c4 = -2; c4_l = "离开段偏弱"; tags.append("离开段偏弱⚠")
             else:
-                d6_label = f"正常({vol_ratio:.0%})"
-        score += d6_score
-        details.append({"dim": "量能", "label": d6_label, "score": d6_score})
+                c4 = 1; c4_l = "形态清晰"
+        conf_score += c4
+        if c4 != 1:
+            conf_details.append({"dim": "形态清晰度", "label": c4_l, "score": c4})
 
-        # Dimension 7: Hub volume accumulation pattern (图解缠论3 §5)
-        if hub.volume_trend == "shrink":
-            score += 1
-            details.append({"dim": "枢内蓄势", "label": "缩量蓄势",
-                             "score": 1})
-            tags.append("枢内缩量蓄势✓")
-
-        if score >= 8:
-            return "strongest", "high", tags, score, details
-        elif score >= 5:
-            return "strong", "high", tags, score, details
-        elif score >= 1:
-            return "standard", "medium", tags, score, details
+        # C5: departure stroke count
+        c5 = 0
+        if dep_count >= 3:
+            c5 = 1; c5_l = f"多笔离开({dep_count}笔)"
         else:
-            return "weak", "low", tags, score, details
+            c5_l = "单笔离开"
+        conf_score += c5
+        if c5 != 0:
+            conf_details.append({"dim": "离开笔数", "label": c5_l, "score": c5})
+
+        strength = ("strongest" if str_score >= 8 else
+                    "strong" if str_score >= 5 else
+                    "standard" if str_score >= 1 else "weak")
+        conf = ("high" if conf_score >= 4 else
+                "medium" if conf_score >= 1 else "low")
+
+        return (strength, conf, tags,
+                str_score, str_details, conf_score, conf_details)
 
     def _make_3s(breakdown_stroke, rally, *, dep_count: int = 1,
                  pb_count: int = 1):
-        strength, conf, tags, raw_score, grade_details = _grade_3s(
-            breakdown_stroke, rally)
+        (strength, conf, tags,
+         str_score, str_dets, c_score, c_dets) = _grade_3s(
+            breakdown_stroke, rally, dep_count)
         s_idx = rally.idx
         d_idx = stm.get(s_idx, -1)
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
@@ -3539,8 +3501,10 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             level=level, confidence=conf, hub_idx=hub.idx,
             stroke_idx=s_idx, seg_idx=d_idx,
             strength=strength,
-            strength_score=raw_score,
-            strength_details=grade_details,
+            strength_score=str_score,
+            strength_details=str_dets,
+            conf_score=c_score,
+            conf_details=c_dets,
             invalidation_price=hub.zd,
         )
 

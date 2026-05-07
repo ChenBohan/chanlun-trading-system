@@ -172,6 +172,8 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "strength": p.strength,
                 "str_score": p.strength_score,
                 "str_details": p.strength_details,
+                "conf_score": p.conf_score,
+                "conf_details": p.conf_details,
                 "pos_advice": p.position_advice,
                 "status": p.status,
                 "inv_reason": p.invalidation_reason,
@@ -333,8 +335,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 <div class="nav" id="index-nav" style="display:none"></div>
 
 <div class="level-tabs" id="level-tabs">
-  <button class="level-btn active" data-level="daily">日线</button>
-  <button class="level-btn" data-level="30min">30分钟</button>
+  <button class="level-btn" data-level="daily">日线</button>
+  <button class="level-btn active" data-level="30min">30分钟</button>
   <button class="level-btn" data-level="5min">5分钟</button>
 </div>
 
@@ -367,11 +369,11 @@ function loadChartData(key) {
 }
 
 let currentIndex = INDEX_LIST[0].etf_code;
-let currentLevel = 'daily';
+let currentLevel = '30min';
 let chart = null;
 
 // ─── Global Signals Table (tabbed by level, split into type-1/2/3 sub-tables) ───
-let gsActiveTab = '日线';
+let gsActiveTab = '30分钟';
 function renderGlobalSignals() {
   const el = document.getElementById('global-signals-table');
   const levels = ['日线', '30分钟', '5分钟'];
@@ -387,10 +389,12 @@ function renderGlobalSignals() {
   function signalRow(s, i) {
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tClr = typeColors[s.type] || '#c9d1d9';
-    const confStr = confIcons[s.conf] || s.conf || '-';
+    let confStr = confIcons[s.conf] || s.conf || '-';
+    if (s.conf_score !== undefined && s.conf_score !== null) confStr += ' <span style="color:#8b949e;font-size:11px">(' + s.conf_score + ')</span>';
     const wolfStr = s.wolf ? '⚠' : '✓';
     const wolfClr = s.wolf ? '#d29922' : '#3fb950';
-    const strStr = strengthMap[s.strength] || s.strength || '-';
+    let strStr = strengthMap[s.strength] || s.strength || '-';
+    if (s.str_score !== undefined && s.str_score !== null) strStr += ' <span style="color:#8b949e;font-size:11px">(' + s.str_score + ')</span>';
     const inv = s.status === 'invalidated';
     const pending = s.status === 'pending';
     const rowOpacity = inv ? 'opacity:0.45;' : '';
@@ -846,26 +850,33 @@ function renderChart(data) {
     h += '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">#' + p.bsp_idx + ' ' + p.label + '</div>';
     h += '<div style="color:#8b949e;margin:2px 0">日期: ' + (data.dates[p.idx] || '') + ' | 价格: ' + p.price.toFixed(3) + '</div>';
     h += '<table style="width:100%;border-collapse:collapse;margin:4px 0">';
-    h += '<tr><td style="color:#8b949e;padding:2px 6px 2px 0">置信度</td><td>' + (confMap[p.conf] || p.conf || '-') + '</td>';
-    h += '<td style="color:#8b949e;padding:2px 6px 2px 12px">强弱</td><td>' + (strMap[p.strength] || p.strength || '-');
-    if (p.str_score !== undefined && p.str_score !== null) h += ' <span style="color:#8b949e;font-size:11px">(总分' + p.str_score + ')</span>';
+    h += '<tr><td style="color:#8b949e;padding:2px 6px 2px 0">强度</td><td>' + (strMap[p.strength] || p.strength || '-');
+    if (p.str_score !== undefined && p.str_score !== null) h += ' <span style="color:#8b949e;font-size:11px">(' + p.str_score + '分)</span>';
+    h += '</td>';
+    h += '<td style="color:#8b949e;padding:2px 6px 2px 12px">置信度</td><td>' + (confMap[p.conf] || p.conf || '-');
+    if (p.conf_score !== undefined && p.conf_score !== null) h += ' <span style="color:#8b949e;font-size:11px">(' + p.conf_score + '分)</span>';
     h += '</td></tr>';
     h += '<tr><td style="color:#8b949e;padding:2px 6px 2px 0">状态</td><td>' + (statusMap[p.status] || p.status) + '</td>';
     h += '<td style="color:#8b949e;padding:2px 6px 2px 12px">防狼</td><td>' + (p.wolf ? '<span style="color:#d29922">⚠ ' + p.wolf + '</span>' : '✓ 安全') + '</td></tr>';
     h += '</table>';
-    if (p.str_details && p.str_details.length > 0) {
-      h += '<table style="width:100%;border-collapse:collapse;margin:4px 0;font-size:12px">';
-      h += '<tr style="border-bottom:1px solid #30363d"><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">维度</th><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">判断</th><th style="color:#8b949e;text-align:right;padding:2px 4px;font-weight:normal">分值</th></tr>';
-      p.str_details.forEach(function(d) {
+    function renderGradeTable(title, color, details) {
+      if (!details || details.length === 0) return '';
+      let t = '<div style="margin:4px 0 2px;color:' + color + ';font-size:12px;font-weight:bold">' + title + '</div>';
+      t += '<table style="width:100%;border-collapse:collapse;margin:0 0 4px;font-size:12px">';
+      t += '<tr style="border-bottom:1px solid #30363d"><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">维度</th><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">判断</th><th style="color:#8b949e;text-align:right;padding:2px 4px;font-weight:normal">分值</th></tr>';
+      details.forEach(function(d) {
         const sc = d.score;
         const scColor = sc > 0 ? '#3fb950' : (sc < 0 ? '#f85149' : '#8b949e');
         const scStr = sc > 0 ? '+' + sc : String(sc);
-        h += '<tr><td style="color:#d2a8ff;padding:1px 4px;white-space:nowrap">' + d.dim + '</td>';
-        h += '<td style="color:#c9d1d9;padding:1px 4px">' + d.label + '</td>';
-        h += '<td style="color:' + scColor + ';text-align:right;padding:1px 4px;font-weight:bold">' + scStr + '</td></tr>';
+        t += '<tr><td style="color:#d2a8ff;padding:1px 4px;white-space:nowrap">' + d.dim + '</td>';
+        t += '<td style="color:#c9d1d9;padding:1px 4px">' + d.label + '</td>';
+        t += '<td style="color:' + scColor + ';text-align:right;padding:1px 4px;font-weight:bold">' + scStr + '</td></tr>';
       });
-      h += '</table>';
+      t += '</table>';
+      return t;
     }
+    h += renderGradeTable('📊 强度明细', '#58a6ff', p.str_details);
+    h += renderGradeTable('🎯 置信度明细', '#d2a8ff', p.conf_details);
     if (p.ranges && p.ranges.length >= 2) {
       const r0 = p.ranges[0], r1 = p.ranges[1];
       const ratio = r0.area > 0 ? (r1.area / r0.area * 100).toFixed(1) : '-';
@@ -1567,7 +1578,8 @@ def _analyze_one_index_worker(args: tuple) -> dict:
             continue
         bars = load_bars_from_csv(csv_path)
         result = analyze(bars, level_key)
-        echarts_data = _result_to_echarts_data(result)
+        mb = 1250 if level_key == "daily" else 0
+        echarts_data = _result_to_echarts_data(result, max_bars=mb)
         echarts_items[f"{etf_code}_{level_key}"] = echarts_data
         level_results[level_key] = result
 
@@ -1651,7 +1663,8 @@ def run_analysis_pipeline(data_dir: str = None,
                 bars = load_bars_from_csv(csv_path)
                 result = analyze(bars, level_key)
                 level_results[level_key] = result
-                echarts_data = _result_to_echarts_data(result)
+                mb = 1250 if level_key == "daily" else 0
+                echarts_data = _result_to_echarts_data(result, max_bars=mb)
                 all_data[f"{idx.etf_code}_{level_key}"] = echarts_data
                 print(f"OK ({result.trend}, {len(result.buy_sell_points)} signals)")
 
@@ -1799,7 +1812,9 @@ def generate_dashboard(data_dir: str = None,
                 "label": p["label"],
                 "price": p["price"],
                 "conf": p.get("conf", ""),
+                "conf_score": p.get("conf_score"),
                 "strength": p.get("strength", ""),
+                "str_score": p.get("str_score"),
                 "pos_advice": p.get("pos_advice", ""),
                 "desc": p.get("desc", ""),
                 "wolf": p.get("wolf", ""),
@@ -1937,6 +1952,9 @@ def generate_mobile_dashboard(data_dir: str = None,
                 "level": level_cn, "level_key": level_key,
                 "type": p["type"], "label": p["label"],
                 "price": p["price"], "conf": p.get("conf", ""),
+                "conf_score": p.get("conf_score"),
+                "strength": p.get("strength", ""),
+                "str_score": p.get("str_score"),
                 "status": p.get("status", "active"),
                 "inv_reason": p.get("inv_reason", ""),
             }
@@ -2086,8 +2104,8 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     </div>
   </div>
   <div class="level-tabs" id="levelTabs">
-    <div class="level-tab active" onclick="switchLevel('daily')">日线</div>
-    <div class="level-tab" onclick="switchLevel('30min')">30分钟</div>
+    <div class="level-tab" onclick="switchLevel('daily')">日线</div>
+    <div class="level-tab active" onclick="switchLevel('30min')">30分钟</div>
     <div class="level-tab" onclick="switchLevel('5min')">5分钟</div>
   </div>
   <div class="info-bar" id="infoBar"></div>
@@ -2134,17 +2152,21 @@ function loadChartData(key) {{
   }});
 }}
 
-let mgsTab = '日线';
+let mgsTab = '30分钟';
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
   const levels = ['日线', '30分钟', '5分钟'];
   const confIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
   const tClrs = {{'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'}};
 
+  const strMap = {{strongest: '🔥最强', strong: '💪强', standard: '📌标准', weak: '⚠弱'}};
   function mgsRow(s, i) {{
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tc = tClrs[s.type] || '#c9d1d9';
-    const confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
+    let confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
+    if (s.conf_score !== undefined && s.conf_score !== null) confStr += '<span style="color:#8b949e;font-size:9px">(' + s.conf_score + ')</span>';
+    let strStr = strMap[s.strength] || s.strength || '-';
+    if (s.str_score !== undefined && s.str_score !== null) strStr += '<span style="color:#8b949e;font-size:9px">(' + s.str_score + ')</span>';
     const dtShort = s.dt ? s.dt.substring(5) : '-';
     const inv = s.status === 'invalidated';
     const pending = s.status === 'pending';
@@ -2160,7 +2182,8 @@ function renderMobileGlobalSignals() {{
     r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
-    r += `<td style="padding:3px 4px;text-align:center">${{confStr}}</td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{strStr}}</td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{confStr}}</td>`;
     r += '</tr>';
     return r;
   }}
@@ -2173,11 +2196,12 @@ function renderMobileGlobalSignals() {{
     t += '<th style="padding:4px;text-align:left">时间</th>';
     t += '<th style="padding:4px;text-align:left">标的</th>';
     t += '<th style="padding:4px;text-align:center">类型</th>';
+    t += '<th style="padding:4px;text-align:center">强度</th>';
     t += '<th style="padding:4px;text-align:center">置信</th>';
     t += '</tr></thead><tbody>';
     signals.forEach((s, i) => {{ t += mgsRow(s, i); }});
     if (signals.length === 0) {{
-      t += '<tr><td colspan="4" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>';
+      t += '<tr><td colspan="5" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>';
     }}
     t += '</tbody></table></div>';
     return t;
@@ -2205,7 +2229,7 @@ function renderMobileGlobalSignals() {{
 renderMobileGlobalSignals();
 
 let currentIndex = '{first_code}';
-let currentLevel = 'daily';
+let currentLevel = '30min';
 let viewStart = 0, viewEnd = 0;
 let isDragging = false, dragStartX = 0, dragStartView = 0;
 let pinchStartDist = 0, pinchStartRange = 0;
@@ -2707,26 +2731,33 @@ function showBspTooltip(bp, screenX, screenY) {{
   h += ' <span style="float:right;cursor:pointer;color:#8b949e;font-size:16px" onclick="hideBspTooltip()">✕</span></div>';
   h += '<div style="color:#8b949e;margin:2px 0">日期: ' + dateStr + ' | 价格: ' + bp.price.toFixed(3) + '</div>';
   h += '<table style="width:100%;border-collapse:collapse;margin:4px 0">';
-  h += '<tr><td style="color:#8b949e;padding:2px 4px 2px 0;white-space:nowrap">置信度</td><td>' + (confMap[bp.conf] || bp.conf || '-') + '</td>';
-  h += '<td style="color:#8b949e;padding:2px 4px 2px 8px;white-space:nowrap">强弱</td><td>' + (strMap[bp.strength] || bp.strength || '-');
-  if (bp.str_score !== undefined && bp.str_score !== null) h += ' <span style="color:#8b949e;font-size:11px">(总分' + bp.str_score + ')</span>';
+  h += '<tr><td style="color:#8b949e;padding:2px 4px 2px 0;white-space:nowrap">强度</td><td>' + (strMap[bp.strength] || bp.strength || '-');
+  if (bp.str_score !== undefined && bp.str_score !== null) h += ' <span style="color:#8b949e;font-size:11px">(' + bp.str_score + '分)</span>';
+  h += '</td>';
+  h += '<td style="color:#8b949e;padding:2px 4px 2px 8px;white-space:nowrap">置信度</td><td>' + (confMap[bp.conf] || bp.conf || '-');
+  if (bp.conf_score !== undefined && bp.conf_score !== null) h += ' <span style="color:#8b949e;font-size:11px">(' + bp.conf_score + '分)</span>';
   h += '</td></tr>';
   h += '<tr><td style="color:#8b949e;padding:2px 4px 2px 0;white-space:nowrap">状态</td><td>' + (statusMap[bp.status] || bp.status) + '</td>';
   h += '<td style="color:#8b949e;padding:2px 4px 2px 8px;white-space:nowrap">防狼</td><td>' + (bp.wolf ? '<span style="color:#d29922">⚠ ' + bp.wolf + '</span>' : '✓ 安全') + '</td></tr>';
   h += '</table>';
-  if (bp.str_details && bp.str_details.length > 0) {{
-    h += '<table style="width:100%;border-collapse:collapse;margin:4px 0;font-size:12px">';
-    h += '<tr style="border-bottom:1px solid #30363d"><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">维度</th><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">判断</th><th style="color:#8b949e;text-align:right;padding:2px 4px;font-weight:normal">分值</th></tr>';
-    bp.str_details.forEach(function(dd) {{
+  function mRenderGradeTable(title, color, details) {{
+    if (!details || details.length === 0) return '';
+    var t = '<div style="margin:4px 0 2px;color:' + color + ';font-size:12px;font-weight:bold">' + title + '</div>';
+    t += '<table style="width:100%;border-collapse:collapse;margin:0 0 4px;font-size:12px">';
+    t += '<tr style="border-bottom:1px solid #30363d"><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">维度</th><th style="color:#8b949e;text-align:left;padding:2px 4px;font-weight:normal">判断</th><th style="color:#8b949e;text-align:right;padding:2px 4px;font-weight:normal">分值</th></tr>';
+    details.forEach(function(dd) {{
       var sc = dd.score;
       var scColor = sc > 0 ? '#3fb950' : (sc < 0 ? '#f85149' : '#8b949e');
       var scStr = sc > 0 ? '+' + sc : String(sc);
-      h += '<tr><td style="color:#d2a8ff;padding:1px 4px;white-space:nowrap">' + dd.dim + '</td>';
-      h += '<td style="color:#c9d1d9;padding:1px 4px">' + dd.label + '</td>';
-      h += '<td style="color:' + scColor + ';text-align:right;padding:1px 4px;font-weight:bold">' + scStr + '</td></tr>';
+      t += '<tr><td style="color:#d2a8ff;padding:1px 4px;white-space:nowrap">' + dd.dim + '</td>';
+      t += '<td style="color:#c9d1d9;padding:1px 4px">' + dd.label + '</td>';
+      t += '<td style="color:' + scColor + ';text-align:right;padding:1px 4px;font-weight:bold">' + scStr + '</td></tr>';
     }});
-    h += '</table>';
+    t += '</table>';
+    return t;
   }}
+  h += mRenderGradeTable('📊 强度明细', '#58a6ff', bp.str_details);
+  h += mRenderGradeTable('🎯 置信度明细', '#d2a8ff', bp.conf_details);
   if (bp.ranges && bp.ranges.length >= 2) {{
     const r0 = bp.ranges[0], r1 = bp.ranges[1];
     const ratio = r0.area > 0 ? (r1.area / r0.area * 100).toFixed(1) : '-';
