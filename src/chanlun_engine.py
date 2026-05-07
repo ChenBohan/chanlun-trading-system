@@ -3341,9 +3341,11 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         conf_details = []
 
         # === STRENGTH ===
-        # S1: trend context
+        # S1: trend context (rank=0 is strongest: 二三卖合一)
         s1 = 0; s1_l = ""
-        if trend_hub_rank == 1:
+        if trend_hub_rank == 0:
+            s1 = 7; s1_l = "二三卖合一"; tags.append("二三卖合一")
+        elif trend_hub_rank == 1:
             s1 = 1; s1_l = "盘整三卖"; tags.append("盘整三卖")
         elif trend_hub_rank == 2:
             s1 = 5; s1_l = "趋势三卖"; tags.append("趋势三卖")
