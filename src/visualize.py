@@ -178,6 +178,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "status": p.status,
                 "inv_reason": p.invalidation_reason,
                 "hub_rank": p.trend_hub_rank,
+                "hub_idx": p.hub_idx,
             }
             if ranges:
                 entry["ranges"] = ranges
@@ -1761,6 +1762,124 @@ def _build_index_list(indices, all_data, synthesis_data):
 
 
 # ════════════════════════════════════════════════════════════════════
+# Cross-level departure/pullback reclassification (per 108课 lesson 18)
+# ════════════════════════════════════════════════════════════════════
+
+_SUB_LEVEL_MAP = {"daily": "30min", "30min": "5min"}
+
+
+def _reclassify_dep_pb(all_data: dict):
+    """Reclassify departure/pullback combinations using sub-level hub counts.
+
+    Per 108课 lesson 18, departure/pullback types should be classified by
+    whether the segment forms a sub-level trend (≥2 hubs) or consolidation
+    (0-1 hubs), not by price magnitude.
+    """
+    for key in list(all_data.keys()):
+        parts = key.rsplit("_", 1)
+        if len(parts) != 2:
+            continue
+        etf_code, level_key = parts
+        sub_level = _SUB_LEVEL_MAP.get(level_key)
+        if not sub_level:
+            continue
+        sub_key = f"{etf_code}_{sub_level}"
+        sub_data = all_data.get(sub_key)
+        if not sub_data:
+            continue
+
+        parent = all_data[key]
+        p_dates = parent.get("dates", [])
+        p_kline = parent.get("kline", [])
+        p_hubs = parent.get("hubs", [])
+        p_bsp = parent.get("bsp", [])
+        s_dates = sub_data.get("dates", [])
+        s_hubs = sub_data.get("hubs", [])
+
+        if not p_dates or not s_dates or not s_hubs:
+            continue
+
+        hub_by_idx = {h["idx"]: h for h in p_hubs}
+        sub_date_start = s_dates[0][:10] if s_dates else ""
+        sub_date_end = s_dates[-1][:10] if s_dates else ""
+
+        for sig in p_bsp:
+            if sig["type"] not in ("3B", "3S"):
+                continue
+            hi = sig.get("hub_idx", -1)
+            hub = hub_by_idx.get(hi)
+            if not hub:
+                continue
+
+            sig_di = sig["idx"]
+            hub_end_di = hub["x1"]
+            if sig_di <= hub_end_di or sig_di >= len(p_dates):
+                continue
+
+            dep_day_start = p_dates[hub_end_di][:10]
+            sig_day = p_dates[sig_di][:10]
+
+            if dep_day_start < sub_date_start or sig_day > sub_date_end:
+                continue
+
+            is_buy = sig["type"] == "3B"
+            scan_start = hub_end_di + 1
+            scan_end = sig_di
+
+            if scan_end <= scan_start or scan_end >= len(p_kline):
+                continue
+
+            if is_buy:
+                peak_price = max(p_kline[i][1] for i in range(scan_start, scan_end + 1))
+                peak_di = next(i for i in range(scan_start, scan_end + 1)
+                               if p_kline[i][1] == peak_price)
+            else:
+                peak_price = min(p_kline[i][2] for i in range(scan_start, scan_end + 1))
+                peak_di = next(i for i in range(scan_start, scan_end + 1)
+                               if p_kline[i][2] == peak_price)
+
+            dep_day_end = p_dates[peak_di][:10]
+            pb_day_start = dep_day_end
+            pb_day_end = sig_day
+
+            dep_hubs = sum(1 for h in s_hubs
+                           if s_dates[h["x0"]][:10] >= dep_day_start
+                           and s_dates[h["x1"]][:10] <= dep_day_end)
+            pb_hubs = sum(1 for h in s_hubs
+                          if s_dates[h["x0"]][:10] >= pb_day_start
+                          and s_dates[h["x1"]][:10] <= pb_day_end)
+
+            dep_type = "趋势" if dep_hubs >= 2 else "盘整"
+            pb_type = "反趋势" if pb_hubs >= 2 else "盘整"
+            combo = f"{dep_type}+{pb_type}"
+
+            score_map = {
+                "趋势+盘整": 3,
+                "趋势+反趋势": 1,
+                "盘整+盘整": -2,
+                "盘整+反趋势": 0,
+            }
+            new_score = score_map.get(combo, 0)
+            new_label = f"{combo}(离{dep_hubs}枢/回{pb_hubs}枢)"
+
+            old_score = 0
+            for d in sig.get("str_details", []):
+                if d["dim"] == "离开回抽":
+                    old_score = d["score"]
+                    d["label"] = new_label
+                    d["score"] = new_score
+                    break
+
+            delta = new_score - old_score
+            if delta != 0:
+                sig["str_score"] = sig.get("str_score", 0) + delta
+                new_total = sig["str_score"]
+                sig["strength"] = ("strongest" if new_total >= 8 else
+                                   "strong" if new_total >= 5 else
+                                   "standard" if new_total >= 1 else "weak")
+
+
+# ════════════════════════════════════════════════════════════════════
 # Generate HTML
 # ════════════════════════════════════════════════════════════════════
 
@@ -1797,6 +1916,8 @@ def generate_dashboard(data_dir: str = None,
         index_list = pipe["index_list"]
         latest_data_time = pipe["latest_data_time"]
         indices = pipe["indices"]
+
+    _reclassify_dep_pb(all_data)
 
     # Collect global signals (1B/1S/2B/2S/3B/3S) across all indices
     level_labels = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
@@ -1927,6 +2048,9 @@ def generate_mobile_dashboard(data_dir: str = None,
         index_list = pipe["index_list"]
         latest_data_time = pipe["latest_data_time"]
         indices = pipe["indices"]
+
+    if cache is None:
+        _reclassify_dep_pb(all_data)
 
     gen_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     data_time = latest_data_time or "-"
