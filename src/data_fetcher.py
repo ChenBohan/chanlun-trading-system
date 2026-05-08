@@ -24,6 +24,12 @@ from typing import Optional
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
 
+try:
+    import baostock as bs
+    _HAS_BAOSTOCK = True
+except ImportError:
+    _HAS_BAOSTOCK = False
+
 _TZ_CHINA = timezone(timedelta(hours=8))
 
 
@@ -292,12 +298,125 @@ def _fetch_realtime_bar(sina_sym: str) -> Optional[KlineBar]:
 
 
 # ════════════════════════════════════════════════════════════════════
+# BaoStock API (Fallback for individual stocks)
+# ════════════════════════════════════════════════════════════════════
+
+_BS_FREQ_MAP = {"daily": "d", "30min": "30", "5min": "5"}
+_bs_logged_in = False
+_bs_lock = threading.Lock()
+
+
+def _bs_login():
+    """Thread-safe baostock login (reuses session)."""
+    global _bs_logged_in
+    with _bs_lock:
+        if not _bs_logged_in:
+            bs.login()
+            _bs_logged_in = True
+
+
+def _bs_symbol(code: str, market: str = "") -> str:
+    """Convert code to baostock format (sh./sz. prefix)."""
+    if market:
+        return f"{'sh' if market.upper() == 'SH' else 'sz'}.{code}"
+    if code.startswith(("6", "5")):
+        return f"sh.{code}"
+    if code.startswith(("0", "3", "1")):
+        return f"sz.{code}"
+    return f"sh.{code}"
+
+
+def _fetch_baostock(code: str, period: str, market: str = "",
+                    beg: str = "") -> list[KlineBar]:
+    """Fetch K-line from BaoStock (good for individual stocks, weak for ETFs)."""
+    if not _HAS_BAOSTOCK:
+        return []
+
+    freq = _BS_FREQ_MAP.get(period)
+    if not freq:
+        return []
+
+    _bs_login()
+    bs_sym = _bs_symbol(code, market)
+    start_date = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}" if beg else "2020-01-01"
+    end_date = datetime.now().strftime("%Y-%m-%d")
+
+    if freq == "d":
+        fields = "date,open,high,low,close,volume,amount,pctChg"
+    else:
+        fields = "date,time,open,high,low,close,volume,amount"
+
+    try:
+        rs = bs.query_history_k_data_plus(
+            bs_sym, fields,
+            start_date=start_date, end_date=end_date,
+            frequency=freq, adjustflag="2",
+        )
+        if rs.error_code != "0":
+            print(f"    [BaoStock] error: {rs.error_msg}")
+            return []
+    except Exception as e:
+        print(f"    [BaoStock] exception: {e}")
+        return []
+
+    bars = []
+    prev_close = None
+    while rs.next():
+        row = rs.get_row_data()
+        try:
+            o = float(row[2] if freq != "d" else row[1])
+            h = float(row[3] if freq != "d" else row[2])
+            l = float(row[4] if freq != "d" else row[3])
+            c = float(row[5] if freq != "d" else row[4])
+            v = int(float(row[6] if freq != "d" else row[5]))
+            amt = float(row[7] if freq != "d" else row[6]) if len(row) > (7 if freq != "d" else 6) else 0.0
+        except (ValueError, IndexError):
+            continue
+
+        if o <= 0 or c <= 0:
+            continue
+
+        if freq == "d":
+            dt_str = row[0]
+            pct = float(row[7]) if len(row) > 7 and row[7] else 0.0
+            change = (c - prev_close) if prev_close else 0.0
+        else:
+            raw_time = row[1]  # e.g. "20260508100000000"
+            dt_str = f"{raw_time[:4]}-{raw_time[4:6]}-{raw_time[6:8]} {raw_time[8:10]}:{raw_time[10:12]}"
+            pct = 0.0
+            change = (c - prev_close) if prev_close else 0.0
+            if prev_close:
+                pct = change / prev_close * 100
+
+        bars.append(KlineBar(
+            datetime=dt_str,
+            open=o, close=c, high=h, low=l,
+            volume=v, amount=amt,
+            change_pct=round(pct, 4),
+            change=round(change, 4),
+        ))
+        prev_close = c
+
+    return bars
+
+
+# ════════════════════════════════════════════════════════════════════
 # Unified Fetch API
 # ════════════════════════════════════════════════════════════════════
+
+def _is_etf(code: str) -> bool:
+    """Heuristic: ETF codes typically start with 1/5."""
+    return code.startswith(("5", "1"))
+
 
 def fetch_kline(code: str, period: str, market: str = "",
                 beg: str = "", datalen: int = 1500) -> list[KlineBar]:
     """Fetch K-line data for an ETF or stock.
+
+    Data source priority:
+      1. Sina Finance API (primary, good for ETFs and stocks)
+      2. East Money API (fallback)
+      3. BaoStock (fallback for individual stocks only; weak ETF coverage)
 
     Args:
         code: ETF/stock code, e.g. "510300"
@@ -318,6 +437,10 @@ def fetch_kline(code: str, period: str, market: str = "",
         end = datetime.now().strftime("%Y%m%d")
         secid = _eastmoney_secid(code, market)
         bars = _fetch_eastmoney(secid, cfg["em_klt"], beg or "20250101", end)
+
+    if not bars and not _is_etf(code):
+        print(f"    EastMoney also empty for {code}/{period}, trying BaoStock...")
+        bars = _fetch_baostock(code, period, market, beg)
 
     # For daily K-line from Sina, append today's provisional bar if missing
     if bars and period == "daily":
