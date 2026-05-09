@@ -37,6 +37,7 @@ from .chanlun_engine import (
     analyze_from_csv,
     find_interval_nests,
     synthesize_multi_level,
+    cross_level_filter,
     format_report,
     format_synthesis_report,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "IntervalNest", "MultiLevelSynthesis",
     "load_bars_from_csv", "analyze", "analyze_from_csv",
     "find_interval_nests", "synthesize_multi_level",
+    "cross_level_filter",
     "format_report", "format_synthesis_report",
     # visualize
     "generate_dashboard",

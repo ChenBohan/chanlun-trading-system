@@ -138,6 +138,9 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "idx": h.idx,
                 "evo": h.evolution_type,
                 "vol_trend": h.volume_trend,
+                "hub_level": h.hub_level,
+                "is_merged": h.is_merged,
+                "duration_bars": h.duration_bars,
             })
 
     # Buy/sell points as markers
@@ -802,15 +805,17 @@ function renderChart(data) {
              distance: 0 },
   }));
 
-  // Hub labels (stroke-level) with evolution type + volume trend
+  // Hub labels (stroke-level) with evolution type + volume trend + level
   const evoColors = {'延伸': '#8b949e', '新生（上）': '#f85149', '新生（下）': '#3fb950', '扩展': '#d29922'};
   const volTrendIcons = {'shrink': '📉缩', 'expand': '📈放', 'flat': ''};
   const hubLabelPts = data.hubs.map(h => {
     const midX = Math.round((h.x0 + Math.min(h.x1, data.dates.length - 1)) / 2);
     const evoTag = h.evo ? ' ' + h.evo : '';
     const volTag = volTrendIcons[h.vol_trend] || '';
-    const label = '中枢' + (h.idx + 1) + evoTag + (volTag ? ' ' + volTag : '');
-    const evoClr = evoColors[h.evo] || '#58a6ff';
+    const mergedTag = h.is_merged ? '⬆合并' : '';
+    const durTag = h.duration_bars > 0 ? h.duration_bars + 'K' : '';
+    const label = '中枢' + (h.idx + 1) + evoTag + (mergedTag ? ' ' + mergedTag : '') + (volTag ? ' ' + volTag : '') + (durTag ? ' ' + durTag : '');
+    const evoClr = h.is_merged ? '#d29922' : (evoColors[h.evo] || '#58a6ff');
     return {
       coord: [data.dates[midX], h.zg],
       symbol: 'circle', symbolSize: 1, itemStyle: { color: 'transparent' },

@@ -118,6 +118,10 @@ class Hub:
     evolution_type: str = ""   # "延伸"/"新生（上）"/"新生（下）"/"扩展"/""
     avg_volume: float = 0.0    # average volume across all strokes in hub
     volume_trend: str = ""     # "shrink"=蓄势 / "expand"=分歧加剧 / "flat"
+    # P2: Hub level annotation
+    hub_level: str = ""        # "笔中枢"/"合并中枢" (assigned during construction)
+    duration_bars: int = 0     # number of K-bars the hub spans
+    is_merged: bool = False    # True if this hub resulted from expansion merge
 
     @property
     def start_dt(self) -> str:
@@ -1164,6 +1168,8 @@ def merge_expanded_hubs(hubs: list[Hub]) -> list[Hub]:
                 dd=min(prev.dd, h.dd),
                 strokes=all_strokes,
                 evolution_type="延伸",
+                is_merged=True,
+                hub_level="合并中枢",
             )
         else:
             merged.append(Hub(
@@ -1171,6 +1177,7 @@ def merge_expanded_hubs(hubs: list[Hub]) -> list[Hub]:
                 zg=h.zg, zd=h.zd, gg=h.gg, dd=h.dd,
                 strokes=list(h.strokes),
                 evolution_type=h.evolution_type,
+                hub_level="笔中枢",
             ))
 
     for i, h in enumerate(merged):
@@ -2610,9 +2617,11 @@ def find_buy_sell_points(
         next_hub = hubs[i + 1] if i + 1 < len(hubs) else None
 
         _check_type3_buy(hub, strokes, hub_end_idx, points, level,
-                         stroke_to_seg, buy_rank, churn, next_hub)
+                         stroke_to_seg, buy_rank, churn, next_hub,
+                         all_hubs=hubs, hub_list_idx=i)
         _check_type3_sell(hub, strokes, hub_end_idx, points, level,
-                          stroke_to_seg, sell_rank, churn, next_hub)
+                          stroke_to_seg, sell_rank, churn, next_hub,
+                          all_hubs=hubs, hub_list_idx=i)
 
     points.sort(key=lambda p: p.dt)
 
@@ -2973,7 +2982,9 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                      points: list[BuySellPoint], level: str,
                      stroke_to_seg: dict[int, int] | None = None,
                      trend_hub_rank: int = 1, churn: int = 0,
-                     next_hub: Hub | None = None):
+                     next_hub: Hub | None = None,
+                     all_hubs: list["Hub"] | None = None,
+                     hub_list_idx: int = -1):
     """Check for Type 3 buy point after hub with quality grading.
 
     Per 108课 lesson 20: departure and pullback must be the FIRST sub-level
@@ -2986,6 +2997,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
       4. hub_width: number of strokes in hub (narrow 3-stroke hubs → less reliable)
       5. MACD: breakout stroke dif_extreme (above zero = stronger)
       6. churn: direction-flip count in recent hubs (high = large-level consolidation)
+      7. expansion_risk (P1): probability that 3B leads to hub expansion
     """
     stm = stroke_to_seg or {}
     last_stroke = hub.strokes[-1]
@@ -3030,6 +3042,63 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             return "盘整离开", -1
         else:
             return "标准离开", 0
+
+    def _assess_expansion_risk(breakout_stroke) -> tuple[int, str]:
+        """P1: Assess probability that this 3B leads to hub expansion.
+
+        Expansion = new hub's oscillation range overlaps with previous hub(s).
+        Risk factors:
+          1. Hub count already high (3+ → accumulated selling pressure)
+          2. Accumulated range large (prior DD to GG) relative to breakout
+          3. Hub is a merged/expansion hub (already upgraded level)
+          4. Breakout "escape velocity" insufficient vs accumulated height
+        """
+        _hubs = all_hubs or []
+        _hidx = hub_list_idx
+
+        risk_score = 0
+        risk_label = ""
+
+        # Factor 1: number of same-direction hubs before this one
+        if trend_hub_rank >= 4:
+            risk_score += 3
+            risk_label = f"极高(第{trend_hub_rank}中枢)"
+        elif trend_hub_rank == 3:
+            risk_score += 2
+            risk_label = f"高(第{trend_hub_rank}中枢)"
+        elif trend_hub_rank == 2:
+            risk_score += 1
+            risk_label = "中等(第2中枢)"
+
+        # Factor 2: accumulated range vs breakout strength
+        if _hubs and _hidx >= 1:
+            first_dd = min(h.dd for h in _hubs[:_hidx + 1])
+            last_gg = max(h.gg for h in _hubs[:_hidx + 1])
+            accum_range = last_gg - first_dd
+            breakout_height = breakout_stroke.end.high - hub.zg
+            if accum_range > 0 and breakout_height > 0:
+                escape_ratio = breakout_height / accum_range
+                if escape_ratio < 0.1:
+                    risk_score += 2
+                    risk_label = (risk_label + "+逃逸不足") if risk_label else "逃逸不足"
+                elif escape_ratio < 0.2:
+                    risk_score += 1
+                    risk_label = (risk_label + "+逃逸偏弱") if risk_label else "逃逸偏弱"
+
+        # Factor 3: merged hub (already experienced expansion)
+        if hub.is_merged:
+            risk_score += 2
+            risk_label = (risk_label + "+合并中枢") if risk_label else "合并中枢"
+
+        # Factor 4: hub duration too long (stale breakout)
+        if hub.duration_bars > 60:
+            risk_score += 1
+            risk_label = (risk_label + "+长期盘整") if risk_label else "长期盘整"
+
+        if not risk_label:
+            risk_label = "低" if risk_score == 0 else f"偏低({risk_score})"
+
+        return risk_score, risk_label
 
     def _grade_3b(breakout_stroke, pullback, dep_count=1):
         breakout_pct = (breakout_stroke.end.high - hub.zg) / hub_range
@@ -3187,6 +3256,31 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         if c5 != 0:
             conf_details.append({"dim": "离开笔数", "label": c5_l, "score": c5})
 
+        # C6 (P1): Expansion risk — penalize 3B signals likely to become expansion
+        exp_risk, exp_label = _assess_expansion_risk(breakout_stroke)
+        c6 = 0
+        if exp_risk >= 5:
+            c6 = -4; c6_l = f"扩展风险极高({exp_label})"
+            tags.append("扩展风险极高⚠")
+        elif exp_risk >= 3:
+            c6 = -2; c6_l = f"扩展风险高({exp_label})"
+            tags.append("扩展风险高⚠")
+        elif exp_risk >= 2:
+            c6 = -1; c6_l = f"扩展风险中({exp_label})"
+            tags.append("扩展风险中")
+        elif exp_risk == 0:
+            c6 = 1; c6_l = "扩展风险低"
+        else:
+            c6_l = f"扩展风险偏低({exp_label})"
+        conf_score += c6
+        conf_details.append({"dim": "扩展风险", "label": c6_l, "score": c6})
+
+        # P3: Raised requirements for merged/expansion hubs
+        if hub.is_merged:
+            str_score -= 2
+            str_details.append({"dim": "合并中枢惩罚", "label": "扩展后合并中枢", "score": -2})
+            tags.append("合并中枢⚠")
+
         strength = ("strongest" if str_score >= 8 else
                     "strong" if str_score >= 5 else
                     "standard" if str_score >= 1 else "weak")
@@ -3294,7 +3388,9 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                       points: list[BuySellPoint], level: str,
                       stroke_to_seg: dict[int, int] | None = None,
                       trend_hub_rank: int = 1, churn: int = 0,
-                      next_hub: Hub | None = None):
+                      next_hub: Hub | None = None,
+                      all_hubs: list["Hub"] | None = None,
+                      hub_list_idx: int = -1):
     """Check for Type 3 sell point after hub with quality grading.
 
     Mirror of _check_type3_buy for the sell side.
@@ -3334,6 +3430,51 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             return "盘整离开", -1
         else:
             return "标准离开", 0
+
+    def _assess_expansion_risk_sell(breakdown_stroke) -> tuple[int, str]:
+        """P1: Mirror of buy-side expansion risk for sell signals."""
+        _hubs = all_hubs or []
+        _hidx = hub_list_idx
+
+        risk_score = 0
+        risk_label = ""
+
+        if trend_hub_rank >= 4:
+            risk_score += 3
+            risk_label = f"极高(第{trend_hub_rank}中枢)"
+        elif trend_hub_rank == 3:
+            risk_score += 2
+            risk_label = f"高(第{trend_hub_rank}中枢)"
+        elif trend_hub_rank == 2:
+            risk_score += 1
+            risk_label = "中等(第2中枢)"
+
+        if _hubs and _hidx >= 1:
+            first_gg = max(h.gg for h in _hubs[:_hidx + 1])
+            last_dd = min(h.dd for h in _hubs[:_hidx + 1])
+            accum_range = first_gg - last_dd
+            breakdown_depth = hub.zd - breakdown_stroke.end.low
+            if accum_range > 0 and breakdown_depth > 0:
+                escape_ratio = breakdown_depth / accum_range
+                if escape_ratio < 0.1:
+                    risk_score += 2
+                    risk_label = (risk_label + "+逃逸不足") if risk_label else "逃逸不足"
+                elif escape_ratio < 0.2:
+                    risk_score += 1
+                    risk_label = (risk_label + "+逃逸偏弱") if risk_label else "逃逸偏弱"
+
+        if hub.is_merged:
+            risk_score += 2
+            risk_label = (risk_label + "+合并中枢") if risk_label else "合并中枢"
+
+        if hub.duration_bars > 60:
+            risk_score += 1
+            risk_label = (risk_label + "+长期盘整") if risk_label else "长期盘整"
+
+        if not risk_label:
+            risk_label = "低" if risk_score == 0 else f"偏低({risk_score})"
+
+        return risk_score, risk_label
 
     def _grade_3s(breakdown_stroke, rally, dep_count=1):
         margin_pct = (hub.zd - rally.end.high) / hub_range
@@ -3484,6 +3625,31 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         conf_score += c5
         if c5 != 0:
             conf_details.append({"dim": "离开笔数", "label": c5_l, "score": c5})
+
+        # C6 (P1): Expansion risk
+        exp_risk, exp_label = _assess_expansion_risk_sell(breakdown_stroke)
+        c6 = 0
+        if exp_risk >= 5:
+            c6 = -4; c6_l = f"扩展风险极高({exp_label})"
+            tags.append("扩展风险极高⚠")
+        elif exp_risk >= 3:
+            c6 = -2; c6_l = f"扩展风险高({exp_label})"
+            tags.append("扩展风险高⚠")
+        elif exp_risk >= 2:
+            c6 = -1; c6_l = f"扩展风险中({exp_label})"
+            tags.append("扩展风险中")
+        elif exp_risk == 0:
+            c6 = 1; c6_l = "扩展风险低"
+        else:
+            c6_l = f"扩展风险偏低({exp_label})"
+        conf_score += c6
+        conf_details.append({"dim": "扩展风险", "label": c6_l, "score": c6})
+
+        # P3: Raised requirements for merged/expansion hubs
+        if hub.is_merged:
+            str_score -= 2
+            str_details.append({"dim": "合并中枢惩罚", "label": "扩展后合并中枢", "score": -2})
+            tags.append("合并中枢⚠")
 
         strength = ("strongest" if str_score >= 8 else
                     "strong" if str_score >= 5 else
@@ -3914,6 +4080,84 @@ def _find_bsp_in_range(
     return matches
 
 
+# ════════════════════════════════════════════════════════════════════
+# P4: Cross-Level Signal Filter (多周期信号联立过滤)
+#
+# Theory basis (图解缠论3 §1.1, 缠论辅导 §二):
+#   Lower-level signals are more reliable when aligned with higher-level trend.
+#   A 30min 3B inside a daily downtrend is "逆势短差" and should be penalized.
+#   A 30min 3B aligned with a daily 3B is boosted.
+# ════════════════════════════════════════════════════════════════════
+
+def cross_level_filter(
+    lower_result: AnalysisResult,
+    higher_result: AnalysisResult,
+) -> None:
+    """Filter lower-level 3B/3S signals based on higher-level environment.
+
+    Modifies lower_result.buy_sell_points in-place:
+      - Aligned with higher trend → boost strength_score +2
+      - Against higher trend → penalize strength_score -3
+      - Higher level in expansion/consolidation → penalize -1
+    """
+    if not higher_result.buy_sell_points and not higher_result.trend:
+        return
+
+    higher_trend = higher_result.trend
+    higher_is_up = "上涨" in higher_trend
+    higher_is_down = "下跌" in higher_trend
+    higher_is_consolidation = "盘整" in higher_trend or "扩展" in higher_trend
+
+    # Check if higher level has recent expansion-merged hubs
+    higher_has_expansion = any(h.is_merged for h in higher_result.merged_hubs[-2:]
+                               ) if higher_result.merged_hubs else False
+
+    for p in lower_result.buy_sell_points:
+        if p.type not in ("3B", "3S"):
+            continue
+
+        adjustment = 0
+        label_parts = []
+
+        if p.type == "3B":
+            if higher_is_up:
+                adjustment = 2
+                label_parts.append("大级别上涨顺势")
+            elif higher_is_down:
+                adjustment = -3
+                label_parts.append("大级别下跌逆势⚠")
+            elif higher_is_consolidation:
+                adjustment = -1
+                label_parts.append("大级别盘整")
+
+        elif p.type == "3S":
+            if higher_is_down:
+                adjustment = 2
+                label_parts.append("大级别下跌顺势")
+            elif higher_is_up:
+                adjustment = -3
+                label_parts.append("大级别上涨逆势⚠")
+            elif higher_is_consolidation:
+                adjustment = -1
+                label_parts.append("大级别盘整")
+
+        if higher_has_expansion:
+            adjustment -= 1
+            label_parts.append("大级别有扩展")
+
+        if adjustment != 0:
+            p.strength_score += adjustment
+            p.strength_details.append({
+                "dim": "大级别环境",
+                "label": "，".join(label_parts),
+                "score": adjustment,
+            })
+            # Recalculate strength grade
+            p.strength = ("strongest" if p.strength_score >= 8 else
+                          "strong" if p.strength_score >= 5 else
+                          "standard" if p.strength_score >= 1 else "weak")
+
+
 def find_interval_nests(
     daily: AnalysisResult,
     min30: Optional[AnalysisResult] = None,
@@ -4125,6 +4369,16 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
 
     # [7b] Hub evolution classification
     classify_hub_evolution(hubs)
+
+    # [7b1] Hub level and duration annotation (P2)
+    for h in hubs:
+        h.hub_level = "笔中枢"
+        if h.strokes:
+            start_dt = h.strokes[0].start.dt
+            end_dt = h.strokes[-1].end.dt
+            start_idx = next((i for i, b in enumerate(bars) if b.dt >= start_dt), 0)
+            end_idx = next((i for i, b in enumerate(bars) if b.dt >= end_dt), len(bars) - 1)
+            h.duration_bars = max(1, end_idx - start_idx + 1)
 
     # [7b2] Hub volume metrics
     for h in hubs:
