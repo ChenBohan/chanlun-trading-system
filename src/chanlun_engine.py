@@ -3281,11 +3281,31 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             str_details.append({"dim": "合并中枢惩罚", "label": "扩展后合并中枢", "score": -2})
             tags.append("合并中枢⚠")
 
-        strength = ("strongest" if str_score >= 8 else
-                    "strong" if str_score >= 5 else
-                    "standard" if str_score >= 1 else "weak")
-        conf = ("high" if conf_score >= 4 else
-                "medium" if conf_score >= 1 else "low")
+        # VETO: alternating hub pattern (上下上) → direct weak classification
+        # Per 108课详解 L79 & 图解缠论2: alternating hubs without forming
+        # a trend indicate large-level consolidation; 3B is unreliable.
+        _veto = False
+        _hubs = all_hubs or []
+        _hidx = hub_list_idx
+        if _hidx >= 2:
+            evos = [_hubs[_hidx - 2].evolution_type,
+                    _hubs[_hidx - 1].evolution_type,
+                    _hubs[_hidx].evolution_type]
+            if ("上" in evos[0] and "下" in evos[1] and "上" in evos[2]):
+                _veto = True
+                tags.append("中枢交替(上下上)⛔一票否决")
+                str_details.append({"dim": "一票否决", "label": "上下上交替→大级别震荡", "score": 0})
+                conf_details.append({"dim": "一票否决", "label": "无趋势结构", "score": 0})
+
+        if _veto:
+            strength = "weak"
+            conf = "low"
+        else:
+            strength = ("strongest" if str_score >= 8 else
+                        "strong" if str_score >= 5 else
+                        "standard" if str_score >= 1 else "weak")
+            conf = ("high" if conf_score >= 4 else
+                    "medium" if conf_score >= 1 else "low")
 
         return (strength, conf, tags,
                 str_score, str_details, conf_score, conf_details)
@@ -3651,11 +3671,29 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
             str_details.append({"dim": "合并中枢惩罚", "label": "扩展后合并中枢", "score": -2})
             tags.append("合并中枢⚠")
 
-        strength = ("strongest" if str_score >= 8 else
-                    "strong" if str_score >= 5 else
-                    "standard" if str_score >= 1 else "weak")
-        conf = ("high" if conf_score >= 4 else
-                "medium" if conf_score >= 1 else "low")
+        # VETO: alternating hub pattern (下上下) → direct weak classification
+        _veto = False
+        _hubs = all_hubs or []
+        _hidx = hub_list_idx
+        if _hidx >= 2:
+            evos = [_hubs[_hidx - 2].evolution_type,
+                    _hubs[_hidx - 1].evolution_type,
+                    _hubs[_hidx].evolution_type]
+            if ("下" in evos[0] and "上" in evos[1] and "下" in evos[2]):
+                _veto = True
+                tags.append("中枢交替(下上下)⛔一票否决")
+                str_details.append({"dim": "一票否决", "label": "下上下交替→大级别震荡", "score": 0})
+                conf_details.append({"dim": "一票否决", "label": "无趋势结构", "score": 0})
+
+        if _veto:
+            strength = "weak"
+            conf = "low"
+        else:
+            strength = ("strongest" if str_score >= 8 else
+                        "strong" if str_score >= 5 else
+                        "standard" if str_score >= 1 else "weak")
+            conf = ("high" if conf_score >= 4 else
+                    "medium" if conf_score >= 1 else "low")
 
         return (strength, conf, tags,
                 str_score, str_details, conf_score, conf_details)
