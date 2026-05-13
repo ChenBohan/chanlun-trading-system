@@ -1106,7 +1106,10 @@ function renderChart(data) {
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     dataZoom: (() => {
-      const VISIBLE_BARS = 120;
+      const MIN_BARS = 120;
+      const hubs = data.hubs || [];
+      const need2Hub = hubs.length >= 2 ? (data.dates.length - hubs[hubs.length - 2].x0 + 10) : MIN_BARS;
+      const VISIBLE_BARS = Math.max(MIN_BARS, need2Hub);
       const total = data.dates.length;
       const zoomStart = total > VISIBLE_BARS ? Math.max(0, 100 - (VISIBLE_BARS / total * 100)) : 0;
       return [
@@ -2547,7 +2550,9 @@ function resetView() {{
   const d = getData();
   if (!d) return;
   const total = d.dates.length;
-  const VISIBLE_BARS = 120;
+  const hubs = d.hubs || [];
+  const need2Hub = hubs.length >= 2 ? (total - hubs[hubs.length - 2].x0 + 10) : 120;
+  const VISIBLE_BARS = Math.max(120, need2Hub);
   viewEnd = total;
   viewStart = Math.max(0, total - VISIBLE_BARS);
   if (viewEnd - viewStart < MIN_VIEW) viewStart = Math.max(0, viewEnd - MIN_VIEW);
