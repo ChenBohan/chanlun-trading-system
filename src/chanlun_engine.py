@@ -2352,10 +2352,10 @@ def find_buy_sell_points(
                 stroke_to_seg[s.idx] = seg.idx
 
     def _stroke_seg(stroke: Stroke | None) -> tuple[int, int]:
-        """Return (stroke_idx, seg_idx) for a given stroke."""
+        """Return 1-indexed (stroke_num, seg_num) for display labels."""
         if stroke is None:
-            return (-1, -1)
-        return (stroke.idx, stroke_to_seg.get(stroke.idx, -1))
+            return (0, 0)
+        return (stroke.idx + 1, stroke_to_seg.get(stroke.idx, -2) + 1)
 
     points = []
 
@@ -2368,8 +2368,10 @@ def find_buy_sell_points(
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
         a_range = div.get("a_stroke_range", ("?", "?"))
         c_range = div.get("c_stroke_range", ("?", "?"))
-        a_tag = f"a(S{a_range[0]}-S{a_range[1]})" if a_range[0] != a_range[1] else f"a(S{a_range[0]})"
-        c_tag = f"c(S{c_range[0]}-S{c_range[1]})" if c_range[0] != c_range[1] else f"c(S{c_range[0]})"
+        def _si(v: int | str) -> str:
+            return str(v + 1) if isinstance(v, int) else str(v)
+        a_tag = f"a(S{_si(a_range[0])}-S{_si(a_range[1])})" if a_range[0] != a_range[1] else f"a(S{_si(a_range[0])})"
+        c_tag = f"c(S{_si(c_range[0])}-S{_si(c_range[1])})" if c_range[0] != c_range[1] else f"c(S{_si(c_range[0])})"
         ranges = [
             {"label": a_tag, "start_dt": div["a_start_dt"],
              "end_dt": div["a_end_dt"], "area": div["a_area"]},
@@ -2435,10 +2437,12 @@ def find_buy_sell_points(
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
         prev_si = div.get("prev_stroke_idx", "?")
         curr_si = div.get("curr_stroke_idx", "?")
+        prev_label = f"S{prev_si + 1}" if isinstance(prev_si, int) else f"S{prev_si}"
+        curr_label = f"S{curr_si + 1}" if isinstance(curr_si, int) else f"S{curr_si}"
         ranges = [
-            {"label": f"S{prev_si}", "start_dt": div["prev_start_dt"],
+            {"label": prev_label, "start_dt": div["prev_start_dt"],
              "end_dt": div["prev_end_dt"], "area": div["prev_area"]},
-            {"label": f"S{curr_si}", "start_dt": div["curr_start_dt"],
+            {"label": curr_label, "start_dt": div["curr_start_dt"],
              "end_dt": div["curr_end_dt"], "area": div["curr_area"]},
         ]
         hub = next((h for h in hubs if h.idx == div["hub_idx"]), None)
@@ -3335,8 +3339,8 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         (strength, conf, tags,
          str_score, str_dets, c_score, c_dets) = _grade_3b(
             breakout_stroke, pullback, dep_count)
-        s_idx = pullback.idx
-        d_idx = stm.get(s_idx, -1)
+        s_idx = pullback.idx + 1
+        d_idx = stm.get(pullback.idx, -2) + 1
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
         _STRENGTH_ZH = {
             "strongest": "最强", "strong": "强势",
@@ -3723,8 +3727,8 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         (strength, conf, tags,
          str_score, str_dets, c_score, c_dets) = _grade_3s(
             breakdown_stroke, rally, dep_count)
-        s_idx = rally.idx
-        d_idx = stm.get(s_idx, -1)
+        s_idx = rally.idx + 1
+        d_idx = stm.get(rally.idx, -2) + 1
         loc = f"S{s_idx}" + (f"/D{d_idx}" if d_idx >= 0 else "")
         _STRENGTH_ZH = {
             "strongest": "最强", "strong": "强势",

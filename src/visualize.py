@@ -803,7 +803,7 @@ function renderChart(data) {
     return [
       { coord: [data.dates[s.coords[0][0]], s.coords[0][1]] },
       { coord: [data.dates[s.coords[1][0]], s.coords[1][1]],
-        label: { show: true, formatter: 'S' + s.idx + volSuffix, fontSize: 12, fontWeight: 'bold', color: '#d29922',
+        label: { show: true, formatter: 'S' + (s.idx + 1) + volSuffix, fontSize: 12, fontWeight: 'bold', color: '#d29922',
                  position: 'middle', distance: -14 } },
     ];
   });
@@ -824,7 +824,7 @@ function renderChart(data) {
     symbol: 'circle',
     symbolSize: 1,
     itemStyle: { color: 'transparent' },
-    label: { show: true, formatter: 'D' + lb.idx,
+    label: { show: true, formatter: 'D' + (lb.idx + 1),
              fontSize: 13, fontWeight: 'bold',
              color: '#bc8cff',
              backgroundColor: 'rgba(13,17,23,0.85)',
@@ -2775,7 +2775,7 @@ function renderKline(data) {{
   (data.seg_labels || []).forEach(lb => {{
     if (lb.x < viewStart || lb.x >= viewEnd) return;
     ctx.fillStyle = '#bc8cff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('D' + lb.idx, scaleX(lb.x), scaleY(lb.y) - 8);
+    ctx.fillText('D' + (lb.idx + 1), scaleX(lb.x), scaleY(lb.y) - 8);
   }});
 
   // Strokes with volume trend markers
@@ -2790,7 +2790,7 @@ function renderKline(data) {{
     ctx.fillStyle = '#d29922'; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mx = (x1 + x2) / 2;
     const volSuf = sVolIcons[s.vol_trend] || '';
-    ctx.fillText('S' + s.idx + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
+    ctx.fillText('S' + (s.idx + 1) + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
   }});
 
   // Buy/Sell markers
