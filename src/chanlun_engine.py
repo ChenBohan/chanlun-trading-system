@@ -1227,7 +1227,13 @@ def merge_expanded_seg_hubs(seg_hubs: list[SegHub]) -> list[SegHub]:
 # ════════════════════════════════════════════════════════════════════
 
 def determine_trend(hubs: list[Hub], strokes: list[Stroke]) -> str:
-    """Determine current trend type based on hub structure AND current price position."""
+    """Determine current trend type based on hub structure AND current price position.
+
+    Uses the last N hubs (N=5) to determine the overall direction rather than
+    only the last two, which avoids misclassifying oscillating hubs as a trend.
+    Requires ≥70% of directional shifts to agree for a trend call; otherwise
+    the result is "盘整".
+    """
     if not hubs:
         if strokes:
             return "上涨" if strokes[-1].direction == 1 else "下跌"
@@ -1245,22 +1251,36 @@ def determine_trend(hubs: list[Hub], strokes: list[Stroke]) -> str:
             return "中枢下方运行"
         return "盘整"
 
-    h_prev, h_last = hubs[-2], hubs[-1]
-    # Structural trend from hub relationship
-    if h_last.zd > h_prev.zg:
+    # --- Multi-hub context: use last N hubs ---
+    _WINDOW = 5
+    n = min(_WINDOW, len(hubs))
+    recent = hubs[-n:]
+
+    up_shifts = 0
+    down_shifts = 0
+    for i in range(1, len(recent)):
+        curr, prev = recent[i], recent[i - 1]
+        if curr.zd > prev.zg:
+            up_shifts += 1
+        elif curr.zg < prev.zd:
+            down_shifts += 1
+
+    total_dir = up_shifts + down_shifts
+    if total_dir == 0:
+        struct_trend = "盘整"
+    elif up_shifts / total_dir >= 0.7:
         struct_trend = "上涨趋势"
-    elif h_last.zg < h_prev.zd:
+    elif down_shifts / total_dir >= 0.7:
         struct_trend = "下跌趋势"
     else:
         struct_trend = "盘整"
 
-    # Override: if current price has broken far below/above all hubs,
+    # Override: if current price has broken below/above the last hub,
     # the structural trend is no longer valid
+    h_last = hubs[-1]
     if strokes:
         last = strokes[-1]
         last_price = last.end.high if last.direction == 1 else last.end.low
-        lowest_hub_dd = min(h.dd for h in hubs)
-        highest_hub_gg = max(h.gg for h in hubs)
         if struct_trend == "上涨趋势" and last_price < h_last.dd:
             return "上涨趋势破坏"
         if struct_trend == "下跌趋势" and last_price > h_last.gg:
