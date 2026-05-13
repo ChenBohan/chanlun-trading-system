@@ -236,6 +236,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
             "segments": len(result.segments),
             "hubs": len(result.hubs),
             "bsp": len(result.buy_sell_points),
+            "latest_dif": bars[-1].dif if bars else 0,
         },
     }
 
