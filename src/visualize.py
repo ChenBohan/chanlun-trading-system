@@ -413,10 +413,18 @@ function renderGlobalSignals() {
       : '<span style="color:' + confirmedColor + '">' + confirmedIcon + '已确认</span>';
     const idxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
     const trend = idxInfo ? (idxInfo.trend || '') : '';
-    const trendIcon = trend.includes('破坏') ? '<span style="color:#d29922">⚠</span>' : (trend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (trend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>'));
+    const _isBroken = trend.includes('破坏');
+    const _isUp = !_isBroken && trend.includes('上涨');
+    const _isDown = !_isBroken && trend.includes('下跌');
+    const _isPan = !_isBroken && !_isUp && !_isDown && trend.includes('盘整');
+    const trendIcon = _isBroken ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
+      : _isUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
+      : _isDown ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
+      : _isPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
+      : '<span style="color:#8b949e" title="日线方向不明">—</span>';
     let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
-    r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="跳转查看K线">' + s.etf_name + '</a></td>';
+    r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="日线:' + trend + '">' + s.etf_name + '</a></td>';
     r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
@@ -498,9 +506,14 @@ async function init() {
     const isBroken = (idx.trend||'').includes('破坏');
     const isUp = !isBroken && (idx.trend||'').includes('上涨');
     const isDown = !isBroken && (idx.trend||'').includes('下跌');
-    const trendIcon = isBroken ? '<span style="color:#d29922">⚠</span>' : (isUp ? '<span style="color:#f85149">▲</span>' : (isDown ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>'));
+    const isPan = !isBroken && !isUp && !isDown && (idx.trend||'').includes('盘整');
+    const trendIcon = isBroken ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
+      : isUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
+      : isDown ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
+      : isPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
+      : '<span style="color:#8b949e" title="日线方向不明">—</span>';
     btn.innerHTML = trendIcon + ' ' + idx.index_name;
-    btn.title = (idx.summary || '') + ' | 评分:' + idx.score;
+    btn.title = '日线:' + (idx.trend||'-') + ' | ' + (idx.summary || '') + ' | 评分:' + idx.score;
     btn.dataset.code = idx.etf_code;
     btn.onclick = () => selectIndex(idx.etf_code);
     nav.appendChild(btn);
@@ -2231,11 +2244,16 @@ def generate_mobile_dashboard(data_dir: str = None,
                 f'{label}</div>')
             last_type = il.get("type")
         active = ' active' if i == 0 else ''
-        trend_up = '上涨' in il.get('trend', '')
-        trend_dn = '下跌' in il.get('trend', '')
-        trend_icon = ('<span style="color:#f85149">▲</span>' if trend_up
-                      else ('<span style="color:#3fb950">▼</span>' if trend_dn
-                            else '<span style="color:#8b949e">—</span>'))
+        _t = il.get('trend', '')
+        _broken = '破坏' in _t
+        trend_up = not _broken and '上涨' in _t
+        trend_dn = not _broken and '下跌' in _t
+        trend_pan = not _broken and not trend_up and not trend_dn and '盘整' in _t
+        trend_icon = ('<span style="color:#e3b341" title="日线趋势破坏">⚠</span>' if _broken
+                      else '<span style="color:#f85149" title="日线上涨趋势">▲</span>' if trend_up
+                      else '<span style="color:#3fb950" title="日线下跌趋势">▼</span>' if trend_dn
+                      else '<span style="color:#d29922" title="日线盘整">◆</span>' if trend_pan
+                      else '<span style="color:#8b949e" title="日线方向不明">—</span>')
         search_text = f'{il["index_name"]} {il.get("etf_code", "")}'.lower()
         tab_parts.append(
             f'<div class="idx-tab{active}" data-search="{search_text}" '
@@ -2410,7 +2428,15 @@ function renderMobileGlobalSignals() {{
     const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>');
     const mIdxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
     const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
-    const mTrendIcon = mTrend.includes('破坏') ? '<span style="color:#d29922">⚠</span>' : (mTrend.includes('上涨') ? '<span style="color:#f85149">▲</span>' : (mTrend.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#8b949e">—</span>'));
+    const _mBk = mTrend.includes('破坏');
+    const _mUp = !_mBk && mTrend.includes('上涨');
+    const _mDn = !_mBk && mTrend.includes('下跌');
+    const _mPan = !_mBk && !_mUp && !_mDn && mTrend.includes('盘整');
+    const mTrendIcon = _mBk ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
+      : _mUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
+      : _mDn ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
+      : _mPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
+      : '<span style="color:#8b949e" title="日线方向不明">—</span>';
     let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
     r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
