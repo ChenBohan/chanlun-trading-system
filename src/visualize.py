@@ -611,10 +611,24 @@ function updateConclusionBar(data) {
     return `<span style="color:${color}">• ${p}</span>`;
   }).join(' ');
 
+  const env = idx.daily_env || {};
+  const envLabel = env.label || '-';
+  const envColor = env.color || '#8b949e';
+  const envOk = env.m30_3b_ok;
+  const envIcon = envOk ? '✅' : '❌';
+  const envAdvice = env.advice || '';
+  const envFactors = (env.factors || []).join(' · ');
+  const envScoreVal = env.score !== undefined ? env.score : '-';
+
   bar.innerHTML = `
     <div class="concl-group">
       <span class="concl-label">评分</span>
       <span style="background:${scoreBg};color:${scoreClr};padding:3px 10px;border-radius:5px;font-weight:700;font-size:16px">${sc}</span>
+    </div>
+    <div class="concl-group" title="${envFactors}\n${envAdvice}">
+      <span class="concl-label">日线环境</span>
+      <span style="background:rgba(0,0,0,0.3);color:${envColor};padding:4px 12px;border-radius:6px;font-weight:700;font-size:14px;border:1px solid ${envColor}">${envIcon} ${envLabel}</span>
+      <span style="font-size:12px;color:${envColor}">${envAdvice}</span>
     </div>
     <div class="concl-group">
       <span class="concl-label">长线</span>
@@ -1412,6 +1426,79 @@ def _build_index_overview(daily_data: dict, m30_data: dict, syn: dict) -> dict:
 
     conclusion = " · ".join(bullets)
 
+    # --- Daily environment assessment for 30min 3B suitability ---
+    # Per 图解缠论3 §1.1 / 三买筛选体系 §3.8:
+    #   Daily trend + MACD DIF zone → suitability for lower-level 3B.
+    daily_stats = daily_data.get("stats", {})
+    daily_dif = daily_stats.get("latest_dif", 0) if isinstance(daily_stats, dict) else 0
+    dif_above = daily_dif > 0
+
+    env_score = 0
+    env_factors = []
+
+    if is_up:
+        env_score += 2
+        env_factors.append("日线上涨趋势")
+    elif is_down:
+        env_score -= 2
+        env_factors.append("日线下跌趋势")
+    elif "破坏" in trend:
+        env_score -= 1
+        env_factors.append("日线趋势破坏")
+    else:
+        env_factors.append("日线盘整")
+
+    if dif_above:
+        env_score += 1
+        env_factors.append("MACD零轴上方")
+    else:
+        env_score -= 1
+        env_factors.append("MACD零轴下方")
+
+    if above:
+        env_score += 1
+        env_factors.append("价格在中枢上方")
+    elif inside:
+        env_factors.append("价格在中枢内")
+    elif below:
+        env_score -= 1
+        env_factors.append("价格在中枢下方")
+
+    if env_score >= 3:
+        env_label = "强多头环境"
+        env_color = "#f85149"
+        m30_3b_ok = True
+        env_advice = "30分三买可放心操作"
+    elif env_score >= 1:
+        env_label = "偏多环境"
+        env_color = "#f0883e"
+        m30_3b_ok = True
+        env_advice = "30分三买可操作，正常仓位"
+    elif env_score >= 0:
+        env_label = "中性环境"
+        env_color = "#d29922"
+        m30_3b_ok = False
+        env_advice = "30分三买需谨慎，轻仓试探"
+    elif env_score >= -1:
+        env_label = "偏空环境"
+        env_color = "#8b949e"
+        m30_3b_ok = False
+        env_advice = "30分三买不建议，仅极强信号轻仓"
+    else:
+        env_label = "强空头环境"
+        env_color = "#3fb950"
+        m30_3b_ok = False
+        env_advice = "30分三买回避，等待日线转势"
+
+    daily_env = {
+        "label": env_label,
+        "color": env_color,
+        "score": env_score,
+        "m30_3b_ok": m30_3b_ok,
+        "advice": env_advice,
+        "factors": env_factors,
+    }
+
     return {
         "trend": trend,
         "status": status,
@@ -1427,6 +1514,7 @@ def _build_index_overview(daily_data: dict, m30_data: dict, syn: dict) -> dict:
         "alignment": alignment,
         "bias": bias,
         "conclusion": conclusion,
+        "daily_env": daily_env,
     }
 
 
@@ -2539,8 +2627,16 @@ function updateInfoBar(data) {{
   const tentTag = (d && d.tentative > 0)
     ? '<span style="color:#d29922;font-weight:bold;font-size:11px" title="盘中数据，最后一根K线尚未确认"> ⚠盘中暂定</span>'
     : '';
+  const mEnv = idx.daily_env || {{}};
+  const mEnvLabel = mEnv.label || '-';
+  const mEnvColor = mEnv.color || '#8b949e';
+  const mEnvOk = mEnv.m30_3b_ok;
+  const mEnvIcon = mEnvOk ? '✅' : '❌';
+  const mEnvAdvice = mEnv.advice || '';
+
   bar.innerHTML = `
     <span style="background:${{scoreBg}};color:${{scoreClr}};padding:1px 6px;border-radius:3px;font-weight:700">${{sc}}</span>
+    <span style="background:rgba(0,0,0,0.3);color:${{mEnvColor}};padding:1px 6px;border-radius:3px;font-weight:700;border:1px solid ${{mEnvColor}};font-size:11px" title="${{mEnvAdvice}}">${{mEnvIcon}}${{mEnvLabel}}</span>
     <span class="tag ${{tCls}}">${{(idx.trend||'-').replace('趋势','')}}</span> ${{tcText}}
     ${{idx.latest_signal && idx.latest_signal !== '-' ? '<span class="tag ' + dSigCls + '">' + idx.latest_signal + '</span>' : ''}}
     <span style="color:#484f58">|</span>
