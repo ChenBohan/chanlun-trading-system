@@ -127,10 +127,19 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
 
     # Stroke-level hubs as rectangles
     hub_rects = []
-    for h in result.hubs:
+    all_hubs = result.hubs
+    for i, h in enumerate(all_hubs):
         si = dt_index.get(h.start_dt)
         ei = dt_index.get(h.end_dt)
         if si is not None and ei is not None:
+            # Determine hub trend context by comparing with previous hub
+            hub_dir = 0  # 0=consolidation, 1=up, -1=down
+            if i > 0:
+                prev = all_hubs[i - 1]
+                if h.zd > prev.zg:
+                    hub_dir = 1
+                elif h.zg < prev.zd:
+                    hub_dir = -1
             hub_rects.append({
                 "x0": si, "x1": ei,
                 "zg": h.zg, "zd": h.zd,
@@ -141,6 +150,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "hub_level": h.hub_level,
                 "is_merged": h.is_merged,
                 "duration_bars": h.duration_bars,
+                "dir": hub_dir,
             })
 
     # Buy/sell points as markers
@@ -785,16 +795,12 @@ function renderChart(data) {
     };
   }
 
-  // Hub mark areas
-  const hubAreas = data.hubs.map(h => ({
-    xAxis: data.dates[h.x0],
-    yAxis: h.zd,
-    name: '中枢' + (h.idx + 1),
-  }));
-  const hubAreas2 = data.hubs.map(h => ({
-    xAxis: data.dates[h.x1],
-    yAxis: h.zg,
-  }));
+  // Hub direction color map: 1=up(red), -1=down(green), 0=consolidation(blue)
+  const hubDirColors = {
+    1:  { fill: 'rgba(248,81,73,0.06)',  border: 'rgba(248,81,73,0.40)' },
+    '-1': { fill: 'rgba(63,185,80,0.06)',  border: 'rgba(63,185,80,0.40)' },
+    0:  { fill: 'rgba(88,166,255,0.05)', border: 'rgba(88,166,255,0.35)' },
+  };
 
   // Stroke lines as markLine data with index labels + volume trend
   const strokeVolIcons = {'shrink': '↓', 'expand': '↑'};
@@ -1174,16 +1180,19 @@ function renderChart(data) {
           silent: true,
           animation: false,
           data: (() => {
-            const hubAreas = data.hubs.map(h => [
-              { xAxis: data.dates[h.x0], yAxis: h.zd,
-                itemStyle: {
-                  color: 'rgba(88,166,255,0.05)',
-                  borderColor: 'rgba(88,166,255,0.35)',
-                  borderWidth: 1,
-                  borderType: 'dashed',
-                } },
-              { xAxis: data.dates[Math.min(h.x1, data.dates.length - 1)], yAxis: h.zg },
-            ]);
+            const hubAreas = data.hubs.map(h => {
+              const dc = hubDirColors[h.dir] || hubDirColors[0];
+              return [
+                { xAxis: data.dates[h.x0], yAxis: h.zd,
+                  itemStyle: {
+                    color: dc.fill,
+                    borderColor: dc.border,
+                    borderWidth: 1,
+                    borderType: 'dashed',
+                  } },
+                { xAxis: data.dates[Math.min(h.x1, data.dates.length - 1)], yAxis: h.zg },
+              ];
+            });
             return [...hubAreas, ...structAreas];
           })(),
           label: { show: false },
@@ -2368,7 +2377,9 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>阴线</div>
     <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div>笔</div>
     <div class="legend-item"><div class="legend-color" style="background:#bc8cff"></div>线段</div>
-    <div class="legend-item"><div class="legend-color" style="background:rgba(88,166,255,0.4)"></div>笔中枢</div>
+    <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.4)"></div>上涨枢</div>
+    <div class="legend-item"><div class="legend-color" style="background:rgba(63,185,80,0.4)"></div>下跌枢</div>
+    <div class="legend-item"><div class="legend-color" style="background:rgba(88,166,255,0.4)"></div>盘整枢</div>
     <div class="legend-item"><div class="legend-color" style="background:#f85149"></div>买▲</div>
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>卖▼</div>
     <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.35);border:1px dashed rgba(248,81,73,0.6)"></div>暂定</div>
@@ -2710,14 +2721,16 @@ function renderKline(data) {{
   }}
 
   const evoColors = {{'延伸': '#8b949e', '新生（上）': '#f85149', '新生（下）': '#3fb950', '扩展': '#d29922'}};
+  const mHubDirClr = {{1: {{f:'rgba(248,81,73,0.10)', s:'rgba(248,81,73,0.50)'}}, '-1': {{f:'rgba(63,185,80,0.10)', s:'rgba(63,185,80,0.50)'}}, 0: {{f:'rgba(88,166,255,0.08)', s:'rgba(88,166,255,0.4)'}}}};
   // Stroke-level hubs (笔中枢, drawn behind candlesticks)
   data.hubs.forEach(h => {{
     if (h.x1 < viewStart || h.x0 >= viewEnd) return;
     const x0 = scaleX(Math.max(h.x0, viewStart)) - cw / 2;
     const x1 = scaleX(Math.min(h.x1, viewEnd - 1)) + cw / 2;
-    ctx.fillStyle = 'rgba(88,166,255,0.08)';
+    const hdc = mHubDirClr[h.dir] || mHubDirClr[0];
+    ctx.fillStyle = hdc.f;
     ctx.fillRect(x0, scaleY(h.zg), x1 - x0, scaleY(h.zd) - scaleY(h.zg));
-    ctx.strokeStyle = 'rgba(88,166,255,0.4)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = hdc.s; ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     ctx.beginPath(); ctx.moveTo(x0, scaleY(h.zg)); ctx.lineTo(x1, scaleY(h.zg)); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(x0, scaleY(h.zd)); ctx.lineTo(x1, scaleY(h.zd)); ctx.stroke();
