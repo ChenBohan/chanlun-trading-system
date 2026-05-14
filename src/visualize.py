@@ -311,8 +311,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 .detail-panel { padding: 16px 32px; }
 
-#synthesis-panel h3 { font-size: 18px; color: #c9d1d9; margin-bottom: 12px; }
-#synthesis-panel h4 { font-size: 16px; margin-top: 12px; }
 
 .signal-table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .signal-table th { text-align: left; padding: 10px 14px; color: #8b949e; border-bottom: 2px solid #21262d;
@@ -358,7 +356,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 <div id="chart-container"></div>
 
-<div id="synthesis-panel" class="detail-panel active"></div>
 
 <script>
 // ─── Data: lazy-loaded per index via script injection ───
@@ -662,7 +659,6 @@ async function render() {
   updateConclusionBar(data);
   updateStructBar(data);
   renderChart(data);
-  updateSynthesisPanel();
 }
 
 function updateConclusionBar(data) {
@@ -759,88 +755,6 @@ function updateStructBar(data) {
   `;
 }
 
-function updateSynthesisPanel() {
-  const panel = document.getElementById('synthesis-panel');
-  const syn = SYNTHESIS[currentIndex];
-  if (!syn) { panel.innerHTML = ''; return; }
-
-  let html = '<h3>多级别联立分析</h3>';
-
-  html += '<table class="signal-table"><thead><tr>';
-  html += '<th>级别</th><th>走势</th><th>走势状态</th><th>中枢位置</th><th>DIF区域</th><th>中枢数</th><th>信号数</th><th>最新信号</th>';
-  html += '</tr></thead><tbody>';
-  (syn.levels || []).forEach(lv => {
-    const tCls = (lv.trend||'').includes('破坏') ? '' : ((lv.trend||'').includes('上涨') ? 'sig-buy' : ((lv.trend||'').includes('下跌') ? 'sig-sell' : ''));
-    const hpCls = (lv.hub_position||'').includes('上方') ? 'sig-buy' : ((lv.hub_position||'').includes('下方') ? 'sig-sell' : '');
-    const sigStr = lv.latest_signal ? lv.latest_signal.label : '-';
-    const tcIcons = {'进行中': '🔄', '疑似完成': '⚠️', '已确认完成': '✅'};
-    const tcStr = lv.trend_completion ? (tcIcons[lv.trend_completion]||'') + lv.trend_completion : '-';
-    const tcCls = lv.trend_completion === '已确认完成' ? 'sig-sell' : (lv.trend_completion === '疑似完成' ? '' : 'sig-buy');
-    html += '<tr>';
-    html += `<td style="font-weight:bold">${lv.level}</td>`;
-    html += `<td class="${tCls}">${lv.trend || '-'}</td>`;
-    html += `<td class="${tcCls}" title="${lv.completion_reason||''}">${tcStr}</td>`;
-    html += `<td class="${hpCls}">${lv.hub_position || '-'}</td>`;
-    html += `<td>${lv.dif_zone === 'above_zero' ? '0轴上' : '0轴下'}</td>`;
-    html += `<td>${lv.num_hubs}</td>`;
-    html += `<td>${lv.num_signals}</td>`;
-    html += `<td>${sigStr}</td>`;
-    html += '</tr>';
-  });
-  html += '</tbody></table>';
-
-  if (syn.resonance && syn.resonance.length > 0) {
-    html += `<h4 style="margin-top:8px;color:#f0883e">跨级别共振 (${syn.resonance.length})</h4>`;
-    html += '<ul style="margin:4px 0;padding-left:16px">';
-    syn.resonance.forEach(r => {
-      const icon = r.direction === 'buy' ? '🔺' : '🔻';
-      html += `<li>${icon} ${r.date} — ${r.note}</li>`;
-    });
-    html += '</ul>';
-  }
-
-  if (syn.enriched && syn.enriched.length > 0) {
-    html += `<h4 style="margin-top:8px;color:#d2a8ff">置信度调整 (${syn.enriched.length})</h4>`;
-    html += '<ul style="margin:4px 0;padding-left:16px">';
-    syn.enriched.forEach(s => {
-      const arrow = s.adjusted_confidence === 'high' || (s.adjusted_confidence === 'medium' && s.original_confidence === 'low') ? '↑' : '↓';
-      html += `<li>${s.source_level}-${s.label} @ ${s.dt}: ${s.original_confidence}${arrow}${s.adjusted_confidence} (${s.context_note})</li>`;
-    });
-    html += '</ul>';
-  }
-
-  if (syn.interval_nests && syn.interval_nests.length > 0) {
-    const deep = syn.interval_nests.filter(n => n.depth >= 2);
-    html += `<h4 style="margin-top:8px;color:#58a6ff">区间套精确定位 (${syn.interval_nests.length}个背驰段, ${deep.length}个已嵌套)</h4>`;
-    syn.interval_nests.forEach((n, i) => {
-      const dirIcon = n.direction === -1 ? '🟢买' : '🔴卖';
-      const typeStr = n.big_type === 'trend' ? '趋势' : '盘整';
-      const stars = '★'.repeat(n.depth);
-      const depthCls = n.depth >= 3 ? 'sig-buy' : (n.depth === 2 ? '' : 'sig-sell');
-      html += `<div style="margin:10px 0;padding:14px 16px;background:#161b22;border-radius:8px;border-left:4px solid ${n.depth>=2?'#58a6ff':'#484f58'}">`;
-      html += `<div style="font-weight:bold">${stars} ${i+1}. ${typeStr}${dirIcon} <span class="${depthCls}">深度${n.depth}</span></div>`;
-      html += `<table style="width:100%;font-size:15px;margin:8px 0"><tr>`;
-      html += `<td style="color:#8b949e">大级别</td><td>${n.big_level} ${n.big_dt}</td>`;
-      html += `<td style="color:#8b949e">范围</td><td>${n.big_range[0]}~${n.big_range[1]}</td></tr>`;
-      if (n.mid_level) {
-        html += `<tr><td style="color:#8b949e">中级别</td><td>${n.mid_level} ${n.mid_dt}</td>`;
-        const mr = n.mid_range[0] ? n.mid_range[0]+'~'+n.mid_range[1] : '-';
-        html += `<td style="color:#8b949e">范围</td><td>${mr}</td></tr>`;
-      }
-      if (n.small_level) {
-        html += `<tr><td style="color:#8b949e">小级别</td><td>${n.small_level} ${n.small_dt}</td>`;
-        html += `<td></td><td></td></tr>`;
-      }
-      html += `</table>`;
-      const priceStr = n.precision_price ? ` 价格 ${n.precision_price.toFixed(2)}` : '';
-      html += `<div style="color:#58a6ff;font-weight:bold">精确定位: ${n.precision_dt}${priceStr}</div>`;
-      html += `<div style="color:#8b949e;font-size:14px;margin-top:4px">${n.note}</div>`;
-      html += `</div>`;
-    });
-  }
-
-  panel.innerHTML = html;
-}
 
 
 function renderChart(data) {
@@ -2412,9 +2326,6 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 .legend-color {{ width: 10px; height: 10px; border-radius: 2px; }}
 
 /* Synthesis panel */
-#synthesis-panel {{ padding: 8px 12px; }}
-#synthesis-panel h3 {{ font-size: 14px; color: #58a6ff; margin-bottom: 6px; }}
-#synthesis-panel h4 {{ font-size: 13px; margin-top: 8px; }}
 
 /* Tables */
 .signal-table {{ width: 100%; border-collapse: collapse; font-size: 11px;
@@ -2484,7 +2395,6 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div>DEA</div>
   </div>
   <div class="chart-area"><canvas id="volumeCanvas" height="80"></canvas></div>
-  <div id="synthesis-panel"></div>
   <div id="bspTooltip" style="display:none;position:fixed;z-index:1000;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;max-width:88vw;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-size:12px;line-height:1.6;color:#c9d1d9;pointer-events:auto"></div>
 </div>
 
@@ -2754,7 +2664,6 @@ function render() {{
   renderKline(d);
   renderMACD(d);
   renderVolume(d);
-  updateSynthesisPanel();
 }}
 
 async function loadAndRender() {{
@@ -3084,76 +2993,6 @@ function renderVolume(data) {{
   ctx.globalAlpha = 1.0;
 }}
 
-function updateSynthesisPanel() {{
-  const panel = document.getElementById('synthesis-panel');
-  const syn = SYNTHESIS[currentIndex];
-  if (!syn) {{ panel.innerHTML = ''; return; }}
-
-  let html = '<h3>多级别联立分析</h3>';
-  const alignCls = syn.alignment.includes('共振') ? 'tag-up' : (syn.alignment.includes('分歧') ? 'tag-down' : 'tag-neutral');
-  const biasCls = syn.bias.includes('多') ? 'tag-up' : (syn.bias.includes('空') ? 'tag-down' : 'tag-neutral');
-  html += `<span class="tag ${{alignCls}}">${{syn.alignment}}</span>`;
-  html += `<span class="tag ${{biasCls}}">${{syn.bias}}</span>`;
-  html += `<span style="color:#8b949e;font-size:12px"> ${{syn.advice}}</span>`;
-
-  html += '<table class="signal-table" style="margin-top:6px"><thead><tr>';
-  html += '<th>级别</th><th>走势</th><th>状态</th><th>中枢位</th><th>DIF</th><th>枢数</th><th>信号</th><th>最新</th>';
-  html += '</tr></thead><tbody>';
-  (syn.levels || []).forEach(lv => {{
-    const tCls = (lv.trend||'').includes('破坏') ? '' : ((lv.trend||'').includes('上涨') ? 'sig-buy' : ((lv.trend||'').includes('下跌') ? 'sig-sell' : ''));
-    const hpCls = (lv.hub_position||'').includes('上方') ? 'sig-buy' : ((lv.hub_position||'').includes('下方') ? 'sig-sell' : '');
-    const sigStr = lv.latest_signal ? lv.latest_signal.label : '-';
-    const tcIcons = {{'进行中': '🔄', '疑似完成': '⚠️', '已确认完成': '✅'}};
-    const tcStr = lv.trend_completion ? (tcIcons[lv.trend_completion]||'') + lv.trend_completion : '-';
-    html += `<tr><td style="font-weight:bold">${{lv.level}}</td>`;
-    html += `<td class="${{tCls}}">${{lv.trend||'-'}}</td>`;
-    html += `<td title="${{lv.completion_reason||''}}">${{tcStr}}</td>`;
-    html += `<td class="${{hpCls}}">${{lv.hub_position||'-'}}</td>`;
-    html += `<td>${{lv.dif_zone === 'above_zero' ? '0轴上' : '0轴下'}}</td>`;
-    html += `<td>${{lv.num_hubs}}</td><td>${{lv.num_signals}}</td><td>${{sigStr}}</td></tr>`;
-  }});
-  html += '</tbody></table>';
-
-  if (syn.resonance && syn.resonance.length > 0) {{
-    html += `<h4 style="color:#f0883e">跨级别共振 (${{syn.resonance.length}})</h4>`;
-    html += '<ul style="padding-left:14px;font-size:12px;margin:4px 0">';
-    syn.resonance.forEach(r => {{
-      html += `<li>${{r.direction==='buy'?'🔺':'🔻'}} ${{r.date}} — ${{r.note}}</li>`;
-    }});
-    html += '</ul>';
-  }}
-
-  if (syn.enriched && syn.enriched.length > 0) {{
-    html += `<h4 style="color:#d2a8ff">置信度调整 (${{syn.enriched.length}})</h4>`;
-    html += '<ul style="padding-left:14px;font-size:12px;margin:4px 0">';
-    syn.enriched.forEach(s => {{
-      const arrow = s.adjusted_confidence === 'high' || (s.adjusted_confidence === 'medium' && s.original_confidence === 'low') ? '↑' : '↓';
-      html += `<li>${{s.source_level}}-${{s.label}} @ ${{s.dt}}: ${{s.original_confidence}}${{arrow}}${{s.adjusted_confidence}} (${{s.context_note}})</li>`;
-    }});
-    html += '</ul>';
-  }}
-
-  if (syn.interval_nests && syn.interval_nests.length > 0) {{
-    const deep = syn.interval_nests.filter(n => n.depth >= 2);
-    html += `<h4 style="color:#58a6ff">区间套精确定位 (${{syn.interval_nests.length}}段, ${{deep.length}}嵌套)</h4>`;
-    syn.interval_nests.forEach((n, i) => {{
-      const dirIcon = n.direction === -1 ? '🟢买' : '🔴卖';
-      const typeStr = n.big_type === 'trend' ? '趋势' : '盘整';
-      const stars = '★'.repeat(n.depth);
-      html += `<div style="margin:6px 0;padding:8px;background:#0d1117;border-radius:6px;border-left:3px solid ${{n.depth>=2?'#58a6ff':'#484f58'}};font-size:12px">`;
-      html += `<div style="font-weight:bold">${{stars}} ${{i+1}}. ${{typeStr}}${{dirIcon}} 深度${{n.depth}}</div>`;
-      html += `<div style="color:#8b949e">大: ${{n.big_level}} ${{n.big_dt}} [${{n.big_range[0]}}~${{n.big_range[1]}}]</div>`;
-      if (n.mid_level) html += `<div style="color:#8b949e">中: ${{n.mid_level}} ${{n.mid_dt}}</div>`;
-      if (n.small_level) html += `<div style="color:#8b949e">小: ${{n.small_level}} ${{n.small_dt}}</div>`;
-      const priceStr = n.precision_price ? ` ¥${{n.precision_price.toFixed(2)}}` : '';
-      html += `<div style="color:#58a6ff;font-weight:bold">精确: ${{n.precision_dt}}${{priceStr}}</div>`;
-      if (n.note) html += `<div style="color:#484f58;font-size:11px">${{n.note}}</div>`;
-      html += '</div>';
-    }});
-  }}
-
-  panel.innerHTML = html;
-}}
 
 // === BSP Tooltip ===
 function showBspTooltip(bp, screenX, screenY) {{
