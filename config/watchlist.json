@@ -1,18 +1,14 @@
 {
   "watchlist": [
-    {
-      "symbol": "688981",
-      "name": "中芯国际",
-      "market": "SH",
-      "industry": "半导体",
-      "operate_level": "daily",
-      "data_start": "20250620",
-      "notes": "国内芯片龙头，科创板"
-    }
-  ],
-  "default_settings": {
-    "operate_level": "daily",
-    "data_periods": ["101", "30"],
-    "macd_params": {"short": 12, "long": 26, "signal": 9}
-  }
+    {"etf_code": "510050", "name": "上证50ETF", "group": "指数ETF", "notes": "跟踪上证指数，纯上交所蓝筹"},
+    {"etf_code": "159901", "name": "深证100ETF", "group": "指数ETF", "notes": "跟踪深证指数"},
+    {"etf_code": "159915", "name": "创业板ETF", "group": "指数ETF", "notes": "跟踪创业板指"},
+    {"etf_code": "588000", "name": "科创50ETF", "group": "指数ETF", "notes": "跟踪科创板"},
+    {"etf_code": "600036", "name": "招商银行", "group": "个股", "notes": "零售银行龙头"},
+    {"etf_code": "601689", "name": "拓普集团", "group": "个股", "notes": "汽车零部件龙头"},
+    {"etf_code": "002050", "name": "三花智控", "group": "个股", "notes": "热管理龙头"},
+    {"etf_code": "600031", "name": "三一重工", "group": "个股", "notes": "工程机械龙头"},
+    {"etf_code": "515030", "name": "新能源车ETF", "group": "行业ETF", "notes": "新能源汽车行业"},
+    {"etf_code": "688322", "name": "奥比中光", "group": "个股", "notes": "3D视觉传感器龙头，人形机器人"}
+  ]
 }

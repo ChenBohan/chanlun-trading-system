@@ -132,14 +132,9 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         si = dt_index.get(h.start_dt)
         ei = dt_index.get(h.end_dt)
         if si is not None and ei is not None:
-            # Determine hub trend context by comparing with previous hub
-            hub_dir = 0  # 0=consolidation, 1=up, -1=down
-            if i > 0:
-                prev = all_hubs[i - 1]
-                if h.zd > prev.zg:
-                    hub_dir = 1
-                elif h.zg < prev.zd:
-                    hub_dir = -1
+            # Hub context direction from first stroke pattern:
+            # 1 = uptrend hub (下-上-下), -1 = downtrend hub (上-下-上)
+            hub_dir = h.context_direction
             hub_rects.append({
                 "x0": si, "x1": ei,
                 "zg": h.zg, "zd": h.zd,
@@ -341,6 +336,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   <span class="gen-time">数据：__DATA_TIME__ | 生成：__GEN_TIME__</span>
 </div>
 
+<div id="watchlist-panel" style="margin:8px 32px 16px;overflow-x:auto"></div>
+
 <div id="global-signals-table" style="margin:0 32px 16px;overflow-x:auto"></div>
 
 <div style="display:flex;align-items:center;margin:24px 32px 0;gap:12px">
@@ -370,6 +367,7 @@ const DATA_KEYS = __ALL_DATA_JSON__;
 const INDEX_LIST = __INDEX_LIST_JSON__;
 const SYNTHESIS = __SYNTHESIS_JSON__;
 const GLOBAL_SIGNALS = __GLOBAL_SIGNALS_JSON__;
+const WATCHLIST_CODES = __WATCHLIST_CODES_JSON__;
 
 function getChartData(key) { return DATA_CACHE[key] || null; }
 
@@ -387,6 +385,68 @@ function loadChartData(key) {
 let currentIndex = INDEX_LIST[0].etf_code;
 let currentLevel = '30min';
 let chart = null;
+
+// ─── Watchlist Panel (自选股区) ───
+function renderWatchlist() {
+  const el = document.getElementById('watchlist-panel');
+  if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) { el.innerHTML = ''; return; }
+  const items = WATCHLIST_CODES.map(code => INDEX_LIST.find(x => x.etf_code === code)).filter(Boolean);
+  if (items.length === 0) { el.innerHTML = ''; return; }
+  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 16px">';
+  h += '<h3 style="color:#c9d1d9;font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:6px">⭐ 自选股多级别监控</h3>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9">';
+  h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:11px">';
+  h += '<th style="padding:6px 8px;text-align:left">标的</th>';
+  h += '<th style="padding:6px 8px;text-align:center">日线走势</th>';
+  h += '<th style="padding:6px 8px;text-align:center">30分钟走势</th>';
+  h += '<th style="padding:6px 8px;text-align:center">评分</th>';
+  h += '<th style="padding:6px 8px;text-align:center">最新信号</th>';
+  h += '<th style="padding:6px 8px;text-align:center">中枢位置</th>';
+  h += '<th style="padding:6px 8px;text-align:left">结论</th>';
+  h += '</tr></thead><tbody>';
+  items.forEach(idx => {
+    const t = idx.trend || '';
+    const broken = t.includes('破坏');
+    const isUp = !broken && t.includes('上涨');
+    const isDn = !broken && t.includes('下跌');
+    const isPanUp = !broken && !isUp && !isDn && t.includes('盘整偏多');
+    const isPanDn = !broken && !isUp && !isDn && t.includes('盘整偏空');
+    const isPan = !broken && !isUp && !isDn && !isPanUp && !isPanDn && t.includes('盘整');
+    const tIcon = broken ? '<span style="color:#e3b341">⚠</span>'
+      : isUp ? '<span style="color:#f85149">▲上涨</span>'
+      : isDn ? '<span style="color:#3fb950">▼下跌</span>'
+      : isPanUp ? '<span style="color:#f0883e">◆↑偏多</span>'
+      : isPanDn ? '<span style="color:#7ee787">◆↓偏空</span>'
+      : isPan ? '<span style="color:#d29922">◆盘整</span>'
+      : '<span style="color:#8b949e">—</span>';
+    const m30t = idx.m30_trend || '';
+    const m30Broken = m30t.includes('破坏');
+    const m30Up = !m30Broken && m30t.includes('上涨');
+    const m30Dn = !m30Broken && m30t.includes('下跌');
+    const m30Icon = m30Broken ? '<span style="color:#e3b341">⚠</span>'
+      : m30Up ? '<span style="color:#f85149">▲</span>'
+      : m30Dn ? '<span style="color:#3fb950">▼</span>'
+      : '<span style="color:#d29922">◆</span>';
+    const sc = idx.score || 0;
+    const scClr = sc >= 140 ? '#f85149' : (sc >= 110 ? '#d29922' : (sc >= 80 ? '#3fb950' : '#8b949e'));
+    const sig = idx.latest_signal || '-';
+    const sigClr = sig.includes('B') ? '#f85149' : (sig.includes('S') ? '#3fb950' : '#8b949e');
+    const hubPos = idx.hub_position || '-';
+    const concl = idx.conclusion || idx.summary || '-';
+    h += '<tr style="border-bottom:1px solid #21262d">';
+    h += '<td style="padding:6px 8px;font-weight:600"><a href="javascript:void(0)" onclick="selectIndex(\'' + idx.etf_code + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer">' + idx.index_name + '</a></td>';
+    h += '<td style="padding:6px 8px;text-align:center">' + tIcon + '</td>';
+    h += '<td style="padding:6px 8px;text-align:center">' + m30Icon + ' ' + (m30t.replace('趋势','') || '-') + '</td>';
+    h += '<td style="padding:6px 8px;text-align:center;color:' + scClr + ';font-weight:600">' + sc + '</td>';
+    h += '<td style="padding:6px 8px;text-align:center;color:' + sigClr + ';font-weight:600">' + sig + '</td>';
+    h += '<td style="padding:6px 8px;text-align:center">' + hubPos + '</td>';
+    h += '<td style="padding:6px 8px;font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + concl + '">' + concl + '</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  el.innerHTML = h;
+}
+renderWatchlist();
 
 // ─── Global Signals Table (tabbed by level, split into type-1/2/3 sub-tables) ───
 let gsActiveTab = '30分钟';
@@ -427,10 +487,14 @@ function renderGlobalSignals() {
     const _isBroken = trend.includes('破坏');
     const _isUp = !_isBroken && trend.includes('上涨');
     const _isDown = !_isBroken && trend.includes('下跌');
-    const _isPan = !_isBroken && !_isUp && !_isDown && trend.includes('盘整');
+    const _isPanUp = !_isBroken && !_isUp && !_isDown && trend.includes('盘整偏多');
+    const _isPanDn = !_isBroken && !_isUp && !_isDown && trend.includes('盘整偏空');
+    const _isPan = !_isBroken && !_isUp && !_isDown && !_isPanUp && !_isPanDn && trend.includes('盘整');
     const trendIcon = _isBroken ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
       : _isUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
       : _isDown ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
+      : _isPanUp ? '<span style="color:#f0883e" title="日线盘整偏多(中枢构成方向一致向上)">◆↑</span>'
+      : _isPanDn ? '<span style="color:#7ee787" title="日线盘整偏空(中枢构成方向一致向下)">◆↓</span>'
       : _isPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
       : '<span style="color:#8b949e" title="日线方向不明">—</span>';
     let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
@@ -517,10 +581,14 @@ async function init() {
     const isBroken = (idx.trend||'').includes('破坏');
     const isUp = !isBroken && (idx.trend||'').includes('上涨');
     const isDown = !isBroken && (idx.trend||'').includes('下跌');
-    const isPan = !isBroken && !isUp && !isDown && (idx.trend||'').includes('盘整');
+    const isPanUp = !isBroken && !isUp && !isDown && (idx.trend||'').includes('盘整偏多');
+    const isPanDn = !isBroken && !isUp && !isDown && (idx.trend||'').includes('盘整偏空');
+    const isPan = !isBroken && !isUp && !isDown && !isPanUp && !isPanDn && (idx.trend||'').includes('盘整');
     const trendIcon = isBroken ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
       : isUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
       : isDown ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
+      : isPanUp ? '<span style="color:#f0883e" title="日线盘整偏多">◆↑</span>'
+      : isPanDn ? '<span style="color:#7ee787" title="日线盘整偏空">◆↓</span>'
       : isPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
       : '<span style="color:#8b949e" title="日线方向不明">—</span>';
     btn.innerHTML = trendIcon + ' ' + idx.index_name;
@@ -2126,6 +2194,15 @@ def generate_dashboard(data_dir: str = None,
     html = html.replace("__SYNTHESIS_JSON__", json.dumps(synthesis_data, ensure_ascii=False))
     html = html.replace("__GLOBAL_SIGNALS_JSON__", json.dumps(global_signals_top, ensure_ascii=False))
 
+    # Watchlist codes injection
+    watchlist_codes = []
+    _wl_path = os.path.join(_PROJECT_ROOT, "config", "watchlist.json")
+    if os.path.exists(_wl_path):
+        with open(_wl_path, "r", encoding="utf-8") as wf:
+            _wl = json.load(wf)
+            watchlist_codes = [item["etf_code"] for item in _wl.get("watchlist", [])]
+    html = html.replace("__WATCHLIST_CODES_JSON__", json.dumps(watchlist_codes, ensure_ascii=False))
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -2186,6 +2263,15 @@ def generate_mobile_dashboard(data_dir: str = None,
     data_keys_json = json.dumps(sorted(all_data.keys()), ensure_ascii=False)
     index_list_json = json.dumps(index_list, ensure_ascii=False)
     synthesis_json = json.dumps(synthesis_data, ensure_ascii=False)
+
+    # Watchlist codes for mobile
+    watchlist_codes_m = []
+    _wl_path_m = os.path.join(_PROJECT_ROOT, "config", "watchlist.json")
+    if os.path.exists(_wl_path_m):
+        with open(_wl_path_m, "r", encoding="utf-8") as wf:
+            _wl_m = json.load(wf)
+            watchlist_codes_m = [item["etf_code"] for item in _wl_m.get("watchlist", [])]
+    watchlist_codes_json = json.dumps(watchlist_codes_m, ensure_ascii=False)
 
     # Collect global signals for mobile (same logic as desktop)
     level_labels_m = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
@@ -2261,10 +2347,14 @@ def generate_mobile_dashboard(data_dir: str = None,
         _broken = '破坏' in _t
         trend_up = not _broken and '上涨' in _t
         trend_dn = not _broken and '下跌' in _t
-        trend_pan = not _broken and not trend_up and not trend_dn and '盘整' in _t
+        trend_pan_up = not _broken and not trend_up and not trend_dn and '盘整偏多' in _t
+        trend_pan_dn = not _broken and not trend_up and not trend_dn and '盘整偏空' in _t
+        trend_pan = not _broken and not trend_up and not trend_dn and not trend_pan_up and not trend_pan_dn and '盘整' in _t
         trend_icon = ('<span style="color:#e3b341" title="日线趋势破坏">⚠</span>' if _broken
                       else '<span style="color:#f85149" title="日线上涨趋势">▲</span>' if trend_up
                       else '<span style="color:#3fb950" title="日线下跌趋势">▼</span>' if trend_dn
+                      else '<span style="color:#f0883e" title="日线盘整偏多">◆↑</span>' if trend_pan_up
+                      else '<span style="color:#7ee787" title="日线盘整偏空">◆↓</span>' if trend_pan_dn
                       else '<span style="color:#d29922" title="日线盘整">◆</span>' if trend_pan
                       else '<span style="color:#8b949e" title="日线方向不明">—</span>')
         search_text = f'{il["index_name"]} {il.get("etf_code", "")}'.lower()
@@ -2347,6 +2437,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 <h1>缠论交易系统 v2</h1>
 <div class="subtitle">移动版 · 数据 {data_time} · 生成 {gen_time} · 日线→30分→5分</div>
 
+<div id="mobileWatchlist" style="margin-bottom:8px"></div>
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 
 <div style="display:flex;align-items:center;margin:12px 0 6px;gap:8px;border-bottom:1px solid #30363d;padding-bottom:4px">
@@ -2380,9 +2471,9 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>阴线</div>
     <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div>笔</div>
     <div class="legend-item"><div class="legend-color" style="background:#bc8cff"></div>线段</div>
-    <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.4)"></div>上涨枢</div>
-    <div class="legend-item"><div class="legend-color" style="background:rgba(63,185,80,0.4)"></div>下跌枢</div>
-    <div class="legend-item"><div class="legend-color" style="background:rgba(88,166,255,0.4)"></div>盘整枢</div>
+    <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.4)"></div>上涨枢(↓↑↓)</div>
+    <div class="legend-item"><div class="legend-color" style="background:rgba(63,185,80,0.4)"></div>下跌枢(↑↓↑)</div>
+    <div class="legend-item"><div class="legend-color" style="background:rgba(88,166,255,0.4)"></div>未定枢</div>
     <div class="legend-item"><div class="legend-color" style="background:#f85149"></div>买▲</div>
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>卖▼</div>
     <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.35);border:1px dashed rgba(248,81,73,0.6)"></div>暂定</div>
@@ -2405,6 +2496,7 @@ const DATA_KEYS = {data_keys_json};
 const INDEX_LIST = {index_list_json};
 const SYNTHESIS = {synthesis_json};
 const GLOBAL_SIGNALS = {mobile_global_signals_json};
+const WATCHLIST_CODES = {watchlist_codes_json};
 function getChartData(key) {{ return DATA_CACHE[key] || null; }}
 
 function loadChartData(key) {{
@@ -2417,6 +2509,48 @@ function loadChartData(key) {{
     document.head.appendChild(s);
   }});
 }}
+
+// ─── Mobile Watchlist Panel (自选股) ───
+function renderMobileWatchlist() {{
+  const el = document.getElementById('mobileWatchlist');
+  if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) {{ el.innerHTML = ''; return; }}
+  const items = WATCHLIST_CODES.map(code => INDEX_LIST.find(x => x.etf_code === code)).filter(Boolean);
+  if (items.length === 0) {{ el.innerHTML = ''; return; }}
+  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 10px">';
+  h += '<div style="color:#c9d1d9;font-size:12px;font-weight:bold;margin-bottom:6px">⭐ 自选股</div>';
+  h += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;min-width:480px">';
+  h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
+  h += '<th style="padding:4px 6px;text-align:left">标的</th>';
+  h += '<th style="padding:4px 6px;text-align:center">日线</th>';
+  h += '<th style="padding:4px 6px;text-align:center">30分</th>';
+  h += '<th style="padding:4px 6px;text-align:center">分</th>';
+  h += '<th style="padding:4px 6px;text-align:center">信号</th>';
+  h += '</tr></thead><tbody>';
+  items.forEach(idx => {{
+    const t = idx.trend || '';
+    const broken = t.includes('破坏');
+    const isUp = !broken && t.includes('上涨');
+    const isDn = !broken && t.includes('下跌');
+    const tIcon = broken ? '⚠' : isUp ? '<span style="color:#f85149">▲</span>' : isDn ? '<span style="color:#3fb950">▼</span>' : t.includes('盘整偏多') ? '<span style="color:#f0883e">◆↑</span>' : t.includes('盘整偏空') ? '<span style="color:#7ee787">◆↓</span>' : '<span style="color:#d29922">◆</span>';
+    const m30t = idx.m30_trend || '';
+    const m30Icon = m30t.includes('上涨') ? '<span style="color:#f85149">▲</span>' : m30t.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#d29922">◆</span>';
+    const sc = idx.score || 0;
+    const scClr = sc >= 140 ? '#f85149' : (sc >= 110 ? '#d29922' : (sc >= 80 ? '#3fb950' : '#8b949e'));
+    const sig = idx.latest_signal || '-';
+    const sigClr = sig.includes('B') ? '#f85149' : (sig.includes('S') ? '#3fb950' : '#8b949e');
+    h += `<tr style="border-bottom:1px solid #21262d">`;
+    h += `<td style="padding:4px 6px;font-weight:600"><a href="javascript:void(0)" onclick="selectIndex('${{idx.etf_code}}')" style="color:#58a6ff;text-decoration:none">${{idx.index_name}}</a></td>`;
+    h += `<td style="padding:4px 6px;text-align:center">${{tIcon}}</td>`;
+    h += `<td style="padding:4px 6px;text-align:center">${{m30Icon}}</td>`;
+    h += `<td style="padding:4px 6px;text-align:center;color:${{scClr}};font-weight:bold">${{sc}}</td>`;
+    h += `<td style="padding:4px 6px;text-align:center;color:${{sigClr}};font-weight:bold">${{sig}}</td>`;
+    h += `</tr>`;
+  }});
+  h += '</tbody></table></div></div>';
+  el.innerHTML = h;
+}}
+renderMobileWatchlist();
 
 let mgsTab = '30分钟';
 function renderMobileGlobalSignals() {{
@@ -2446,10 +2580,14 @@ function renderMobileGlobalSignals() {{
     const _mBk = mTrend.includes('破坏');
     const _mUp = !_mBk && mTrend.includes('上涨');
     const _mDn = !_mBk && mTrend.includes('下跌');
-    const _mPan = !_mBk && !_mUp && !_mDn && mTrend.includes('盘整');
+    const _mPanUp = !_mBk && !_mUp && !_mDn && mTrend.includes('盘整偏多');
+    const _mPanDn = !_mBk && !_mUp && !_mDn && mTrend.includes('盘整偏空');
+    const _mPan = !_mBk && !_mUp && !_mDn && !_mPanUp && !_mPanDn && mTrend.includes('盘整');
     const mTrendIcon = _mBk ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
       : _mUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
       : _mDn ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
+      : _mPanUp ? '<span style="color:#f0883e" title="日线盘整偏多">◆↑</span>'
+      : _mPanDn ? '<span style="color:#7ee787" title="日线盘整偏空">◆↓</span>'
       : _mPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
       : '<span style="color:#8b949e" title="日线方向不明">—</span>';
     let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;

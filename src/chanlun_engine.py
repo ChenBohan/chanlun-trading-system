@@ -131,6 +131,26 @@ class Hub:
     def end_dt(self) -> str:
         return self.strokes[-1].end.dt if self.strokes else ""
 
+    @property
+    def context_direction(self) -> int:
+        """Hub context direction inferred from the first stroke.
+
+        Theory (缠论解析 场景B):
+          - 上涨趋势中的中枢: first stroke is DOWN (下-上-下)
+          - 下跌趋势中的中枢: first stroke is UP (上-下-上)
+
+        Returns:
+            1  = hub formed in uptrend context (first stroke is down)
+           -1  = hub formed in downtrend context (first stroke is up)
+            0  = unknown (no strokes)
+        """
+        if not self.strokes:
+            return 0
+        first_dir = self.strokes[0].direction
+        # First stroke DOWN (-1) → uptrend context → return 1
+        # First stroke UP (1) → downtrend context → return -1
+        return -first_dir
+
 
 @dataclass
 class BuySellPoint:
@@ -993,7 +1013,7 @@ def find_hubs(strokes: list[Stroke]) -> list[Hub]:
 
         while j < len(strokes):
             sj_h, sj_l = _stroke_range(strokes[j])
-            if sj_l < zg and sj_h > zd:
+            if sj_l <= zg and sj_h >= zd:
                 hub_strokes.append(strokes[j])
                 j += 1
             else:
@@ -1044,7 +1064,7 @@ def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
 
         while j < len(segments):
             sj_h, sj_l = _segment_range(segments[j])
-            if sj_l < zg and sj_h > zd:
+            if sj_l <= zg and sj_h >= zd:
                 hub_segs.append(segments[j])
                 j += 1
             else:
@@ -1079,6 +1099,11 @@ def classify_hub_evolution(hubs: list[Hub]):
 
     For a single hub: extended oscillation if strokes > threshold.
     For adjacent pairs: new birth vs expansion based on range overlap.
+
+    Theory (缠论解析 场景B / 课18): "同级别趋势：前后中枢区间不得重叠
+    （含瞬时波动触及则升级为更大中枢）"
+    - Oscillation [DD, GG] overlap → expansion (级别升级)
+    - No oscillation overlap → new birth (趋势延续)
     """
     if not hubs:
         return
@@ -1090,19 +1115,18 @@ def classify_hub_evolution(hubs: list[Hub]):
     for i in range(1, len(hubs)):
         prev, curr = hubs[i - 1], hubs[i]
 
-        # Use CORE range [ZD, ZG] for overlap — NOT oscillation [DD, GG].
-        # Chan Theory defines a trend as two hubs whose cores don't overlap.
-        # DD/GG includes extreme stroke excursions beyond the hub core, so
-        # using DD/GG would misclassify many valid trends as expansion.
+        osc_overlap = curr.dd <= prev.gg and curr.gg >= prev.dd
         core_overlap = curr.zd <= prev.zg and curr.zg >= prev.zd
 
-        if core_overlap:
+        if osc_overlap and not core_overlap:
             curr.evolution_type = "扩展"
-        else:
+        elif not osc_overlap:
             if curr.zd > prev.zg:
                 curr.evolution_type = "新生（上）"
             else:
                 curr.evolution_type = "新生（下）"
+        elif core_overlap:
+            curr.evolution_type = "扩展"
 
 
 def classify_seg_hub_evolution(seg_hubs: list[SegHub]):
@@ -1152,14 +1176,11 @@ def merge_expanded_hubs(hubs: list[Hub]) -> list[Hub]:
         if merged and h.evolution_type == "扩展":
             prev = merged[-1]
             all_strokes = prev.strokes + h.strokes
-            if len(all_strokes) >= 3:
-                highs = [max(s.start.high, s.end.high) for s in all_strokes]
-                lows = [min(s.start.low, s.end.low) for s in all_strokes]
-                new_zg = min(highs[:3])
-                new_zd = max(lows[:3])
-            else:
-                new_zg = min(prev.zg, h.zg)
-                new_zd = max(prev.zd, h.zd)
+            # Expansion merge: ZG/ZD = intersection of two hubs' core ranges.
+            # Theory (图解缠论2 §2.4): "两个同级别中枢的震荡区间重叠 → 更大级别中枢"
+            # The merged hub's core is the shared overlap region.
+            new_zg = min(prev.zg, h.zg)
+            new_zd = max(prev.zd, h.zd)
             merged[-1] = Hub(
                 idx=prev.idx,
                 zg=new_zg,
@@ -1229,10 +1250,16 @@ def merge_expanded_seg_hubs(seg_hubs: list[SegHub]) -> list[SegHub]:
 def determine_trend(hubs: list[Hub], strokes: list[Stroke]) -> str:
     """Determine current trend type based on hub structure AND current price position.
 
-    Uses the last N hubs (N=5) to determine the overall direction rather than
-    only the last two, which avoids misclassifying oscillating hubs as a trend.
-    Requires ≥70% of directional shifts to agree for a trend call; otherwise
-    the result is "盘整".
+    Two-dimensional trend determination:
+      1. Position shifts (primary): relative position of consecutive hubs
+      2. Context direction (secondary): hub.context_direction from first stroke
+
+    Theory (108课 §1.5 + 缠论解析 场景B):
+      - 盘整: contains only 1 hub
+      - 上涨趋势: ≥2 consecutive non-overlapping hubs shifting upward,
+                   confirmed by context_direction == 1 (下-上-下 pattern)
+      - 下跌趋势: ≥2 consecutive non-overlapping hubs shifting downward,
+                   confirmed by context_direction == -1 (上-下-上 pattern)
     """
     if not hubs:
         if strokes:
@@ -1251,29 +1278,68 @@ def determine_trend(hubs: list[Hub], strokes: list[Stroke]) -> str:
             return "中枢下方运行"
         return "盘整"
 
-    # --- Multi-hub context: use last N hubs ---
-    _WINDOW = 5
-    n = min(_WINDOW, len(hubs))
-    recent = hubs[-n:]
+    # --- Dimension 1: trailing consecutive same-direction position shifts ---
+    trailing_dir = 0   # 1=up, -1=down
+    trailing_count = 0
 
-    up_shifts = 0
-    down_shifts = 0
-    for i in range(1, len(recent)):
-        curr, prev = recent[i], recent[i - 1]
+    for i in range(len(hubs) - 1, 0, -1):
+        curr, prev = hubs[i], hubs[i - 1]
         if curr.zd > prev.zg:
-            up_shifts += 1
+            shift = 1
         elif curr.zg < prev.zd:
-            down_shifts += 1
+            shift = -1
+        else:
+            shift = 0
 
-    total_dir = up_shifts + down_shifts
-    if total_dir == 0:
-        struct_trend = "盘整"
-    elif up_shifts / total_dir >= 0.7:
+        if trailing_count == 0:
+            if shift != 0:
+                trailing_dir = shift
+                trailing_count = 1
+            else:
+                break
+        elif shift == trailing_dir:
+            trailing_count += 1
+        else:
+            break
+
+    # --- Dimension 2: context_direction consistency of recent hubs ---
+    # In established uptrend: hubs formed by 下-上-下 → context_direction == 1
+    # In established downtrend: hubs formed by 上-下-上 → context_direction == -1
+    _CTX_WINDOW = 3
+    recent_n = min(_CTX_WINDOW, len(hubs))
+    recent_ctx = [h.context_direction for h in hubs[-recent_n:]]
+    ctx_up = sum(1 for c in recent_ctx if c == 1)
+    ctx_dn = sum(1 for c in recent_ctx if c == -1)
+    ctx_signal = 0
+    if ctx_up == recent_n:
+        ctx_signal = 1   # all hubs in uptrend context
+    elif ctx_dn == recent_n:
+        ctx_signal = -1  # all hubs in downtrend context
+
+    # --- Combine: position shifts + context direction ---
+    if trailing_count >= 2 and trailing_dir == 1:
         struct_trend = "上涨趋势"
-    elif down_shifts / total_dir >= 0.7:
+    elif trailing_count >= 2 and trailing_dir == -1:
         struct_trend = "下跌趋势"
+    elif trailing_count == 1 and trailing_dir == 1:
+        # 2 hubs with 1 upward shift — check context for confirmation
+        if ctx_signal == 1:
+            struct_trend = "上涨趋势"  # context confirms trend early
+        else:
+            struct_trend = "中枢上方运行"
+    elif trailing_count == 1 and trailing_dir == -1:
+        if ctx_signal == -1:
+            struct_trend = "下跌趋势"  # context confirms trend early
+        else:
+            struct_trend = "中枢下方运行"
     else:
-        struct_trend = "盘整"
+        # No clear position shifts — context_direction may reveal direction
+        if ctx_signal == 1 and trailing_count == 0:
+            struct_trend = "盘整偏多"
+        elif ctx_signal == -1 and trailing_count == 0:
+            struct_trend = "盘整偏空"
+        else:
+            struct_trend = "盘整"
 
     # Override: if current price has broken below/above the last hub,
     # the structural trend is no longer valid
@@ -1281,9 +1347,9 @@ def determine_trend(hubs: list[Hub], strokes: list[Stroke]) -> str:
     if strokes:
         last = strokes[-1]
         last_price = last.end.high if last.direction == 1 else last.end.low
-        if struct_trend == "上涨趋势" and last_price < h_last.dd:
+        if "上涨" in struct_trend and last_price < h_last.dd:
             return "上涨趋势破坏"
-        if struct_trend == "下跌趋势" and last_price > h_last.gg:
+        if "下跌" in struct_trend and last_price > h_last.gg:
             return "下跌趋势破坏"
 
     return struct_trend
@@ -1356,7 +1422,7 @@ def assess_trend_completion(
         elif num_hubs == 2:
             result["reason"] = "标准趋势结构，观察c段力度"
 
-    elif trend == "盘整":
+    elif "盘整" in trend:
         result["stage"] = f"盘整, {num_hubs}个中枢"
 
         recent_3b = [p for p in buy_sell_points if p.type == "3B"
