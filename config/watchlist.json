@@ -1,9 +1,9 @@
 {
   "watchlist": [
-    {"etf_code": "510050", "name": "上证50ETF", "group": "指数ETF", "notes": "跟踪上证指数，纯上交所蓝筹"},
-    {"etf_code": "159901", "name": "深证100ETF", "group": "指数ETF", "notes": "跟踪深证指数"},
-    {"etf_code": "159915", "name": "创业板ETF", "group": "指数ETF", "notes": "跟踪创业板指"},
-    {"etf_code": "588000", "name": "科创50ETF", "group": "指数ETF", "notes": "跟踪科创板"},
+    {"etf_code": "510050", "name": "上证50", "group": "宽基指数", "notes": "上证核心蓝筹指数"},
+    {"etf_code": "159901", "name": "深证100", "group": "宽基指数", "notes": "深市核心蓝筹指数"},
+    {"etf_code": "159915", "name": "创业板指", "group": "宽基指数", "notes": "创业板核心指数"},
+    {"etf_code": "588000", "name": "科创50", "group": "宽基指数", "notes": "科创板核心指数"},
     {"etf_code": "600036", "name": "招商银行", "group": "个股", "notes": "零售银行龙头"},
     {"etf_code": "601689", "name": "拓普集团", "group": "个股", "notes": "汽车零部件龙头"},
     {"etf_code": "002050", "name": "三花智控", "group": "个股", "notes": "热管理龙头"},
