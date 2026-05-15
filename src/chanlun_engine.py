@@ -2749,6 +2749,18 @@ def find_buy_sell_points(
     # ── Wolf Prevention Filter (防狼术) ──
     _apply_wolf_filter(points, bars)
 
+    # ── Stale 3B/3S filter: suppress signals from the penultimate hub that
+    # appear at/below(above for 3S) the last hub's boundary. These signals
+    # are visually inside the current hub and no longer actionable. ──
+    if len(t3_hubs) >= 2:
+        last_h = t3_hubs[-1]
+        pen_idx = t3_hubs[-2].idx
+        points = [p for p in points
+                  if not (p.type == '3B' and p.hub_idx == pen_idx
+                          and p.price <= last_h.zd)
+                  and not (p.type == '3S' and p.hub_idx == pen_idx
+                           and p.price >= last_h.zg)]
+
     return points
 
 
@@ -3473,8 +3485,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
     # --- Single-stroke check ---
     # Path A: hub's last stroke already exceeds ZG (common when hubs are
     # consecutive and the departure is absorbed into the hub). Pullback is
-    # bounded to the immediately next stroke only (idx+2 allows at most
-    # one intermediate stroke, handling alternating direction).
+    # bounded to the immediately next stroke only.
     single_found = False
     if last_stroke.direction == 1 and last_stroke.end.high > hub.zg:
         pullback = _find_next_stroke(
@@ -3497,12 +3508,9 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                 break
 
     # --- Multi-stroke scan: complete sub-level departure + pullback ---
-    # Collect all strokes after hub that remain above ZG.
-    # When hubs are consecutive, also include the first few strokes of the
-    # next hub region if they remain above ZG.
-    extended_limit = scan_limit + 6 if next_hub else scan_limit
+    # Strictly bounded by scan_limit to prevent scanning into the next hub.
     post_hub_ext = [s for s in strokes
-                    if s.idx > hub_end_idx and s.idx < extended_limit]
+                    if s.idx > hub_end_idx and s.idx < scan_limit]
     above_zg: list[Stroke] = []
     for s in post_hub_ext:
         if s.direction == 1:
@@ -3894,11 +3902,9 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                 break
 
     # --- Multi-stroke scan: complete sub-level departure + pullback ---
-    # When hubs are consecutive, also include the first few strokes of the
-    # next hub region if they remain below ZD.
-    extended_limit = scan_limit + 6 if next_hub else scan_limit
+    # Strictly bounded by scan_limit to prevent scanning into the next hub.
     post_hub_ext = [s for s in strokes
-                    if s.idx > hub_end_idx and s.idx < extended_limit]
+                    if s.idx > hub_end_idx and s.idx < scan_limit]
     below_zd: list[Stroke] = []
     for s in post_hub_ext:
         if s.direction == -1:
