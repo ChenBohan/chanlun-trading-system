@@ -2409,8 +2409,16 @@ def find_buy_sell_points(
     consol_divs: list[dict],
     level: str,
     segments: list[Segment] | None = None,
+    raw_hubs: list[Hub] | None = None,
 ) -> list[BuySellPoint]:
-    """Identify all three types of buy/sell points."""
+    """Identify all three types of buy/sell points.
+
+    ``hubs`` is used for Type 1/2 signals (typically merged hubs for trend
+    consistency).  ``raw_hubs`` (pre-merge, individual hubs) is used for
+    Type 3 signals because 3B/3S depend on breakout/pullback between
+    *adjacent* hubs — merged hubs absorb all strokes and leave nothing to
+    scan.
+    """
     stroke_to_seg: dict[int, int] = {}
     if segments:
         for seg in segments:
@@ -3090,6 +3098,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
       7. expansion_risk (P1): probability that 3B leads to hub expansion
     """
     stm = stroke_to_seg or {}
+    last_stroke = hub.strokes[-1]
     hub_range = hub.zg - hub.zd if hub.zg > hub.zd else 1e-9
 
     def _classify_departure_pullback_buy(breakout_stroke, pullback):
@@ -3445,21 +3454,40 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                 if s.idx > hub_end_idx and s.idx < scan_limit]
 
     # --- Single-stroke check ---
-    # Only scan post-hub strokes (not hub-internal strokes) for departure.
+    # Path A: hub's last stroke already exceeds ZG (common when hubs are
+    # consecutive and the departure is absorbed into the hub). Pullback is
+    # bounded to the immediately next stroke only (idx+2 allows at most
+    # one intermediate stroke, handling alternating direction).
     single_found = False
-    for s in post_hub:
-        if s.direction == 1 and s.end.high > hub.zg:
-            pullback = _find_next_stroke(
-                strokes, s.idx, direction=-1, before_idx=scan_limit)
-            if pullback and pullback.end.low > hub.zg:
-                points.append(_make_3b(s, pullback))
-                single_found = True
-            break
+    if last_stroke.direction == 1 and last_stroke.end.high > hub.zg:
+        pullback = _find_next_stroke(
+            strokes, last_stroke.idx, direction=-1,
+            before_idx=last_stroke.idx + 3)
+        if pullback and pullback.end.low > hub.zg:
+            points.append(_make_3b(last_stroke, pullback))
+            single_found = True
+
+    # Path B: departure is a post-hub stroke (gap between consecutive hubs).
+    # Pullback bounded by scan_limit so it stays before the next hub.
+    if not single_found:
+        for s in post_hub:
+            if s.direction == 1 and s.end.high > hub.zg:
+                pullback = _find_next_stroke(
+                    strokes, s.idx, direction=-1, before_idx=scan_limit)
+                if pullback and pullback.end.low > hub.zg:
+                    points.append(_make_3b(s, pullback))
+                    single_found = True
+                break
 
     # --- Multi-stroke scan: complete sub-level departure + pullback ---
     # Collect all strokes after hub that remain above ZG.
+    # When hubs are consecutive, also include the first few strokes of the
+    # next hub region if they remain above ZG.
+    extended_limit = scan_limit + 6 if next_hub else scan_limit
+    post_hub_ext = [s for s in strokes
+                    if s.idx > hub_end_idx and s.idx < extended_limit]
     above_zg: list[Stroke] = []
-    for s in post_hub:
+    for s in post_hub_ext:
         if s.direction == 1:
             if s.end.high <= hub.zg:
                 continue
@@ -3500,6 +3528,7 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
     Mirror of _check_type3_buy for the sell side.
     """
     stm = stroke_to_seg or {}
+    last_stroke = hub.strokes[-1]
     hub_range = hub.zg - hub.zd if hub.zg > hub.zd else 1e-9
 
     def _classify_departure_pullback_sell(breakdown_stroke, rally):
@@ -3825,20 +3854,36 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                 if s.idx > hub_end_idx and s.idx < scan_limit]
 
     # --- Single-stroke check ---
-    # Only scan post-hub strokes (not hub-internal strokes) for departure.
+    # Path A: hub's last stroke already breaks below ZD (common when hubs are
+    # consecutive). Rally is bounded to the immediately next stroke only.
     single_found = False
-    for s in post_hub:
-        if s.direction == -1 and s.end.low < hub.zd:
-            rally = _find_next_stroke(
-                strokes, s.idx, direction=1, before_idx=scan_limit)
-            if rally and rally.end.high < hub.zd:
-                points.append(_make_3s(s, rally))
-                single_found = True
-            break
+    if last_stroke.direction == -1 and last_stroke.end.low < hub.zd:
+        rally = _find_next_stroke(
+            strokes, last_stroke.idx, direction=1,
+            before_idx=last_stroke.idx + 3)
+        if rally and rally.end.high < hub.zd:
+            points.append(_make_3s(last_stroke, rally))
+            single_found = True
+
+    # Path B: departure is a post-hub stroke. Rally bounded by scan_limit.
+    if not single_found:
+        for s in post_hub:
+            if s.direction == -1 and s.end.low < hub.zd:
+                rally = _find_next_stroke(
+                    strokes, s.idx, direction=1, before_idx=scan_limit)
+                if rally and rally.end.high < hub.zd:
+                    points.append(_make_3s(s, rally))
+                    single_found = True
+                break
 
     # --- Multi-stroke scan: complete sub-level departure + pullback ---
+    # When hubs are consecutive, also include the first few strokes of the
+    # next hub region if they remain below ZD.
+    extended_limit = scan_limit + 6 if next_hub else scan_limit
+    post_hub_ext = [s for s in strokes
+                    if s.idx > hub_end_idx and s.idx < extended_limit]
     below_zd: list[Stroke] = []
-    for s in post_hub:
+    for s in post_hub_ext:
         if s.direction == -1:
             if s.end.low >= hub.zd:
                 continue
