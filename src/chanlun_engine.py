@@ -1088,7 +1088,12 @@ def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
 # Theory (108课 §1.4 / 缠论解析 场景B / 图解缠论2 §2.2-2.4):
 #   - 延伸: hub oscillation beyond initial 3 strokes (swing-trade zone)
 #   - 新生: adjacent hubs with non-overlapping [ZD,ZG] → trend continuation
-#   - 扩展: adjacent hubs with overlapping [DD,GG] → upgrade to larger hub
+#   - 扩展: adjacent hubs with overlapping [ZD,ZG] → upgrade to larger hub
+#
+# Note: Using CORE range [ZD,ZG] for overlap — NOT oscillation [DD,GG].
+# DD/GG includes extreme stroke excursions far beyond the hub core,
+# especially in extended hubs (延伸), causing false cascade merges that
+# collapse all hubs into one degenerate hub and destroy trend structure.
 # ════════════════════════════════════════════════════════════════════
 
 _EXTENSION_THRESHOLD = 5  # strokes needed to classify as "延伸"
@@ -1100,10 +1105,9 @@ def classify_hub_evolution(hubs: list[Hub]):
     For a single hub: extended oscillation if strokes > threshold.
     For adjacent pairs: new birth vs expansion based on range overlap.
 
-    Theory (缠论解析 场景B / 课18): "同级别趋势：前后中枢区间不得重叠
-    （含瞬时波动触及则升级为更大中枢）"
-    - Oscillation [DD, GG] overlap → expansion (级别升级)
-    - No oscillation overlap → new birth (趋势延续)
+    Uses CORE range [ZD, ZG] for overlap detection. Chan Theory defines
+    a trend as two hubs whose cores don't overlap. DD/GG would misclassify
+    many valid trends as expansion due to extreme stroke excursions.
     """
     if not hubs:
         return
@@ -1115,18 +1119,15 @@ def classify_hub_evolution(hubs: list[Hub]):
     for i in range(1, len(hubs)):
         prev, curr = hubs[i - 1], hubs[i]
 
-        osc_overlap = curr.dd <= prev.gg and curr.gg >= prev.dd
         core_overlap = curr.zd <= prev.zg and curr.zg >= prev.zd
 
-        if osc_overlap and not core_overlap:
+        if core_overlap:
             curr.evolution_type = "扩展"
-        elif not osc_overlap:
+        else:
             if curr.zd > prev.zg:
                 curr.evolution_type = "新生（上）"
             else:
                 curr.evolution_type = "新生（下）"
-        elif core_overlap:
-            curr.evolution_type = "扩展"
 
 
 def classify_seg_hub_evolution(seg_hubs: list[SegHub]):
@@ -1140,18 +1141,14 @@ def classify_seg_hub_evolution(seg_hubs: list[SegHub]):
 
     for i in range(1, len(seg_hubs)):
         prev, curr = seg_hubs[i - 1], seg_hubs[i]
-        osc_overlap = curr.dd <= prev.gg and curr.gg >= prev.dd
         core_overlap = curr.zd <= prev.zg and curr.zg >= prev.zd
 
-        if osc_overlap and not core_overlap:
+        if core_overlap:
             curr.evolution_type = "扩展"
-        elif not osc_overlap:
-            if curr.zg > prev.zg:
-                curr.evolution_type = "新生（上）"
-            else:
-                curr.evolution_type = "新生（下）"
-        elif core_overlap:
-            curr.evolution_type = "扩展"
+        elif curr.zg > prev.zg:
+            curr.evolution_type = "新生（上）"
+        else:
+            curr.evolution_type = "新生（下）"
 
 
 # ════════════════════════════════════════════════════════════════════
