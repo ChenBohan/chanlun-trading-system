@@ -2660,30 +2660,51 @@ def find_buy_sell_points(
             ))
 
     # ── Type 3: Hub breakout + pullback (三买/三卖) ──
-    # Compute direction-aware trend_hub_rank:
-    #   buy_rank: consecutive up-hub count (relevant for 3B signals)
-    #   sell_rank: consecutive down-hub count (relevant for 3S signals)
-    # Rank semantics (buy side; sell side mirrors):
-    #   0 = "下跌末端三买": last hub in a downtrend (down_run≥2)
-    #   1 = "首个中枢三买": first up-hub (recommended per 108课详解 L79)
-    #   2 = "第二中枢三买": second up-hub (generally avoid per 扫地僧)
-    #   3+ = later trend hubs, progressively weaker / dangerous
-    # Also compute churn_penalty: frequent direction flips in recent hubs
-    # indicate large-level consolidation, reducing 3B/3S value.
+    # Use raw (pre-merge) hubs so each individual hub can be checked for
+    # departure/pullback. Merged hubs absorb all strokes, leaving nothing
+    # to scan. Fall back to the (merged) hubs list when raw_hubs not given.
+    t3_hubs = raw_hubs if raw_hubs else hubs
+
+    # Determine hub-to-hub direction. evolution_type only distinguishes
+    # "新生（上/下）" from "扩展"; expansion hubs don't carry direction.
+    # Use midpoint comparison for a direction-agnostic classification.
+    def _hub_direction(prev_h: Hub, curr_h: Hub) -> str:
+        """Return 'up' / 'down' based on ZG/ZD position shift."""
+        if curr_h.zd > prev_h.zg:
+            return "up"
+        if curr_h.zg < prev_h.zd:
+            return "down"
+        prev_mid = (prev_h.zg + prev_h.zd) / 2
+        curr_mid = (curr_h.zg + curr_h.zd) / 2
+        return "up" if curr_mid > prev_mid else "down"
+
+    hub_dir: dict[int, str] = {}
+    for i, h in enumerate(t3_hubs):
+        evo = h.evolution_type
+        if evo == "新生（上）":
+            hub_dir[h.idx] = "up"
+        elif evo == "新生（下）":
+            hub_dir[h.idx] = "down"
+        elif i > 0:
+            hub_dir[h.idx] = _hub_direction(t3_hubs[i - 1], h)
+        else:
+            hub_dir[h.idx] = "up"
+
     hub_buy_rank: dict[int, int] = {}
     hub_sell_rank: dict[int, int] = {}
     hub_churn: dict[int, int] = {}
     up_run = 0
     down_run = 0
     _CHURN_WINDOW = 6
-    for i, h in enumerate(hubs):
-        evo = h.evolution_type
-        if evo == "新生（上）":
+    for i, h in enumerate(t3_hubs):
+        d = hub_dir[h.idx]
+        if d == "up":
             up_run += 1
             down_run = 0
-        elif evo == "新生（下）":
+        else:
             down_run += 1
             up_run = 0
+
         if up_run > 0:
             hub_buy_rank[h.idx] = up_run
         elif down_run >= 2:
@@ -2697,29 +2718,25 @@ def find_buy_sell_points(
         else:
             hub_sell_rank[h.idx] = 1
 
-        window = hubs[max(0, i - _CHURN_WINDOW + 1): i + 1]
-        flips = 0
-        for j in range(1, len(window)):
-            e_prev = window[j - 1].evolution_type
-            e_curr = window[j].evolution_type
-            if (("上" in e_prev and "下" in e_curr) or
-                    ("下" in e_prev and "上" in e_curr)):
-                flips += 1
+        window_dirs = [hub_dir[t3_hubs[j].idx]
+                       for j in range(max(0, i - _CHURN_WINDOW + 1), i + 1)]
+        flips = sum(1 for j in range(1, len(window_dirs))
+                    if window_dirs[j] != window_dirs[j - 1])
         hub_churn[h.idx] = flips
 
-    for i, hub in enumerate(hubs):
+    for i, hub in enumerate(t3_hubs):
         hub_end_idx = hub.strokes[-1].idx
         buy_rank = hub_buy_rank.get(hub.idx, 1)
         sell_rank = hub_sell_rank.get(hub.idx, 1)
         churn = hub_churn.get(hub.idx, 0)
-        next_hub = hubs[i + 1] if i + 1 < len(hubs) else None
+        next_hub = t3_hubs[i + 1] if i + 1 < len(t3_hubs) else None
 
         _check_type3_buy(hub, strokes, hub_end_idx, points, level,
                          stroke_to_seg, buy_rank, churn, next_hub,
-                         all_hubs=hubs, hub_list_idx=i)
+                         all_hubs=t3_hubs, hub_list_idx=i)
         _check_type3_sell(hub, strokes, hub_end_idx, points, level,
                           stroke_to_seg, sell_rank, churn, next_hub,
-                          all_hubs=hubs, hub_list_idx=i)
+                          all_hubs=t3_hubs, hub_list_idx=i)
 
     points.sort(key=lambda p: p.dt)
 
@@ -4586,11 +4603,12 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
     consol_divs = check_consolidation_divergence(strokes, hubs)
     result.divergences = trend_divs + consol_divs
 
-    # [10] Buy/sell points — use merged hubs so that hub references
-    #     (hub_idx, ZG/ZD for 2B/2S, 3B/3S) are consistent with trend detection.
+    # [10] Buy/sell points — merged hubs for T1/T2 consistency, raw hubs
+    #     for T3 (3B/3S) so individual hub boundaries are available.
     result.buy_sell_points = find_buy_sell_points(
         result.merged_hubs, strokes, bars, trend_divs, consol_divs, level,
         segments=segments,
+        raw_hubs=hubs,
     )
 
     # [10b] Validate signals against subsequent price action
