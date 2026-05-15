@@ -383,64 +383,129 @@ let currentIndex = INDEX_LIST[0].etf_code;
 let currentLevel = '30min';
 let chart = null;
 
-// ─── Watchlist Panel (自选股区) ───
+// ─── Watchlist Panel (自选股最新买卖点) ───
+let wlActiveTab = '30分钟';
 function renderWatchlist() {
   const el = document.getElementById('watchlist-panel');
   if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) { el.innerHTML = ''; return; }
-  const items = WATCHLIST_CODES.map(code => INDEX_LIST.find(x => x.etf_code === code)).filter(Boolean);
-  if (items.length === 0) { el.innerHTML = ''; return; }
-  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 16px">';
-  h += '<h3 style="color:#c9d1d9;font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:6px">⭐ 自选股多级别监控</h3>';
-  h += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9">';
-  h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:11px">';
-  h += '<th style="padding:6px 8px;text-align:left">标的</th>';
-  h += '<th style="padding:6px 8px;text-align:center">日线走势</th>';
-  h += '<th style="padding:6px 8px;text-align:center">30分钟走势</th>';
-  h += '<th style="padding:6px 8px;text-align:center">评分</th>';
-  h += '<th style="padding:6px 8px;text-align:center">最新信号</th>';
-  h += '<th style="padding:6px 8px;text-align:center">中枢位置</th>';
-  h += '<th style="padding:6px 8px;text-align:left">结论</th>';
-  h += '</tr></thead><tbody>';
-  items.forEach(idx => {
-    const t = idx.trend || '';
-    const broken = t.includes('破坏');
-    const isUp = !broken && t.includes('上涨');
-    const isDn = !broken && t.includes('下跌');
-    const isPanUp = !broken && !isUp && !isDn && t.includes('盘整偏多');
-    const isPanDn = !broken && !isUp && !isDn && t.includes('盘整偏空');
-    const isPan = !broken && !isUp && !isDn && !isPanUp && !isPanDn && t.includes('盘整');
-    const tIcon = broken ? '<span style="color:#e3b341">⚠</span>'
-      : isUp ? '<span style="color:#f85149">▲上涨</span>'
-      : isDn ? '<span style="color:#3fb950">▼下跌</span>'
-      : isPanUp ? '<span style="color:#f0883e">◆↑偏多</span>'
-      : isPanDn ? '<span style="color:#7ee787">◆↓偏空</span>'
-      : isPan ? '<span style="color:#d29922">◆盘整</span>'
-      : '<span style="color:#8b949e">—</span>';
-    const m30t = idx.m30_trend || '';
-    const m30Broken = m30t.includes('破坏');
-    const m30Up = !m30Broken && m30t.includes('上涨');
-    const m30Dn = !m30Broken && m30t.includes('下跌');
-    const m30Icon = m30Broken ? '<span style="color:#e3b341">⚠</span>'
-      : m30Up ? '<span style="color:#f85149">▲</span>'
-      : m30Dn ? '<span style="color:#3fb950">▼</span>'
-      : '<span style="color:#d29922">◆</span>';
-    const sc = idx.score || 0;
-    const scClr = sc >= 140 ? '#f85149' : (sc >= 110 ? '#d29922' : (sc >= 80 ? '#3fb950' : '#8b949e'));
-    const sig = idx.latest_signal || '-';
-    const sigClr = sig.includes('B') ? '#f85149' : (sig.includes('S') ? '#3fb950' : '#8b949e');
-    const hubPos = idx.hub_position || '-';
-    const concl = idx.conclusion || idx.summary || '-';
-    h += '<tr style="border-bottom:1px solid #21262d">';
-    h += '<td style="padding:6px 8px;font-weight:600"><a href="javascript:void(0)" onclick="selectIndex(\'' + idx.etf_code + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer">' + idx.index_name + '</a></td>';
-    h += '<td style="padding:6px 8px;text-align:center">' + tIcon + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center">' + m30Icon + ' ' + (m30t.replace('趋势','') || '-') + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center;color:' + scClr + ';font-weight:600">' + sc + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center;color:' + sigClr + ';font-weight:600">' + sig + '</td>';
-    h += '<td style="padding:6px 8px;text-align:center">' + hubPos + '</td>';
-    h += '<td style="padding:6px 8px;font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + concl + '">' + concl + '</td>';
-    h += '</tr>';
+
+  const levels = ['日线', '30分钟', '5分钟'];
+  const hasAny = levels.some(lv => {
+    const d = GLOBAL_SIGNALS[lv]; if (!d) return false;
+    const all = [...(d.type1||[]),...(d.type2||[]),...(d.type3||[])];
+    return all.some(s => WATCHLIST_CODES.includes(s.etf_code));
   });
-  h += '</tbody></table></div>';
+  if (!hasAny) { el.innerHTML = ''; return; }
+
+  const confIcons = {'high': '🔴高', 'medium': '🟡中', 'low': '⚪低'};
+  const typeColors = {'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950', 'PB': '#f85149', 'PS': '#3fb950'};
+  const strengthMap = {'strongest': '🔥最强', 'strong': '💪强势', 'standard': '📌标准', 'weak': '⚠弱'};
+
+  function wlSignalRow(s, i, isType3) {
+    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+    const tClr = typeColors[s.type] || '#c9d1d9';
+    let confStr = confIcons[s.conf] || s.conf || '-';
+    if (s.conf_score !== undefined && s.conf_score !== null) confStr += ' <span style="color:#8b949e;font-size:11px">(' + s.conf_score + ')</span>';
+    const wolfStr = s.wolf ? '⚠' : '✓';
+    const wolfClr = s.wolf ? '#d29922' : '#3fb950';
+    let strStr = strengthMap[s.strength] || s.strength || '-';
+    if (s.str_score !== undefined && s.str_score !== null) strStr += ' <span style="color:#8b949e;font-size:11px">(' + s.str_score + ')</span>';
+    const inv = s.status === 'invalidated';
+    const pending = s.status === 'pending';
+    const rowOpacity = inv ? 'opacity:0.45;' : '';
+    const strike = inv ? 'text-decoration:line-through;' : '';
+    const isBuyType = ['1B','2B','3B','PB'].includes(s.type);
+    const confirmedColor = isBuyType ? '#f85149' : '#3fb950';
+    const confirmedIcon = isBuyType ? '🔴' : '🟢';
+    const statusHtml = inv
+      ? '<span title="' + (s.inv_reason||'').replace(/"/g,'&quot;') + '" style="color:#da3633;cursor:help">❌已失效</span>'
+      : pending ? '<span style="color:#d29922">⏳待确认</span>'
+      : '<span style="color:' + confirmedColor + '">' + confirmedIcon + '已确认</span>';
+    const idxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
+    const trend = idxInfo ? (idxInfo.trend || '') : '';
+    const _isBroken = trend.includes('破坏');
+    const _isUp = !_isBroken && trend.includes('上涨');
+    const _isDown = !_isBroken && trend.includes('下跌');
+    const _isPanUp = !_isBroken && !_isUp && !_isDown && trend.includes('盘整偏多');
+    const _isPanDn = !_isBroken && !_isUp && !_isDown && trend.includes('盘整偏空');
+    const _isPan = !_isBroken && !_isUp && !_isDown && !_isPanUp && !_isPanDn && trend.includes('盘整');
+    const trendIcon = _isBroken ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
+      : _isUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
+      : _isDown ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
+      : _isPanUp ? '<span style="color:#f0883e" title="日线盘整偏多">◆↑</span>'
+      : _isPanDn ? '<span style="color:#7ee787" title="日线盘整偏空">◆↓</span>'
+      : _isPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
+      : '<span style="color:#8b949e" title="日线方向不明">—</span>';
+    let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
+    r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
+    r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="日线:' + trend + '">' + s.etf_name + '</a></td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
+    r += '<td style="padding:6px 8px;font-size:12px">' + (s.pos_advice || '-') + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;color:' + wolfClr + '">' + wolfStr + '</td>';
+    if (isType3) {
+      const rk = s.hub_rank;
+      const rkLabels = {0:'⓪末端',1:'①首个',2:'②第二',3:'③第三'};
+      const rkColors = {0:'#f0883e',1:'#3fb950',2:'#d29922',3:'#8b949e'};
+      let rkStr = '-', rkClr = '#8b949e';
+      if (rk !== undefined && rk >= 0) {
+        rkStr = rkLabels[rk] || '⑤+第' + rk;
+        rkClr = rkColors[rk] || (rk <= 5 ? '#da3633' : '#6e7681');
+      }
+      r += '<td style="padding:6px 8px;text-align:center;font-size:12px;font-weight:600;color:' + rkClr + '">' + rkStr + '</td>';
+    }
+    r += '</tr>';
+    return r;
+  }
+
+  function wlTable(title, signals, isType3) {
+    let t = '<h4 style="color:#c9d1d9;margin:12px 0 6px;font-size:14px">' + title + '</h4>';
+    t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden;margin-bottom:6px">';
+    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
+    t += '<th style="padding:8px;text-align:left">时间</th>';
+    t += '<th style="padding:8px;text-align:left">标的</th>';
+    t += '<th style="padding:8px;text-align:center">类型</th>';
+    t += '<th style="padding:8px;text-align:center">状态</th>';
+    t += '<th style="padding:8px;text-align:center">置信度</th>';
+    t += '<th style="padding:8px;text-align:center">强弱</th>';
+    t += '<th style="padding:8px;text-align:left">仓位建议</th>';
+    t += '<th style="padding:8px;text-align:center">防狼</th>';
+    if (isType3) t += '<th style="padding:8px;text-align:center">位次</th>';
+    t += '</tr></thead><tbody>';
+    signals.forEach((s, i) => { t += wlSignalRow(s, i, isType3); });
+    const cols = isType3 ? 9 : 8;
+    if (signals.length === 0) {
+      t += '<tr><td colspan="' + cols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+    }
+    t += '</tbody></table>';
+    return t;
+  }
+
+  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 16px">';
+  h += '<h3 style="color:#c9d1d9;font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:6px">⭐ 自选股最新买卖点</h3>';
+  h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
+  levels.forEach(lv => {
+    const d = GLOBAL_SIGNALS[lv] || {};
+    const all = [...(d.type1||[]),...(d.type2||[]),...(d.type3||[])];
+    const filtered = all.filter(s => WATCHLIST_CODES.includes(s.etf_code));
+    const active = lv === wlActiveTab;
+    const bg = active ? '#21262d' : 'transparent';
+    const clr = active ? '#58a6ff' : '#8b949e';
+    const border = active ? '2px solid #58a6ff' : '2px solid transparent';
+    h += `<button onclick="wlActiveTab='${lv}';renderWatchlist()" style="padding:6px 16px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:13px;border-radius:6px 6px 0 0">${lv} (${filtered.length})</button>`;
+  });
+  h += '</div>';
+
+  const data = GLOBAL_SIGNALS[wlActiveTab] || {};
+  const t1 = (data.type1||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
+  const t2 = (data.type2||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
+  const t3 = (data.type3||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
+  h += wlTable('🔴 第一类买卖点（趋势背驰）', t1, false);
+  h += wlTable('🟠 第二类买卖点（回调确认）', t2, false);
+  h += wlTable('🔵 第三类买卖点（中枢突破）', t3, true);
+  h += '</div>';
   el.innerHTML = h;
 }
 renderWatchlist();
@@ -2420,44 +2485,119 @@ function loadChartData(key) {{
   }});
 }}
 
-// ─── Mobile Watchlist Panel (自选股) ───
+// ─── Mobile Watchlist Panel (自选股最新买卖点) ───
+let mWlTab = '30分钟';
 function renderMobileWatchlist() {{
   const el = document.getElementById('mobileWatchlist');
   if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) {{ el.innerHTML = ''; return; }}
-  const items = WATCHLIST_CODES.map(code => INDEX_LIST.find(x => x.etf_code === code)).filter(Boolean);
-  if (items.length === 0) {{ el.innerHTML = ''; return; }}
-  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 10px">';
-  h += '<div style="color:#c9d1d9;font-size:12px;font-weight:bold;margin-bottom:6px">⭐ 自选股</div>';
-  h += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
-  h += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;min-width:480px">';
-  h += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
-  h += '<th style="padding:4px 6px;text-align:left">标的</th>';
-  h += '<th style="padding:4px 6px;text-align:center">日线</th>';
-  h += '<th style="padding:4px 6px;text-align:center">30分</th>';
-  h += '<th style="padding:4px 6px;text-align:center">分</th>';
-  h += '<th style="padding:4px 6px;text-align:center">信号</th>';
-  h += '</tr></thead><tbody>';
-  items.forEach(idx => {{
-    const t = idx.trend || '';
-    const broken = t.includes('破坏');
-    const isUp = !broken && t.includes('上涨');
-    const isDn = !broken && t.includes('下跌');
-    const tIcon = broken ? '⚠' : isUp ? '<span style="color:#f85149">▲</span>' : isDn ? '<span style="color:#3fb950">▼</span>' : t.includes('盘整偏多') ? '<span style="color:#f0883e">◆↑</span>' : t.includes('盘整偏空') ? '<span style="color:#7ee787">◆↓</span>' : '<span style="color:#d29922">◆</span>';
-    const m30t = idx.m30_trend || '';
-    const m30Icon = m30t.includes('上涨') ? '<span style="color:#f85149">▲</span>' : m30t.includes('下跌') ? '<span style="color:#3fb950">▼</span>' : '<span style="color:#d29922">◆</span>';
-    const sc = idx.score || 0;
-    const scClr = sc >= 140 ? '#f85149' : (sc >= 110 ? '#d29922' : (sc >= 80 ? '#3fb950' : '#8b949e'));
-    const sig = idx.latest_signal || '-';
-    const sigClr = sig.includes('B') ? '#f85149' : (sig.includes('S') ? '#3fb950' : '#8b949e');
-    h += `<tr style="border-bottom:1px solid #21262d">`;
-    h += `<td style="padding:4px 6px;font-weight:600"><a href="javascript:void(0)" onclick="selectIndex('${{idx.etf_code}}')" style="color:#58a6ff;text-decoration:none">${{idx.index_name}}</a></td>`;
-    h += `<td style="padding:4px 6px;text-align:center">${{tIcon}}</td>`;
-    h += `<td style="padding:4px 6px;text-align:center">${{m30Icon}}</td>`;
-    h += `<td style="padding:4px 6px;text-align:center;color:${{scClr}};font-weight:bold">${{sc}}</td>`;
-    h += `<td style="padding:4px 6px;text-align:center;color:${{sigClr}};font-weight:bold">${{sig}}</td>`;
-    h += `</tr>`;
+
+  const levels = ['日线', '30分钟', '5分钟'];
+  const hasAny = levels.some(lv => {{
+    const d = GLOBAL_SIGNALS[lv]; if (!d) return false;
+    const all = [...(d.type1||[]),...(d.type2||[]),...(d.type3||[])];
+    return all.some(s => WATCHLIST_CODES.includes(s.etf_code));
   }});
-  h += '</tbody></table></div></div>';
+  if (!hasAny) {{ el.innerHTML = ''; return; }}
+
+  const confIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
+  const tClrs = {{'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950', 'PB': '#f85149', 'PS': '#3fb950'}};
+  const strMap = {{strongest: '🔥最强', strong: '💪强', standard: '📌标准', weak: '⚠弱'}};
+
+  function mWlRow(s, i, isType3) {{
+    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+    const tc = tClrs[s.type] || '#c9d1d9';
+    let confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
+    if (s.conf_score !== undefined && s.conf_score !== null) confStr += '<span style="color:#8b949e;font-size:9px">(' + s.conf_score + ')</span>';
+    let strStr = strMap[s.strength] || s.strength || '-';
+    if (s.str_score !== undefined && s.str_score !== null) strStr += '<span style="color:#8b949e;font-size:9px">(' + s.str_score + ')</span>';
+    const dtShort = s.dt ? s.dt.substring(5) : '-';
+    const inv = s.status === 'invalidated';
+    const pending = s.status === 'pending';
+    const rowOpacity = inv ? 'opacity:0.45;' : '';
+    const strike = inv ? 'text-decoration:line-through;' : '';
+    const mBuyType = ['1B','2B','3B','PB'].includes(s.type);
+    const mConfClr = mBuyType ? '#f85149' : '#3fb950';
+    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mConfClr + ';margin-left:2px">✓</span>');
+    const mIdxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
+    const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
+    const _mBk = mTrend.includes('破坏');
+    const _mUp = !_mBk && mTrend.includes('上涨');
+    const _mDn = !_mBk && mTrend.includes('下跌');
+    const _mPanUp = !_mBk && !_mUp && !_mDn && mTrend.includes('盘整偏多');
+    const _mPanDn = !_mBk && !_mUp && !_mDn && mTrend.includes('盘整偏空');
+    const _mPan = !_mBk && !_mUp && !_mDn && !_mPanUp && !_mPanDn && mTrend.includes('盘整');
+    const mTrendIcon = _mBk ? '<span style="color:#e3b341">⚠</span>'
+      : _mUp ? '<span style="color:#f85149">▲</span>'
+      : _mDn ? '<span style="color:#3fb950">▼</span>'
+      : _mPanUp ? '<span style="color:#f0883e">◆↑</span>'
+      : _mPanDn ? '<span style="color:#7ee787">◆↓</span>'
+      : _mPan ? '<span style="color:#d29922">◆</span>'
+      : '<span style="color:#8b949e">—</span>';
+    let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
+    r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
+    r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{strStr}}</td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{confStr}}</td>`;
+    if (isType3) {{
+      const rk = s.hub_rank;
+      const rkL = {{0:'⓪',1:'①',2:'②',3:'③'}};
+      const rkC = {{0:'#f0883e',1:'#3fb950',2:'#d29922',3:'#8b949e'}};
+      let rkS = '-', rkClr = '#8b949e';
+      if (rk !== undefined && rk >= 0) {{
+        rkS = rkL[rk] || '⑤+';
+        rkClr = rkC[rk] || (rk <= 5 ? '#da3633' : '#6e7681');
+      }}
+      r += `<td style="padding:3px 4px;text-align:center;font-size:10px;font-weight:600;color:${{rkClr}}">${{rkS}}</td>`;
+    }}
+    r += '</tr>';
+    return r;
+  }}
+
+  function mWlTable(title, signals, isType3) {{
+    let t = '<div style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px">' + title + ' (' + signals.length + ')</div>';
+    t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+    t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
+    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
+    t += '<th style="padding:4px;text-align:left">时间</th>';
+    t += '<th style="padding:4px;text-align:left">标的</th>';
+    t += '<th style="padding:4px;text-align:center">类型</th>';
+    t += '<th style="padding:4px;text-align:center">强度</th>';
+    t += '<th style="padding:4px;text-align:center">置信</th>';
+    if (isType3) t += '<th style="padding:4px;text-align:center">位次</th>';
+    t += '</tr></thead><tbody>';
+    const cols = isType3 ? 6 : 5;
+    signals.forEach((s, i) => {{ t += mWlRow(s, i, isType3); }});
+    if (signals.length === 0) {{
+      t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;
+    }}
+    t += '</tbody></table></div>';
+    return t;
+  }}
+
+  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 10px">';
+  h += '<div style="color:#c9d1d9;font-size:12px;font-weight:bold;margin-bottom:6px">⭐ 自选股最新买卖点</div>';
+  h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
+  levels.forEach(lv => {{
+    const d = GLOBAL_SIGNALS[lv] || {{}};
+    const all = [...(d.type1||[]),...(d.type2||[]),...(d.type3||[])];
+    const filtered = all.filter(s => WATCHLIST_CODES.includes(s.etf_code));
+    const active = lv === mWlTab;
+    const bg = active ? '#21262d' : 'transparent';
+    const clr = active ? '#58a6ff' : '#8b949e';
+    const border = active ? '2px solid #58a6ff' : '2px solid transparent';
+    h += `<button onclick="mWlTab='${{lv}}';renderMobileWatchlist()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{filtered.length}})</button>`;
+  }});
+  h += '</div>';
+
+  const data = GLOBAL_SIGNALS[mWlTab] || {{}};
+  const t1 = (data.type1||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
+  const t2 = (data.type2||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
+  const t3 = (data.type3||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
+  h += mWlTable('🔴 第一类买卖点', t1, false);
+  h += mWlTable('🟠 第二类买卖点', t2, false);
+  h += mWlTable('🔵 第三类买卖点', t3, true);
+  h += '</div>';
   el.innerHTML = h;
 }}
 renderMobileWatchlist();
