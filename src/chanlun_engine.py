@@ -3090,7 +3090,6 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
       7. expansion_risk (P1): probability that 3B leads to hub expansion
     """
     stm = stroke_to_seg or {}
-    last_stroke = hub.strokes[-1]
     hub_range = hub.zg - hub.zd if hub.zg > hub.zd else 1e-9
 
     def _classify_departure_pullback_buy(breakout_stroke, pullback):
@@ -3445,22 +3444,17 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
     post_hub = [s for s in strokes
                 if s.idx > hub_end_idx and s.idx < scan_limit]
 
-    # --- Single-stroke check (fires early) ---
+    # --- Single-stroke check ---
+    # Only scan post-hub strokes (not hub-internal strokes) for departure.
     single_found = False
-    if last_stroke.direction == 1 and last_stroke.end.high > hub.zg:
-        pullback = _find_next_stroke(strokes, last_stroke.idx, direction=-1)
-        if pullback and pullback.end.low > hub.zg:
-            points.append(_make_3b(last_stroke, pullback))
-            single_found = True
-
-    if not single_found:
-        for s in post_hub:
-            if s.direction == 1 and s.end.high > hub.zg:
-                pullback = _find_next_stroke(strokes, s.idx, direction=-1)
-                if pullback and pullback.end.low > hub.zg:
-                    points.append(_make_3b(s, pullback))
-                    single_found = True
-                break
+    for s in post_hub:
+        if s.direction == 1 and s.end.high > hub.zg:
+            pullback = _find_next_stroke(
+                strokes, s.idx, direction=-1, before_idx=scan_limit)
+            if pullback and pullback.end.low > hub.zg:
+                points.append(_make_3b(s, pullback))
+                single_found = True
+            break
 
     # --- Multi-stroke scan: complete sub-level departure + pullback ---
     # Collect all strokes after hub that remain above ZG.
@@ -3506,7 +3500,6 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
     Mirror of _check_type3_buy for the sell side.
     """
     stm = stroke_to_seg or {}
-    last_stroke = hub.strokes[-1]
     hub_range = hub.zg - hub.zd if hub.zg > hub.zd else 1e-9
 
     def _classify_departure_pullback_sell(breakdown_stroke, rally):
@@ -3832,21 +3825,16 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                 if s.idx > hub_end_idx and s.idx < scan_limit]
 
     # --- Single-stroke check ---
+    # Only scan post-hub strokes (not hub-internal strokes) for departure.
     single_found = False
-    if last_stroke.direction == -1 and last_stroke.end.low < hub.zd:
-        rally = _find_next_stroke(strokes, last_stroke.idx, direction=1)
-        if rally and rally.end.high < hub.zd:
-            points.append(_make_3s(last_stroke, rally))
-            single_found = True
-
-    if not single_found:
-        for s in post_hub:
-            if s.direction == -1 and s.end.low < hub.zd:
-                rally = _find_next_stroke(strokes, s.idx, direction=1)
-                if rally and rally.end.high < hub.zd:
-                    points.append(_make_3s(s, rally))
-                    single_found = True
-                break
+    for s in post_hub:
+        if s.direction == -1 and s.end.low < hub.zd:
+            rally = _find_next_stroke(
+                strokes, s.idx, direction=1, before_idx=scan_limit)
+            if rally and rally.end.high < hub.zd:
+                points.append(_make_3s(s, rally))
+                single_found = True
+            break
 
     # --- Multi-stroke scan: complete sub-level departure + pullback ---
     below_zd: list[Stroke] = []
@@ -3889,8 +3877,11 @@ def _find_stroke_by_dt(strokes: list[Stroke], dt: str) -> Optional[Stroke]:
 
 
 def _find_next_stroke(strokes: list[Stroke], after_idx: int,
-                      direction: int) -> Optional[Stroke]:
+                      direction: int,
+                      before_idx: int | None = None) -> Optional[Stroke]:
     for s in strokes:
+        if before_idx is not None and s.idx >= before_idx:
+            break
         if s.idx > after_idx and s.direction == direction:
             return s
     return None
