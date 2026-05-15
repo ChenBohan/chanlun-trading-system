@@ -2273,6 +2273,7 @@ def generate_mobile_dashboard(data_dir: str = None,
             _wl_m = json.load(wf)
             watchlist_codes_m = [item["etf_code"] for item in _wl_m.get("watchlist", [])]
     watchlist_codes_json = json.dumps(watchlist_codes_m, ensure_ascii=False)
+    _wl_codes_set_m = set(watchlist_codes_m)
 
     # Collect global signals for mobile (same logic as desktop)
     level_labels_m = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
@@ -2331,6 +2332,28 @@ def generate_mobile_dashboard(data_dir: str = None,
             mobile_gs_by_level_type[lv][bucket].append(s)
     mobile_global_signals_top = mobile_gs_by_level_type
     mobile_global_signals_json = json.dumps(mobile_global_signals_top, ensure_ascii=False)
+
+    # Build watchlist-specific signals for mobile (pre-filtered)
+    mobile_wl_type_limits = {"type1": 10, "type2": 10, "type3": 30}
+    mobile_wl_signals: dict[str, dict[str, list]] = {
+        lv: {"type1": [], "type2": [], "type3": []} for lv in mobile_levels
+    }
+    if _wl_codes_set_m:
+        for s in mobile_global_signals:
+            if s["etf_code"] not in _wl_codes_set_m:
+                continue
+            lv = s["level"]
+            if lv not in mobile_wl_signals:
+                continue
+            if s["type"] in ("1B", "1S"):
+                bucket = "type1"
+            elif s["type"] in ("2B", "2S"):
+                bucket = "type2"
+            else:
+                bucket = "type3"
+            if len(mobile_wl_signals[lv][bucket]) < mobile_wl_type_limits[bucket]:
+                mobile_wl_signals[lv][bucket].append(s)
+    mobile_watchlist_signals_json = json.dumps(mobile_wl_signals, ensure_ascii=False)
 
     tab_parts = []
     last_type = None
@@ -2493,6 +2516,7 @@ const DATA_KEYS = {data_keys_json};
 const INDEX_LIST = {index_list_json};
 const SYNTHESIS = {synthesis_json};
 const GLOBAL_SIGNALS = {mobile_global_signals_json};
+const WATCHLIST_SIGNALS = {mobile_watchlist_signals_json};
 const WATCHLIST_CODES = {watchlist_codes_json};
 function getChartData(key) {{ return DATA_CACHE[key] || null; }}
 
