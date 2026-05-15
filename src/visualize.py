@@ -364,6 +364,7 @@ const DATA_KEYS = __ALL_DATA_JSON__;
 const INDEX_LIST = __INDEX_LIST_JSON__;
 const SYNTHESIS = __SYNTHESIS_JSON__;
 const GLOBAL_SIGNALS = __GLOBAL_SIGNALS_JSON__;
+const WATCHLIST_SIGNALS = __WATCHLIST_SIGNALS_JSON__;
 const WATCHLIST_CODES = __WATCHLIST_CODES_JSON__;
 
 function getChartData(key) { return DATA_CACHE[key] || null; }
@@ -391,9 +392,8 @@ function renderWatchlist() {
 
   const levels = ['日线', '30分钟', '5分钟'];
   const hasAny = levels.some(lv => {
-    const d = GLOBAL_SIGNALS[lv]; if (!d) return false;
-    const all = [...(d.type1||[]),...(d.type2||[]),...(d.type3||[])];
-    return all.some(s => WATCHLIST_CODES.includes(s.etf_code));
+    const d = WATCHLIST_SIGNALS[lv]; if (!d) return false;
+    return (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length > 0;
   });
   if (!hasAny) { el.innerHTML = ''; return; }
 
@@ -487,21 +487,20 @@ function renderWatchlist() {
   h += '<h3 style="color:#c9d1d9;font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:6px">⭐ 自选股最新买卖点</h3>';
   h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
   levels.forEach(lv => {
-    const d = GLOBAL_SIGNALS[lv] || {};
-    const all = [...(d.type1||[]),...(d.type2||[]),...(d.type3||[])];
-    const filtered = all.filter(s => WATCHLIST_CODES.includes(s.etf_code));
+    const d = WATCHLIST_SIGNALS[lv] || {};
+    const cnt = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
     const active = lv === wlActiveTab;
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
     const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="wlActiveTab='${lv}';renderWatchlist()" style="padding:6px 16px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:13px;border-radius:6px 6px 0 0">${lv} (${filtered.length})</button>`;
+    h += `<button onclick="wlActiveTab='${lv}';renderWatchlist()" style="padding:6px 16px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:13px;border-radius:6px 6px 0 0">${lv} (${cnt})</button>`;
   });
   h += '</div>';
 
-  const data = GLOBAL_SIGNALS[wlActiveTab] || {};
-  const t1 = (data.type1||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
-  const t2 = (data.type2||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
-  const t3 = (data.type3||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
+  const data = WATCHLIST_SIGNALS[wlActiveTab] || {};
+  const t1 = data.type1 || [];
+  const t2 = data.type2 || [];
+  const t3 = data.type3 || [];
   h += wlTable('🔴 第一类买卖点（趋势背驰）', t1, false);
   h += wlTable('🟠 第二类买卖点（回调确认）', t2, false);
   h += wlTable('🔵 第三类买卖点（中枢突破）', t3, true);
@@ -2150,6 +2149,33 @@ def generate_dashboard(data_dir: str = None,
             global_signals_by_level_type[lv][bucket].append(s)
     global_signals_top = global_signals_by_level_type
 
+    # Build watchlist-specific signals (pre-filtered, generous limits)
+    _wl_path_early = os.path.join(_PROJECT_ROOT, "config", "watchlist.json")
+    _wl_codes_set: set[str] = set()
+    if os.path.exists(_wl_path_early):
+        with open(_wl_path_early, "r", encoding="utf-8") as wf:
+            _wl_early = json.load(wf)
+            _wl_codes_set = {item["etf_code"] for item in _wl_early.get("watchlist", [])}
+    wl_type_limits = {"type1": 10, "type2": 10, "type3": 30}
+    watchlist_signals_by_level: dict[str, dict[str, list]] = {
+        lv: {"type1": [], "type2": [], "type3": []} for lv in levels
+    }
+    if _wl_codes_set:
+        for s in global_signals:
+            if s["etf_code"] not in _wl_codes_set:
+                continue
+            lv = s["level"]
+            if lv not in watchlist_signals_by_level:
+                continue
+            if s["type"] in ("1B", "1S"):
+                bucket = "type1"
+            elif s["type"] in ("2B", "2S"):
+                bucket = "type2"
+            else:
+                bucket = "type3"
+            if len(watchlist_signals_by_level[lv][bucket]) < wl_type_limits[bucket]:
+                watchlist_signals_by_level[lv][bucket].append(s)
+
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
     html = html.replace("__DATA_TIME__", latest_data_time or "-")
@@ -2172,14 +2198,10 @@ def generate_dashboard(data_dir: str = None,
     html = html.replace("__INDEX_LIST_JSON__", json.dumps(index_list, ensure_ascii=False))
     html = html.replace("__SYNTHESIS_JSON__", json.dumps(synthesis_data, ensure_ascii=False))
     html = html.replace("__GLOBAL_SIGNALS_JSON__", json.dumps(global_signals_top, ensure_ascii=False))
+    html = html.replace("__WATCHLIST_SIGNALS_JSON__", json.dumps(watchlist_signals_by_level, ensure_ascii=False))
 
     # Watchlist codes injection
-    watchlist_codes = []
-    _wl_path = os.path.join(_PROJECT_ROOT, "config", "watchlist.json")
-    if os.path.exists(_wl_path):
-        with open(_wl_path, "r", encoding="utf-8") as wf:
-            _wl = json.load(wf)
-            watchlist_codes = [item["etf_code"] for item in _wl.get("watchlist", [])]
+    watchlist_codes = list(_wl_codes_set)
     html = html.replace("__WATCHLIST_CODES_JSON__", json.dumps(watchlist_codes, ensure_ascii=False))
 
     with open(output_path, "w", encoding="utf-8") as f:
@@ -2493,9 +2515,8 @@ function renderMobileWatchlist() {{
 
   const levels = ['日线', '30分钟', '5分钟'];
   const hasAny = levels.some(lv => {{
-    const d = GLOBAL_SIGNALS[lv]; if (!d) return false;
-    const all = [...(d.type1||[]),...(d.type2||[]),...(d.type3||[])];
-    return all.some(s => WATCHLIST_CODES.includes(s.etf_code));
+    const d = WATCHLIST_SIGNALS[lv]; if (!d) return false;
+    return (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length > 0;
   }});
   if (!hasAny) {{ el.innerHTML = ''; return; }}
 
@@ -2579,21 +2600,20 @@ function renderMobileWatchlist() {{
   h += '<div style="color:#c9d1d9;font-size:12px;font-weight:bold;margin-bottom:6px">⭐ 自选股最新买卖点</div>';
   h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
   levels.forEach(lv => {{
-    const d = GLOBAL_SIGNALS[lv] || {{}};
-    const all = [...(d.type1||[]),...(d.type2||[]),...(d.type3||[])];
-    const filtered = all.filter(s => WATCHLIST_CODES.includes(s.etf_code));
+    const d = WATCHLIST_SIGNALS[lv] || {{}};
+    const cnt = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
     const active = lv === mWlTab;
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
     const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="mWlTab='${{lv}}';renderMobileWatchlist()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{filtered.length}})</button>`;
+    h += `<button onclick="mWlTab='${{lv}}';renderMobileWatchlist()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{cnt}})</button>`;
   }});
   h += '</div>';
 
-  const data = GLOBAL_SIGNALS[mWlTab] || {{}};
-  const t1 = (data.type1||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
-  const t2 = (data.type2||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
-  const t3 = (data.type3||[]).filter(s => WATCHLIST_CODES.includes(s.etf_code));
+  const data = WATCHLIST_SIGNALS[mWlTab] || {{}};
+  const t1 = data.type1 || [];
+  const t2 = data.type2 || [];
+  const t3 = data.type3 || [];
   h += mWlTable('🔴 第一类买卖点', t1, false);
   h += mWlTable('🟠 第二类买卖点', t2, false);
   h += mWlTable('🔵 第三类买卖点', t3, true);

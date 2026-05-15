@@ -2749,16 +2749,18 @@ def find_buy_sell_points(
     # ── Wolf Prevention Filter (防狼术) ──
     _apply_wolf_filter(points, bars)
 
-    # ── Stale 3B/3S filter: suppress signals from the penultimate hub that
-    # appear at/below(above for 3S) the last hub's boundary. These signals
-    # are visually inside the current hub and no longer actionable. ──
+    # ── Stale 3B/3S filter: suppress signals from ANY earlier hub whose price
+    # falls below (3B) or above (3S) the last hub's boundary. These signals
+    # are visually engulfed by a subsequent hub and no longer actionable. ──
     if len(t3_hubs) >= 2:
         last_h = t3_hubs[-1]
-        pen_idx = t3_hubs[-2].idx
+        last_h_idx = last_h.idx
         points = [p for p in points
-                  if not (p.type == '3B' and p.hub_idx == pen_idx
+                  if not (p.type == '3B' and p.hub_idx is not None
+                          and p.hub_idx < last_h_idx
                           and p.price <= last_h.zd)
-                  and not (p.type == '3S' and p.hub_idx == pen_idx
+                  and not (p.type == '3S' and p.hub_idx is not None
+                           and p.hub_idx < last_h_idx
                            and p.price >= last_h.zg)]
 
     return points
