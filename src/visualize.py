@@ -336,7 +336,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 <div id="watchlist-panel" style="margin:8px 32px 16px;overflow-x:auto"></div>
 
-<div id="global-signals-table" style="margin:0 32px 16px;overflow-x:auto"></div>
+<div id="global-signals-table" style="margin:0 32px 16px"></div>
 
 <div style="display:flex;align-items:center;margin:24px 32px 0;gap:12px">
   <h2 style="color:#c9d1d9;font-size:17px;margin:0">📈 技术分析详情</h2>
@@ -646,6 +646,9 @@ function renderGlobalSignals() {
   h += makeTable('🔴 第一类买卖点（趋势背驰，最新5个）', data.type1 || [], false);
   h += makeTable('🟠 第二类买卖点（回调确认，最新5个）', data.type2 || [], false);
   h += makeTable('🔵 第三类买卖点（中枢突破，最新20个）', data.type3 || [], true);
+  h += '</div>'; // close content wrapper
+  } // end if gsExpanded
+  h += '</div>'; // close outer container
   el.innerHTML = h;
 }
 
@@ -2671,6 +2674,7 @@ function renderMobileWatchlist() {{
 renderMobileWatchlist();
 
 let mgsTab = '30分钟';
+let mgsExpanded = false;
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
   const levels = ['日线', '30分钟', '5分钟'];
@@ -2678,6 +2682,16 @@ function renderMobileGlobalSignals() {{
   const tClrs = {{'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'}};
 
   const strMap = {{strongest: '🔥最强', strong: '💪强', standard: '📌标准', weak: '⚠弱'}};
+
+  let totalAll = 0, buyCnt = 0, sellCnt = 0;
+  levels.forEach(lv => {{
+    const d = GLOBAL_SIGNALS[lv] || {{}};
+    ['type1','type2','type3'].forEach(k => {{
+      const arr = d[k] || [];
+      totalAll += arr.length;
+      arr.forEach(s => {{ if (s.type && s.type.endsWith('B')) buyCnt++; else sellCnt++; }});
+    }});
+  }});
   function mgsRow(s, i, isType3) {{
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tc = tClrs[s.type] || '#c9d1d9';
@@ -2750,7 +2764,18 @@ function renderMobileGlobalSignals() {{
     return t;
   }}
 
-  let h = '<div style="font-size:13px;font-weight:bold;color:#c9d1d9;margin-bottom:4px">📡 最新买卖点</div>';
+  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden">';
+  h += '<div onclick="mgsExpanded=!mgsExpanded;renderMobileGlobalSignals()" style="display:flex;align-items:center;padding:8px 10px;cursor:pointer;user-select:none">';
+  h += '<span style="color:#c9d1d9;font-size:12px;font-weight:bold;flex:1">📡 全部最新买卖点';
+  h += ' <span style="font-size:10px;color:#8b949e;font-weight:400">' + totalAll + '个';
+  if (buyCnt > 0) h += ' · <span style="color:#f85149">' + buyCnt + '买</span>';
+  if (sellCnt > 0) h += ' · <span style="color:#3fb950">' + sellCnt + '卖</span>';
+  h += '</span></span>';
+  h += '<span style="color:#8b949e;font-size:10px;transition:transform 0.2s;transform:rotate(' + (mgsExpanded ? '180' : '0') + 'deg)">▼</span>';
+  h += '</div>';
+
+  if (mgsExpanded) {{
+  h += '<div style="padding:0 10px 8px">';
   h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
   levels.forEach(lv => {{
     const d = GLOBAL_SIGNALS[lv] || {{}};
@@ -2767,6 +2792,9 @@ function renderMobileGlobalSignals() {{
   h += mgsTable('🔴 第一类买卖点（最新5个）', data.type1 || [], false);
   h += mgsTable('🟠 第二类买卖点（最新5个）', data.type2 || [], false);
   h += mgsTable('🔵 第三类买卖点（最新20个）', data.type3 || [], true);
+  h += '</div>';
+  }}
+  h += '</div>';
   el.innerHTML = h;
 }}
 renderMobileGlobalSignals();
