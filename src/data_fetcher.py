@@ -569,32 +569,27 @@ def _fetch_strategy(csv_path: str, period: str) -> str:
     latest_td = _latest_trading_date()
     market_closed = _is_cn_market_closed()
 
-    if period == "daily":
-        if last_date == latest_td and market_closed:
-            return _SKIP
-        if last_date >= latest_td:
-            return _SMALL
+    if last_date == latest_td and market_closed:
         try:
-            ld = datetime.strptime(last_date, "%Y-%m-%d")
-            ltd = datetime.strptime(latest_td, "%Y-%m-%d")
-            if (ltd - ld).days <= 5:
+            mtime = os.path.getmtime(csv_path)
+            mdt = datetime.fromtimestamp(mtime, tz=_TZ_CHINA)
+            if mdt.strftime("%Y-%m-%d") == latest_td and mdt.hour < 15:
                 return _SMALL
-        except ValueError:
+        except Exception:
             pass
-        return _FULL
-    else:
-        if last_date == latest_td and market_closed:
-            return _SKIP
-        if last_date >= latest_td:
+        return _SKIP
+
+    if last_date >= latest_td:
+        return _SMALL
+
+    try:
+        ld = datetime.strptime(last_date, "%Y-%m-%d")
+        ltd = datetime.strptime(latest_td, "%Y-%m-%d")
+        if (ltd - ld).days <= 5:
             return _SMALL
-        try:
-            ld = datetime.strptime(last_date, "%Y-%m-%d")
-            ltd = datetime.strptime(latest_td, "%Y-%m-%d")
-            if (ltd - ld).days <= 3:
-                return _SMALL
-        except ValueError:
-            pass
-        return _FULL
+    except ValueError:
+        pass
+    return _FULL
 
 
 def _merge_bars(existing_csv_path: str, new_bars: list[KlineBar]) -> list[KlineBar]:
