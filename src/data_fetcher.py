@@ -39,7 +39,8 @@ _TZ_CHINA = timezone(timedelta(hours=8))
 # ── Data source configuration ─────────────────────────────────────
 # Switch primary source: "eastmoney" or "sina"
 # The other becomes the automatic fallback.
-DATA_SOURCE_PRIMARY = "eastmoney"
+# Note: East Money may rate-limit frequent requests; Sina is more stable.
+DATA_SOURCE_PRIMARY = "sina"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -196,11 +197,23 @@ def _fetch_sina(sina_sym: str, scale: str, datalen: int = 1500,
 
 # ════════════════════════════════════════════════════════════════════
 # East Money API (Fallback)
+# Rate-limit guard: minimum 0.15s between consecutive EM requests
 # ════════════════════════════════════════════════════════════════════
+
+_em_last_call = 0.0
+_em_lock = threading.Lock()
+_EM_MIN_INTERVAL = 0.15
+
 
 def _fetch_eastmoney(secid: str, klt: str, beg: str, end: str,
                      max_retries: int = 3) -> list[KlineBar]:
     """Fetch K-line from East Money API."""
+    global _em_last_call
+    with _em_lock:
+        elapsed = time.monotonic() - _em_last_call
+        if elapsed < _EM_MIN_INTERVAL:
+            time.sleep(_EM_MIN_INTERVAL - elapsed)
+        _em_last_call = time.monotonic()
     params = {
         "fields1": "f1,f2,f3,f4,f5,f6",
         "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
@@ -426,10 +439,8 @@ def fetch_kline(code: str, period: str, market: str = "",
                 beg: str = "", datalen: int = 1500) -> list[KlineBar]:
     """Fetch K-line data for an ETF or stock.
 
-    Data source priority:
-      1. Sina Finance API (primary, good for ETFs and stocks)
-      2. East Money API (fallback)
-      3. BaoStock (fallback for individual stocks only; weak ETF coverage)
+    Data source order is controlled by DATA_SOURCE_PRIMARY ("eastmoney"/"sina").
+    Fallback chain: primary → secondary → BaoStock (stocks only).
 
     Args:
         code: ETF/stock code, e.g. "510300"
@@ -443,20 +454,40 @@ def fetch_kline(code: str, period: str, market: str = "",
         raise ValueError(f"Unknown period: {period}. Use: {list(PERIOD_MAP.keys())}")
 
     sina_sym = _sina_symbol(code, market)
-    bars = _fetch_sina(sina_sym, cfg["sina_scale"], datalen=datalen)
+    secid = _eastmoney_secid(code, market)
+    end_date = datetime.now().strftime("%Y%m%d")
+    em_beg = beg or "20250101"
+    source_used = None
 
-    if not bars:
-        print(f"    Sina empty for {sina_sym}/{period}, trying EastMoney...")
-        end = datetime.now().strftime("%Y%m%d")
-        secid = _eastmoney_secid(code, market)
-        bars = _fetch_eastmoney(secid, cfg["em_klt"], beg or "20250101", end)
+    if DATA_SOURCE_PRIMARY == "eastmoney":
+        bars = _fetch_eastmoney(secid, cfg["em_klt"], em_beg, end_date)
+        if bars:
+            source_used = "eastmoney"
+        else:
+            print(f"    EM empty for {secid}/{period}, fallback to Sina...")
+            bars = _fetch_sina(sina_sym, cfg["sina_scale"], datalen=datalen)
+            if bars:
+                source_used = "sina"
+    else:
+        bars = _fetch_sina(sina_sym, cfg["sina_scale"], datalen=datalen)
+        if bars:
+            source_used = "sina"
+        else:
+            print(f"    Sina empty for {sina_sym}/{period}, fallback to EM...")
+            bars = _fetch_eastmoney(secid, cfg["em_klt"], em_beg, end_date)
+            if bars:
+                source_used = "eastmoney"
 
     if not bars and not _is_etf(code):
-        print(f"    EastMoney also empty for {code}/{period}, trying BaoStock...")
+        print(f"    Both Sina & EM empty for {code}/{period}, trying BaoStock...")
         bars = _fetch_baostock(code, period, market, beg)
+        if bars:
+            source_used = "baostock"
 
-    # For daily K-line from Sina, append today's provisional bar if missing
-    if bars and period == "daily":
+    # Sina daily K-line does NOT include today's in-progress bar;
+    # supplement it via the real-time quote API.
+    # EastMoney already includes today's bar, so skip this for EM source.
+    if bars and period == "daily" and source_used != "eastmoney":
         today_str = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
         last_date = bars[-1].datetime.split(" ")[0]
         if last_date < today_str:

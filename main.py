@@ -27,11 +27,15 @@ def cmd_fetch(args):
         load_index_watchlist, fetch_all_indices,
         save_fetch_results, print_fetch_summary,
     )
+    import src.data_fetcher as _df
+
+    if getattr(args, 'source', None):
+        _df.DATA_SOURCE_PRIMARY = args.source
 
     print("=" * 60)
     print("缠论交易系统 v2 — 数据拉取")
     print(f"级别：日线（方向）→ 30分钟（买卖点）→ 5分钟（择时）")
-    print(f"起始日期：{args.beg}")
+    print(f"起始日期：{args.beg}  |  数据源：{_df.DATA_SOURCE_PRIMARY}")
     print("=" * 60)
 
     indices = load_index_watchlist()
@@ -142,13 +146,17 @@ def cmd_run(args):
         load_index_watchlist, fetch_all_indices,
         save_fetch_results, print_fetch_summary,
     )
+    import src.data_fetcher as _df
     from src.visualize import (
         generate_mobile_dashboard,
         run_analysis_pipeline,
     )
 
+    if getattr(args, 'source', None):
+        _df.DATA_SOURCE_PRIMARY = args.source
+
     print("=" * 60)
-    print("缠论交易系统 v2 — 完整流水线")
+    print(f"缠论交易系统 v2 — 完整流水线  |  数据源：{_df.DATA_SOURCE_PRIMARY}")
     print("=" * 60)
 
     t_start = _time.perf_counter()
@@ -204,6 +212,8 @@ def main():
                          help="并发线程数 (默认: 8)")
     p_fetch.add_argument("--force", action="store_true",
                          help="跳过增量检查，强制全量拉取")
+    p_fetch.add_argument("--source", choices=["sina", "eastmoney"], default=None,
+                         help="主数据源 (默认: 代码中的配置)")
 
     # analyze
     p_analyze = sub.add_parser("analyze", help="分析单个CSV文件")
@@ -235,6 +245,8 @@ def main():
                         help=f"分析阶段并行进程数 (默认: {_default_analyze}, 0=串行)")
     p_run.add_argument("--force", action="store_true",
                         help="跳过增量检查，强制全量拉取")
+    p_run.add_argument("--source", choices=["sina", "eastmoney"], default=None,
+                        help="主数据源 (默认: 代码中的配置)")
 
     args = parser.parse_args()
 
