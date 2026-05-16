@@ -6,8 +6,12 @@ Fetches K-line data for index ETFs at three timeframes:
   - 30-min  (operation level)
   - 5-min   (precision level)
 
-Primary: Sina Finance API (stable, no IP restrictions, up to 2000 bars)
-Fallback: East Money API (richer fields, may block non-browser IPs)
+Data source priority is configurable via DATA_SOURCE_PRIMARY:
+  "eastmoney" (default) — more accurate close prices (includes auction),
+                          returns today's incomplete daily bar during market hours
+  "sina"                — stable, no IP restrictions, up to 2000 bars,
+                          but needs _fetch_realtime_bar supplement for daily
+Fallback: the other source, then BaoStock for individual stocks.
 """
 
 from __future__ import annotations
@@ -31,6 +35,11 @@ except ImportError:
     _HAS_BAOSTOCK = False
 
 _TZ_CHINA = timezone(timedelta(hours=8))
+
+# ── Data source configuration ─────────────────────────────────────
+# Switch primary source: "eastmoney" or "sina"
+# The other becomes the automatic fallback.
+DATA_SOURCE_PRIMARY = "eastmoney"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -228,8 +237,12 @@ def _fetch_eastmoney(secid: str, klt: str, beg: str, end: str,
     bars = []
     for line in data["data"]["klines"]:
         p = line.split(",")
+        dt = p[0]
+        # EM intraday returns "YYYY-MM-DD HH:MM"; normalize to "HH:MM:00"
+        if " " in dt and dt.count(":") == 1:
+            dt += ":00"
         bars.append(KlineBar(
-            datetime=p[0],
+            datetime=dt,
             open=float(p[1]), close=float(p[2]),
             high=float(p[3]), low=float(p[4]),
             volume=int(p[5]),
