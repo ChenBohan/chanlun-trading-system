@@ -42,6 +42,7 @@ def cmd_fetch(args):
     results = fetch_all_indices(
         indices=indices, beg=args.beg,
         delay=args.delay, max_workers=args.workers,
+        force=getattr(args, 'force', False),
     )
     print_fetch_summary(results)
 
@@ -159,6 +160,7 @@ def cmd_run(args):
     results = fetch_all_indices(
         indices=indices, beg=args.beg,
         delay=args.delay, max_workers=args.workers,
+        force=args.force,
     )
     print_fetch_summary(results)
     save_fetch_results(results, fmt="csv")
@@ -200,6 +202,8 @@ def main():
                          help="API 调用间隔秒数 (默认: 0.2)")
     p_fetch.add_argument("--workers", type=int, default=8,
                          help="并发线程数 (默认: 8)")
+    p_fetch.add_argument("--force", action="store_true",
+                         help="跳过增量检查，强制全量拉取")
 
     # analyze
     p_analyze = sub.add_parser("analyze", help="分析单个CSV文件")
@@ -229,6 +233,8 @@ def main():
     p_run.add_argument("--analyze-workers", type=int, default=_default_analyze,
                         dest="analyze_workers",
                         help=f"分析阶段并行进程数 (默认: {_default_analyze}, 0=串行)")
+    p_run.add_argument("--force", action="store_true",
+                        help="跳过增量检查，强制全量拉取")
 
     args = parser.parse_args()
 

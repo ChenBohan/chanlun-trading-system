@@ -498,6 +498,143 @@ def load_settings(path: str = None) -> dict:
 
 
 # ════════════════════════════════════════════════════════════════════
+# Incremental Fetch Helpers
+# ════════════════════════════════════════════════════════════════════
+
+def _csv_last_datetime(csv_path: str) -> Optional[str]:
+    """Read last bar datetime from CSV file (fast: reads only tail)."""
+    if not os.path.exists(csv_path):
+        return None
+    try:
+        with open(csv_path, "rb") as f:
+            f.seek(0, 2)
+            fsize = f.tell()
+            pos = max(0, fsize - 512)
+            f.seek(pos)
+            tail = f.read().decode("utf-8", errors="ignore")
+        lines = tail.strip().split("\n")
+        for line in reversed(lines):
+            line = line.strip()
+            if line and not line.startswith("datetime"):
+                return line.split(",")[0]
+    except Exception:
+        pass
+    return None
+
+
+def _is_cn_market_closed() -> bool:
+    """Check if Chinese A-share market has closed for today's session."""
+    now = datetime.now(_TZ_CHINA)
+    if now.weekday() >= 5:
+        return True
+    return now.hour > 15 or (now.hour == 15 and now.minute >= 5)
+
+
+def _latest_trading_date() -> str:
+    """Estimate the latest trading date (YYYY-MM-DD). Not holiday-aware."""
+    now = datetime.now(_TZ_CHINA)
+    if now.weekday() >= 5:
+        days_back = now.weekday() - 4
+        d = now - timedelta(days=days_back)
+    elif now.hour < 9 or (now.hour == 9 and now.minute < 30):
+        d = now - timedelta(days=1)
+        while d.weekday() >= 5:
+            d -= timedelta(days=1)
+    else:
+        d = now
+    return d.strftime("%Y-%m-%d")
+
+
+_SKIP = "skip"
+_SMALL = "small"
+_FULL = "full"
+
+_SMALL_DATALEN_DAILY = 80
+_SMALL_DATALEN_INTRADAY = 300
+
+
+def _fetch_strategy(csv_path: str, period: str) -> str:
+    """Determine fetch strategy based on existing CSV freshness.
+
+    Returns _SKIP / _SMALL / _FULL.
+    - SKIP: data already complete, no API call needed
+    - SMALL: data is recent but may have incomplete last bar, fetch small window
+    - FULL: no data or very old, full fetch needed
+    """
+    last_dt = _csv_last_datetime(csv_path)
+    if not last_dt:
+        return _FULL
+
+    last_date = last_dt.split(" ")[0]
+    latest_td = _latest_trading_date()
+    market_closed = _is_cn_market_closed()
+
+    if period == "daily":
+        if last_date == latest_td and market_closed:
+            return _SKIP
+        if last_date >= latest_td:
+            return _SMALL
+        try:
+            ld = datetime.strptime(last_date, "%Y-%m-%d")
+            ltd = datetime.strptime(latest_td, "%Y-%m-%d")
+            if (ltd - ld).days <= 5:
+                return _SMALL
+        except ValueError:
+            pass
+        return _FULL
+    else:
+        if last_date == latest_td and market_closed:
+            return _SKIP
+        if last_date >= latest_td:
+            return _SMALL
+        try:
+            ld = datetime.strptime(last_date, "%Y-%m-%d")
+            ltd = datetime.strptime(latest_td, "%Y-%m-%d")
+            if (ltd - ld).days <= 3:
+                return _SMALL
+        except ValueError:
+            pass
+        return _FULL
+
+
+def _merge_bars(existing_csv_path: str, new_bars: list[KlineBar]) -> list[KlineBar]:
+    """Merge new bars into existing CSV data. New bars win on datetime collision."""
+    if not os.path.exists(existing_csv_path) or not new_bars:
+        return new_bars
+
+    existing = []
+    try:
+        with open(existing_csv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("datetime"):
+                    continue
+                parts = line.split(",")
+                if len(parts) >= 6:
+                    existing.append(KlineBar(
+                        datetime=parts[0],
+                        open=float(parts[1]),
+                        close=float(parts[2]),
+                        high=float(parts[3]),
+                        low=float(parts[4]),
+                        volume=int(float(parts[5])),
+                        amount=float(parts[6]) if len(parts) > 6 else 0.0,
+                        change_pct=float(parts[7]) if len(parts) > 7 else 0.0,
+                        change=float(parts[8]) if len(parts) > 8 else 0.0,
+                    ))
+    except Exception:
+        return new_bars
+
+    merged = OrderedDict()
+    for b in existing:
+        merged[b.datetime] = b
+    for b in new_bars:
+        merged[b.datetime] = b
+
+    return list(merged.values())
+
+
+# ════════════════════════════════════════════════════════════════════
 # Batch Fetch for All Indices
 # ════════════════════════════════════════════════════════════════════
 
@@ -506,18 +643,42 @@ _print_lock = threading.Lock()
 
 def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
                      beg: str, datalen_daily: int, datalen_intraday: int,
-                     delay: float) -> FetchResult:
-    """Fetch all 3 timeframes for a single index (runs in a worker thread)."""
+                     delay: float, data_dir: str = "",
+                     force: bool = False) -> FetchResult:
+    """Fetch all 3 timeframes for a single index (runs in a worker thread).
+
+    Supports incremental mode: checks existing CSV freshness and may
+    skip or use reduced datalen for indices with up-to-date data.
+    Set force=True to always do full fetch.
+    """
     result = FetchResult(index_cfg=idx)
     bar_counts = {}
+    skipped_all = True
+
+    csv_names = {"daily": "daily.csv", "30min": "30min.csv", "5min": "5min.csv"}
+    idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}") if data_dir else ""
 
     for period, label in [("daily", "日线"), ("30min", "30分钟"), ("5min", "5分钟")]:
+        csv_path = os.path.join(idx_dir, csv_names[period]) if idx_dir else ""
+
+        strategy = _FULL if force else _fetch_strategy(csv_path, period)
+
+        if strategy == _SKIP:
+            bar_counts[label] = "✓"
+            continue
+
+        skipped_all = False
         try:
-            dl = datalen_daily if period == "daily" else datalen_intraday
+            if strategy == _SMALL:
+                dl = _SMALL_DATALEN_DAILY if period == "daily" else _SMALL_DATALEN_INTRADAY
+            else:
+                dl = datalen_daily if period == "daily" else datalen_intraday
             bars = fetch_kline(
                 idx.etf_code, period,
                 market=idx.market, beg=beg, datalen=dl,
             )
+            if strategy == _SMALL and csv_path:
+                bars = _merge_bars(csv_path, bars)
             if period == "daily":
                 result.daily = bars
             elif period == "30min":
@@ -528,14 +689,16 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
         except Exception as e:
             msg = f"{idx.etf_name} {label}: {e}"
             result.errors.append(msg)
-            bar_counts[label] = f"ERR"
+            bar_counts[label] = "ERR"
 
-        if delay > 0:
+        if delay > 0 and not skipped_all:
             time.sleep(delay)
 
+    tag = " [skip]" if skipped_all else (" [incr]" if not force and any(
+        v == "✓" for v in bar_counts.values()) else "")
     summary = " | ".join(f"{k} {v}" for k, v in bar_counts.items())
     with _print_lock:
-        print(f"  [{seq}/{total}] {idx.etf_name} {idx.etf_code}: {summary}")
+        print(f"  [{seq}/{total}] {idx.etf_name} {idx.etf_code}: {summary}{tag}")
 
     return result
 
@@ -545,7 +708,8 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
                       datalen_daily: int = None,
                       datalen_intraday: int = None,
                       delay: float = 0.2,
-                      max_workers: int = 8) -> list[FetchResult]:
+                      max_workers: int = 8,
+                      force: bool = False) -> list[FetchResult]:
     """Fetch daily + 30min + 5min data for all indices (parallelized).
 
     Args:
@@ -555,6 +719,7 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
         datalen_intraday: max bars for intraday Sina (reads from config if None)
         delay: seconds between API calls within each worker thread
         max_workers: number of concurrent download threads (default 8)
+        force: bypass incremental mode, always full fetch
     """
     if indices is None:
         indices = load_index_watchlist()
@@ -566,8 +731,10 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
     if datalen_intraday is None:
         datalen_intraday = settings.get("datalen_intraday", 2000)
 
+    data_dir = os.path.join(_PROJECT_ROOT, "data")
+    mode = "全量" if force else "增量"
     total = len(indices)
-    print(f"\n并发拉取 {total} 个标的（{max_workers} 线程，间隔 {delay}s）...")
+    print(f"\n并发拉取 {total} 个标的（{max_workers} 线程，间隔 {delay}s，{mode}模式）...")
 
     ordered_results: list[FetchResult | None] = [None] * total
 
@@ -577,6 +744,7 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
             fut = executor.submit(
                 _fetch_one_index, idx, i + 1, total,
                 beg, datalen_daily, datalen_intraday, delay,
+                data_dir, force,
             )
             futures[fut] = i
 
