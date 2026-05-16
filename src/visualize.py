@@ -503,7 +503,7 @@ function renderWatchlist() {
   const t3 = data.type3 || [];
   h += wlTable('🔴 第一类买卖点（趋势背驰）', t1, false);
   h += wlTable('🟠 第二类买卖点（回调确认）', t2, false);
-  h += wlTable('🔵 第三类买卖点（中枢突破）', t3, true);
+  h += wlTable('🔵 第三类买卖点（中枢突破，最新10个）', t3, true);
   h += '</div>';
   el.innerHTML = h;
 }
@@ -511,6 +511,7 @@ renderWatchlist();
 
 // ─── Global Signals Table (tabbed by level, split into type-1/2/3 sub-tables) ───
 let gsActiveTab = '30分钟';
+let gsExpanded = false;
 function renderGlobalSignals() {
   const el = document.getElementById('global-signals-table');
   const levels = ['日线', '30分钟', '5分钟'];
@@ -522,6 +523,30 @@ function renderGlobalSignals() {
   const confIcons = {'high': '🔴高', 'medium': '🟡中', 'low': '⚪低'};
   const typeColors = {'1B': '#f85149', '2B': '#f85149', '3B': '#f85149', '1S': '#3fb950', '2S': '#3fb950', '3S': '#3fb950'};
   const strengthMap = {'strongest': '🔥最强', 'strong': '💪强势', 'standard': '📌标准', 'weak': '⚠弱'};
+
+  let totalAll = 0;
+  let buyCnt = 0, sellCnt = 0;
+  levels.forEach(lv => {
+    const d = GLOBAL_SIGNALS[lv] || {};
+    ['type1','type2','type3'].forEach(k => {
+      const arr = d[k] || [];
+      totalAll += arr.length;
+      arr.forEach(s => { if (s.type && s.type.endsWith('B')) buyCnt++; else sellCnt++; });
+    });
+  });
+
+  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden">';
+  h += '<div onclick="gsExpanded=!gsExpanded;renderGlobalSignals()" style="display:flex;align-items:center;padding:10px 16px;cursor:pointer;user-select:none">';
+  h += '<h3 style="color:#c9d1d9;font-size:15px;margin:0;flex:1;display:flex;align-items:center;gap:6px">📡 全部最新买卖点';
+  h += ' <span style="font-size:12px;color:#8b949e;font-weight:400">共 ' + totalAll + ' 个';
+  if (buyCnt > 0) h += ' · <span style="color:#f85149">' + buyCnt + '买</span>';
+  if (sellCnt > 0) h += ' · <span style="color:#3fb950">' + sellCnt + '卖</span>';
+  h += '</span></h3>';
+  h += '<span style="color:#8b949e;font-size:12px;transition:transform 0.2s;transform:rotate(' + (gsExpanded ? '180' : '0') + 'deg)">▼</span>';
+  h += '</div>';
+
+  if (gsExpanded) {
+    h += '<div style="padding:0 16px 12px">';
 
   function signalRow(s, i, isType3) {
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
@@ -605,7 +630,6 @@ function renderGlobalSignals() {
     return t;
   }
 
-  let h = '<h3 style="color:#c9d1d9;margin:0 0 8px;font-size:15px">📡 最新买卖点</h3>';
   h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
   levels.forEach(lv => {
     const d = GLOBAL_SIGNALS[lv] || {};
@@ -2156,7 +2180,7 @@ def generate_dashboard(data_dir: str = None,
         with open(_wl_path_early, "r", encoding="utf-8") as wf:
             _wl_early = json.load(wf)
             _wl_codes_set = {item["etf_code"] for item in _wl_early.get("watchlist", [])}
-    wl_type_limits = {"type1": 10, "type2": 10, "type3": 30}
+    wl_type_limits = {"type1": 10, "type2": 10, "type3": 10}
     watchlist_signals_by_level: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": []} for lv in levels
     }
@@ -2334,7 +2358,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     mobile_global_signals_json = json.dumps(mobile_global_signals_top, ensure_ascii=False)
 
     # Build watchlist-specific signals for mobile (pre-filtered)
-    mobile_wl_type_limits = {"type1": 10, "type2": 10, "type3": 30}
+    mobile_wl_type_limits = {"type1": 10, "type2": 10, "type3": 10}
     mobile_wl_signals: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": []} for lv in mobile_levels
     }
@@ -2640,7 +2664,7 @@ function renderMobileWatchlist() {{
   const t3 = data.type3 || [];
   h += mWlTable('🔴 第一类买卖点', t1, false);
   h += mWlTable('🟠 第二类买卖点', t2, false);
-  h += mWlTable('🔵 第三类买卖点', t3, true);
+  h += mWlTable('🔵 第三类买卖点（最新10个）', t3, true);
   h += '</div>';
   el.innerHTML = h;
 }}
