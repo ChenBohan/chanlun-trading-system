@@ -1,0 +1,3120 @@
+{
+  "source": "tonghuashun",
+  "update_time": "2026-05-18 01:51:08",
+  "classification_type": "THS (同花顺行业/概念分类)",
+  "industries": [
+    {
+      "key": "ths_881121",
+      "code": "881121",
+      "name": "半导体",
+      "top_stocks": [
+        {
+          "code": "688012",
+          "market": "SH",
+          "name": "中微公司",
+          "market_cap_yi": 2713.93
+        },
+        {
+          "code": "688072",
+          "market": "SH",
+          "name": "拓荆科技",
+          "market_cap_yi": 1498.1
+        },
+        {
+          "code": "600584",
+          "market": "SH",
+          "name": "长电科技",
+          "market_cap_yi": 1038.76
+        }
+      ]
+    },
+    {
+      "key": "ths_881273",
+      "code": "881273",
+      "name": "白酒",
+      "top_stocks": [
+        {
+          "code": "600519",
+          "market": "SH",
+          "name": "贵州茅台",
+          "market_cap_yi": 16692.1
+        },
+        {
+          "code": "000858",
+          "market": "SZ",
+          "name": "五粮液",
+          "market_cap_yi": 3371.87
+        },
+        {
+          "code": "600809",
+          "market": "SH",
+          "name": "山西汾酒",
+          "market_cap_yi": 1603.16
+        }
+      ]
+    },
+    {
+      "key": "ths_881131",
+      "code": "881131",
+      "name": "白色家电",
+      "top_stocks": [
+        {
+          "code": "002050",
+          "market": "SZ",
+          "name": "三花智控",
+          "market_cap_yi": 1917.99
+        },
+        {
+          "code": "000921",
+          "market": "SZ",
+          "name": "海信家电",
+          "market_cap_yi": 224.57
+        },
+        {
+          "code": "600619",
+          "market": "SH",
+          "name": "海立股份",
+          "market_cap_yi": 144.42
+        }
+      ]
+    },
+    {
+      "key": "ths_881156",
+      "code": "881156",
+      "name": "保险",
+      "top_stocks": [
+        {
+          "code": "601628",
+          "market": "SH",
+          "name": "中国人寿",
+          "market_cap_yi": 7363.2
+        },
+        {
+          "code": "601318",
+          "market": "SH",
+          "name": "中国平安",
+          "market_cap_yi": 5916.34
+        },
+        {
+          "code": "601319",
+          "market": "SH",
+          "name": "中国人保",
+          "market_cap_yi": 2470.64
+        }
+      ]
+    },
+    {
+      "key": "ths_881138",
+      "code": "881138",
+      "name": "包装印刷",
+      "top_stocks": [
+        {
+          "code": "002565",
+          "market": "SZ",
+          "name": "顺灏股份",
+          "market_cap_yi": 199.27
+        },
+        {
+          "code": "300260",
+          "market": "SZ",
+          "name": "新莱应材",
+          "market_cap_yi": 182.45
+        },
+        {
+          "code": "003018",
+          "market": "SZ",
+          "name": "金富科技",
+          "market_cap_yi": 140.39
+        }
+      ]
+    },
+    {
+      "key": "ths_881174",
+      "code": "881174",
+      "name": "厨卫电器",
+      "top_stocks": [
+        {
+          "code": "002508",
+          "market": "SZ",
+          "name": "老板电器",
+          "market_cap_yi": 167.29
+        },
+        {
+          "code": "603366",
+          "market": "SH",
+          "name": "日出东方",
+          "market_cap_yi": 68.78
+        },
+        {
+          "code": "300911",
+          "market": "SZ",
+          "name": "亿田智能",
+          "market_cap_yi": 59.97
+        }
+      ]
+    },
+    {
+      "key": "ths_881281",
+      "code": "881281",
+      "name": "电池",
+      "top_stocks": [
+        {
+          "code": "002709",
+          "market": "SZ",
+          "name": "天赐材料",
+          "market_cap_yi": 868.28
+        },
+        {
+          "code": "300953",
+          "market": "SZ",
+          "name": "震裕科技",
+          "market_cap_yi": 285.23
+        },
+        {
+          "code": "603026",
+          "market": "SH",
+          "name": "石大胜华",
+          "market_cap_yi": 234.21
+        }
+      ]
+    },
+    {
+      "key": "ths_881277",
+      "code": "881277",
+      "name": "电机",
+      "top_stocks": [
+        {
+          "code": "600580",
+          "market": "SH",
+          "name": "卧龙电驱",
+          "market_cap_yi": 630.53
+        },
+        {
+          "code": "603728",
+          "market": "SH",
+          "name": "鸣志电器",
+          "market_cap_yi": 272.23
+        },
+        {
+          "code": "003021",
+          "market": "SZ",
+          "name": "兆威机电",
+          "market_cap_yi": 219.79
+        }
+      ]
+    },
+    {
+      "key": "ths_881145",
+      "code": "881145",
+      "name": "电力",
+      "top_stocks": [
+        {
+          "code": "600900",
+          "market": "SH",
+          "name": "长江电力",
+          "market_cap_yi": 6613.76
+        },
+        {
+          "code": "003816",
+          "market": "SZ",
+          "name": "中国广核",
+          "market_cap_yi": 1880.22
+        },
+        {
+          "code": "601985",
+          "market": "SH",
+          "name": "中国核电",
+          "market_cap_yi": 1725.93
+        }
+      ]
+    },
+    {
+      "key": "ths_881278",
+      "code": "881278",
+      "name": "电网设备",
+      "top_stocks": [
+        {
+          "code": "601126",
+          "market": "SH",
+          "name": "四方股份",
+          "market_cap_yi": 631.27
+        },
+        {
+          "code": "600577",
+          "market": "SH",
+          "name": "精达股份",
+          "market_cap_yi": 302.66
+        },
+        {
+          "code": "002276",
+          "market": "SZ",
+          "name": "万马股份",
+          "market_cap_yi": 134.85
+        }
+      ]
+    },
+    {
+      "key": "ths_881283",
+      "code": "881283",
+      "name": "多元金融",
+      "top_stocks": [
+        {
+          "code": "000617",
+          "market": "SZ",
+          "name": "中油资本",
+          "market_cap_yi": 1115.03
+        },
+        {
+          "code": "000987",
+          "market": "SZ",
+          "name": "越秀资本",
+          "market_cap_yi": 419.12
+        },
+        {
+          "code": "600901",
+          "market": "SH",
+          "name": "江苏金租",
+          "market_cap_yi": 384.49
+        }
+      ]
+    },
+    {
+      "key": "ths_881172",
+      "code": "881172",
+      "name": "电子化学品",
+      "top_stocks": [
+        {
+          "code": "688019",
+          "market": "SH",
+          "name": "安集科技",
+          "market_cap_yi": 484.38
+        },
+        {
+          "code": "300346",
+          "market": "SZ",
+          "name": "南大光电",
+          "market_cap_yi": 370.9
+        },
+        {
+          "code": "300236",
+          "market": "SZ",
+          "name": "上海新阳",
+          "market_cap_yi": 273.84
+        }
+      ]
+    },
+    {
+      "key": "ths_881153",
+      "code": "881153",
+      "name": "房地产",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881280",
+      "code": "881280",
+      "name": "风电设备",
+      "top_stocks": [
+        {
+          "code": "002531",
+          "market": "SZ",
+          "name": "天顺风能",
+          "market_cap_yi": 222.28
+        },
+        {
+          "code": "688660",
+          "market": "SH",
+          "name": "电气风电",
+          "market_cap_yi": 158.67
+        },
+        {
+          "code": "603218",
+          "market": "SH",
+          "name": "日月股份",
+          "market_cap_yi": 129.53
+        }
+      ]
+    },
+    {
+      "key": "ths_881167",
+      "code": "881167",
+      "name": "非金属材料",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881136",
+      "code": "881136",
+      "name": "服装家纺",
+      "top_stocks": [
+        {
+          "code": "002293",
+          "market": "SZ",
+          "name": "罗莱生活",
+          "market_cap_yi": 95.8
+        },
+        {
+          "code": "002832",
+          "market": "SZ",
+          "name": "比音勒芬",
+          "market_cap_yi": 82.32
+        },
+        {
+          "code": "002029",
+          "market": "SZ",
+          "name": "七匹狼",
+          "market_cap_yi": 72.8
+        }
+      ]
+    },
+    {
+      "key": "ths_881135",
+      "code": "881135",
+      "name": "纺织制造",
+      "top_stocks": [
+        {
+          "code": "300979",
+          "market": "SZ",
+          "name": "华利集团",
+          "market_cap_yi": 445.32
+        },
+        {
+          "code": "002003",
+          "market": "SZ",
+          "name": "伟星股份",
+          "market_cap_yi": 99.96
+        },
+        {
+          "code": "002083",
+          "market": "SZ",
+          "name": "孚日股份",
+          "market_cap_yi": 99.68
+        }
+      ]
+    },
+    {
+      "key": "ths_881268",
+      "code": "881268",
+      "name": "工程机械",
+      "top_stocks": [
+        {
+          "code": "601100",
+          "market": "SH",
+          "name": "恒立液压",
+          "market_cap_yi": 1555.62
+        },
+        {
+          "code": "603338",
+          "market": "SH",
+          "name": "浙江鼎力",
+          "market_cap_yi": 288.57
+        },
+        {
+          "code": "603638",
+          "market": "SH",
+          "name": "艾迪精密",
+          "market_cap_yi": 217.16
+        }
+      ]
+    },
+    {
+      "key": "ths_881279",
+      "code": "881279",
+      "name": "光伏设备",
+      "top_stocks": [
+        {
+          "code": "300274",
+          "market": "SZ",
+          "name": "阳光电源",
+          "market_cap_yi": 2431.93
+        },
+        {
+          "code": "605117",
+          "market": "SH",
+          "name": "德业股份",
+          "market_cap_yi": 1367.0
+        },
+        {
+          "code": "300763",
+          "market": "SZ",
+          "name": "锦浪科技",
+          "market_cap_yi": 310.66
+        }
+      ]
+    },
+    {
+      "key": "ths_881169",
+      "code": "881169",
+      "name": "贵金属",
+      "top_stocks": [
+        {
+          "code": "601899",
+          "market": "SH",
+          "name": "紫金矿业",
+          "market_cap_yi": 6559.61
+        },
+        {
+          "code": "600489",
+          "market": "SH",
+          "name": "中金黄金",
+          "market_cap_yi": 1180.81
+        },
+        {
+          "code": "600547",
+          "market": "SH",
+          "name": "山东黄金",
+          "market_cap_yi": 1153.01
+        }
+      ]
+    },
+    {
+      "key": "ths_881269",
+      "code": "881269",
+      "name": "轨交设备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881148",
+      "code": "881148",
+      "name": "港口航运",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881149",
+      "code": "881149",
+      "name": "公路铁路运输",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881112",
+      "code": "881112",
+      "name": "钢铁",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881122",
+      "code": "881122",
+      "name": "光学光电子",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881168",
+      "code": "881168",
+      "name": "工业金属",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881284",
+      "code": "881284",
+      "name": "环保设备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881181",
+      "code": "881181",
+      "name": "环境治理",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881177",
+      "code": "881177",
+      "name": "互联网电商",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881132",
+      "code": "881132",
+      "name": "黑色家电",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881264",
+      "code": "881264",
+      "name": "化学纤维",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881108",
+      "code": "881108",
+      "name": "化学原料",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881109",
+      "code": "881109",
+      "name": "化学制品",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881140",
+      "code": "881140",
+      "name": "化学制药",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881271",
+      "code": "881271",
+      "name": "IT服务",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881151",
+      "code": "881151",
+      "name": "机场航运",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881276",
+      "code": "881276",
+      "name": "军工电子",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881166",
+      "code": "881166",
+      "name": "军工装备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881139",
+      "code": "881139",
+      "name": "家居用品",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881130",
+      "code": "881130",
+      "name": "计算机设备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881114",
+      "code": "881114",
+      "name": "金属新材料",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881178",
+      "code": "881178",
+      "name": "教育",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881115",
+      "code": "881115",
+      "name": "建筑材料",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881116",
+      "code": "881116",
+      "name": "建筑装饰",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881158",
+      "code": "881158",
+      "name": "零售",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881160",
+      "code": "881160",
+      "name": "旅游及酒店",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881182",
+      "code": "881182",
+      "name": "美容护理",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881105",
+      "code": "881105",
+      "name": "煤炭开采加工",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881159",
+      "code": "881159",
+      "name": "贸易",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881103",
+      "code": "881103",
+      "name": "农产品加工",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881263",
+      "code": "881263",
+      "name": "农化制品",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881267",
+      "code": "881267",
+      "name": "能源金属",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881128",
+      "code": "881128",
+      "name": "汽车服务及其他",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881126",
+      "code": "881126",
+      "name": "汽车零部件",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881125",
+      "code": "881125",
+      "name": "汽车整车",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881282",
+      "code": "881282",
+      "name": "其他电源设备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881123",
+      "code": "881123",
+      "name": "其他电子",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881179",
+      "code": "881179",
+      "name": "其他社会服务",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881272",
+      "code": "881272",
+      "name": "软件开发",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881146",
+      "code": "881146",
+      "name": "燃气",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881265",
+      "code": "881265",
+      "name": "塑料制品",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881134",
+      "code": "881134",
+      "name": "食品加工制造",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881142",
+      "code": "881142",
+      "name": "生物制品",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881180",
+      "code": "881180",
+      "name": "石油加工贸易",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881162",
+      "code": "881162",
+      "name": "通信服务",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881129",
+      "code": "881129",
+      "name": "通信设备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881117",
+      "code": "881117",
+      "name": "通用设备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881164",
+      "code": "881164",
+      "name": "文化传媒",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881152",
+      "code": "881152",
+      "name": "物流",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881124",
+      "code": "881124",
+      "name": "消费电子",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881173",
+      "code": "881173",
+      "name": "小家电",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881170",
+      "code": "881170",
+      "name": "小金属",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881266",
+      "code": "881266",
+      "name": "橡胶制品",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881270",
+      "code": "881270",
+      "name": "元件",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881175",
+      "code": "881175",
+      "name": "医疗服务",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881144",
+      "code": "881144",
+      "name": "医疗器械",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881133",
+      "code": "881133",
+      "name": "饮料制造",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881107",
+      "code": "881107",
+      "name": "油气开采及服务",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881274",
+      "code": "881274",
+      "name": "影视院线",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881275",
+      "code": "881275",
+      "name": "游戏",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881155",
+      "code": "881155",
+      "name": "银行",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881143",
+      "code": "881143",
+      "name": "医药商业",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881102",
+      "code": "881102",
+      "name": "养殖业",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881171",
+      "code": "881171",
+      "name": "自动化设备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881165",
+      "code": "881165",
+      "name": "综合",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881157",
+      "code": "881157",
+      "name": "证券",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881141",
+      "code": "881141",
+      "name": "中药",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881118",
+      "code": "881118",
+      "name": "专用设备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881137",
+      "code": "881137",
+      "name": "造纸",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_881101",
+      "code": "881101",
+      "name": "种植业与林业",
+      "top_stocks": []
+    }
+  ],
+  "concepts": [
+    {
+      "key": "ths_308614",
+      "code": "308614",
+      "name": "阿尔茨海默概念",
+      "top_stocks": [
+        {
+          "code": "300017",
+          "market": "SZ",
+          "name": "网宿科技",
+          "market_cap_yi": 444.64
+        },
+        {
+          "code": "002044",
+          "market": "SZ",
+          "name": "美年健康",
+          "market_cap_yi": 241.36
+        },
+        {
+          "code": "600789",
+          "market": "SH",
+          "name": "鲁抗医药",
+          "market_cap_yi": 74.23
+        }
+      ]
+    },
+    {
+      "key": "ths_309121",
+      "code": "309121",
+      "name": "AI PC",
+      "top_stocks": [
+        {
+          "code": "002938",
+          "market": "SZ",
+          "name": "鹏鼎控股",
+          "market_cap_yi": 1984.03
+        },
+        {
+          "code": "002600",
+          "market": "SZ",
+          "name": "领益智造",
+          "market_cap_yi": 1219.63
+        },
+        {
+          "code": "300115",
+          "market": "SZ",
+          "name": "长盈精密",
+          "market_cap_yi": 517.14
+        }
+      ]
+    },
+    {
+      "key": "ths_309120",
+      "code": "309120",
+      "name": "AI手机",
+      "top_stocks": [
+        {
+          "code": "002938",
+          "market": "SZ",
+          "name": "鹏鼎控股",
+          "market_cap_yi": 1984.03
+        },
+        {
+          "code": "300433",
+          "market": "SZ",
+          "name": "蓝思科技",
+          "market_cap_yi": 1700.13
+        },
+        {
+          "code": "002600",
+          "market": "SZ",
+          "name": "领益智造",
+          "market_cap_yi": 1219.63
+        }
+      ]
+    },
+    {
+      "key": "ths_309126",
+      "code": "309126",
+      "name": "AI语料",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301558",
+      "code": "301558",
+      "name": "阿里巴巴概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300800",
+      "code": "300800",
+      "name": "安防",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301496",
+      "code": "301496",
+      "name": "白酒概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309084",
+      "code": "309084",
+      "name": "BC电池",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301259",
+      "code": "301259",
+      "name": "百度概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_305376",
+      "code": "305376",
+      "name": "丙烯酸",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_307550",
+      "code": "307550",
+      "name": "冰雪产业",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308972",
+      "code": "308972",
+      "name": "比亚迪概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300018",
+      "code": "300018",
+      "name": "参股保险",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_306912",
+      "code": "306912",
+      "name": "宁德时代概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300100",
+      "code": "300100",
+      "name": "参股券商",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300157",
+      "code": "300157",
+      "name": "草甘膦",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301270",
+      "code": "301270",
+      "name": "参股银行",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309094",
+      "code": "309094",
+      "name": "长安汽车概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308432",
+      "code": "308432",
+      "name": "长三角一体化",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308969",
+      "code": "308969",
+      "name": "超超临界发电",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309056",
+      "code": "309056",
+      "name": "超导概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300926",
+      "code": "300926",
+      "name": "超级电容",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_306750",
+      "code": "306750",
+      "name": "超级品牌",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300163",
+      "code": "300163",
+      "name": "车联网(车路协同)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309045",
+      "code": "309045",
+      "name": "成飞概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300786",
+      "code": "300786",
+      "name": "充电桩",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308588",
+      "code": "308588",
+      "name": "宠物经济",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308822",
+      "code": "308822",
+      "name": "重组蛋白",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308753",
+      "code": "308753",
+      "name": "抽水蓄能",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301016",
+      "code": "301016",
+      "name": "传感器",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300168",
+      "code": "300168",
+      "name": "创投",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308014",
+      "code": "308014",
+      "name": "创新药",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_306380",
+      "code": "306380",
+      "name": "储能",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_307940",
+      "code": "307940",
+      "name": "存储芯片",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301123",
+      "code": "301123",
+      "name": "大豆",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300013",
+      "code": "300013",
+      "name": "大飞机",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308696",
+      "code": "308696",
+      "name": "代糖概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_307816",
+      "code": "307816",
+      "name": "国家大基金持股",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300733",
+      "code": "300733",
+      "name": "锂电池概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302027",
+      "code": "302027",
+      "name": "电子竞技",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308869",
+      "code": "308869",
+      "name": "电子身份证",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309115",
+      "code": "309115",
+      "name": "低空经济",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308700",
+      "code": "308700",
+      "name": "第三代半导体",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301623",
+      "code": "301623",
+      "name": "地下管网",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308477",
+      "code": "308477",
+      "name": "电力物联网",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_307822",
+      "code": "307822",
+      "name": "动力电池回收",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308828",
+      "code": "308828",
+      "name": "东数西算(算力)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308537",
+      "code": "308537",
+      "name": "动物疫苗",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308366",
+      "code": "308366",
+      "name": "抖音概念(字节概念)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309093",
+      "code": "309093",
+      "name": "短剧游戏",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308002",
+      "code": "308002",
+      "name": "独角兽概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309104",
+      "code": "309104",
+      "name": "多模态AI",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301135",
+      "code": "301135",
+      "name": "电子纸",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308803",
+      "code": "308803",
+      "name": "EDR概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309058",
+      "code": "309058",
+      "name": "ERP概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300891",
+      "code": "300891",
+      "name": "三胎概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308555",
+      "code": "308555",
+      "name": "ETC",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308850",
+      "code": "308850",
+      "name": "俄乌冲突概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308977",
+      "code": "308977",
+      "name": "F5G概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308572",
+      "code": "308572",
+      "name": "仿制药一致性评价",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301174",
+      "code": "301174",
+      "name": "钒电池",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309113",
+      "code": "309113",
+      "name": "飞行汽车(eVTOL)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300200",
+      "code": "300200",
+      "name": "风电",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308438",
+      "code": "308438",
+      "name": "芬太尼",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300085",
+      "code": "300085",
+      "name": "氟化工概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301236",
+      "code": "301236",
+      "name": "福建自贸区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_307954",
+      "code": "307954",
+      "name": "富士康概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308708",
+      "code": "308708",
+      "name": "辅助生殖",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308991",
+      "code": "308991",
+      "name": "钙钛矿电池",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308915",
+      "code": "308915",
+      "name": "肝炎概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300890",
+      "code": "300890",
+      "name": "高端装备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309124",
+      "code": "309124",
+      "name": "高股息精选",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301518",
+      "code": "301518",
+      "name": "高铁",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308806",
+      "code": "308806",
+      "name": "高压快充",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309023",
+      "code": "309023",
+      "name": "高压氧舱",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309049",
+      "code": "309049",
+      "name": "共封装光学(CPO)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308732",
+      "code": "308732",
+      "name": "共同富裕示范区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301477",
+      "code": "301477",
+      "name": "工业大麻",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301780",
+      "code": "301780",
+      "name": "工业互联网",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300941",
+      "code": "300941",
+      "name": "工业母机",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302154",
+      "code": "302154",
+      "name": "股权转让(并购重组)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301630",
+      "code": "301630",
+      "name": "广东自贸区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301079",
+      "code": "301079",
+      "name": "光伏概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309085",
+      "code": "309085",
+      "name": "光刻机",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308582",
+      "code": "308582",
+      "name": "光刻胶",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300223",
+      "code": "300223",
+      "name": "光热发电",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300221",
+      "code": "300221",
+      "name": "固废处理",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308829",
+      "code": "308829",
+      "name": "硅能源",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308531",
+      "code": "308531",
+      "name": "国产操作系统",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300082",
+      "code": "300082",
+      "name": "军工",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309034",
+      "code": "309034",
+      "name": "国企改革",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308874",
+      "code": "308874",
+      "name": "国资云",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308294",
+      "code": "308294",
+      "name": "固态电池",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302174",
+      "code": "302174",
+      "name": "金属钴",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302166",
+      "code": "302166",
+      "name": "共享单车",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301669",
+      "code": "301669",
+      "name": "供销社",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300105",
+      "code": "300105",
+      "name": "海工装备",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308428",
+      "code": "308428",
+      "name": "海南自贸区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300066",
+      "code": "300066",
+      "name": "海峡两岸",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301470",
+      "code": "301470",
+      "name": "航空发动机",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300236",
+      "code": "300236",
+      "name": "国产航母",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300973",
+      "code": "300973",
+      "name": "航运概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309051",
+      "code": "309051",
+      "name": "毫米波雷达",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309129",
+      "code": "309129",
+      "name": "合成生物",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300238",
+      "code": "300238",
+      "name": "核电",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308547",
+      "code": "308547",
+      "name": "黑龙江自贸区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300087",
+      "code": "300087",
+      "name": "横琴新区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301424",
+      "code": "301424",
+      "name": "核污染防治",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301209",
+      "code": "301209",
+      "name": "互联网金融",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308731",
+      "code": "308731",
+      "name": "鸿蒙概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308941",
+      "code": "308941",
+      "name": "猴痘概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301104",
+      "code": "301104",
+      "name": "化肥",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308775",
+      "code": "308775",
+      "name": "换电概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300248",
+      "code": "300248",
+      "name": "黄金概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308202",
+      "code": "308202",
+      "name": "环氧丙烷",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301459",
+      "code": "301459",
+      "name": "华为概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308527",
+      "code": "308527",
+      "name": "华为海思概念股",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308883",
+      "code": "308883",
+      "name": "华为鲲鹏",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308887",
+      "code": "308887",
+      "name": "华为欧拉",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308507",
+      "code": "308507",
+      "name": "华为汽车",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309090",
+      "code": "309090",
+      "name": "华为昇腾",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301490",
+      "code": "301490",
+      "name": "沪股通",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301628",
+      "code": "301628",
+      "name": "互联网保险",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309081",
+      "code": "309081",
+      "name": "减肥药",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309000",
+      "code": "309000",
+      "name": "减速器",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300261",
+      "code": "300261",
+      "name": "建筑节能",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308885",
+      "code": "308885",
+      "name": "家庭医生",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300814",
+      "code": "300814",
+      "name": "家用电器",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300061",
+      "code": "300061",
+      "name": "京津冀一体化",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301032",
+      "code": "301032",
+      "name": "净水概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301107",
+      "code": "301107",
+      "name": "金属回收",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308864",
+      "code": "308864",
+      "name": "金属铅",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301582",
+      "code": "301582",
+      "name": "金属锌",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300816",
+      "code": "300816",
+      "name": "机器人概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301258",
+      "code": "301258",
+      "name": "机器视觉",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301146",
+      "code": "301146",
+      "name": "基因测序",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309128",
+      "code": "309128",
+      "name": "军工信息化",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301786",
+      "code": "301786",
+      "name": "军民融合",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300269",
+      "code": "300269",
+      "name": "举牌",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308699",
+      "code": "308699",
+      "name": "科创次新股",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301117",
+      "code": "301117",
+      "name": "可降解塑料",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309108",
+      "code": "309108",
+      "name": "可控核聚变",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300277",
+      "code": "300277",
+      "name": "可燃冰",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309066",
+      "code": "309066",
+      "name": "空间计算",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309007",
+      "code": "309007",
+      "name": "空气能热泵",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308659",
+      "code": "308659",
+      "name": "快手概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301564",
+      "code": "301564",
+      "name": "跨境电商",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308566",
+      "code": "308566",
+      "name": "垃圾分类",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301179",
+      "code": "301179",
+      "name": "冷链物流",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301248",
+      "code": "301248",
+      "name": "两轮车",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308956",
+      "code": "308956",
+      "name": "粮食概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300830",
+      "code": "300830",
+      "name": "量子科技",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300098",
+      "code": "300098",
+      "name": "磷化工",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300038",
+      "code": "300038",
+      "name": "流感",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308926",
+      "code": "308926",
+      "name": "露营经济",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308760",
+      "code": "308760",
+      "name": "绿色电力",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300923",
+      "code": "300923",
+      "name": "生态农业",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301223",
+      "code": "301223",
+      "name": "旅游概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308893",
+      "code": "308893",
+      "name": "毛发医疗",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302150",
+      "code": "302150",
+      "name": "蚂蚁集团概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300084",
+      "code": "300084",
+      "name": "煤化工概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308716",
+      "code": "308716",
+      "name": "煤炭概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308657",
+      "code": "308657",
+      "name": "免税店",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308834",
+      "code": "308834",
+      "name": "民爆概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308628",
+      "code": "308628",
+      "name": "MiniLED",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301346",
+      "code": "301346",
+      "name": "民营医院",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301096",
+      "code": "301096",
+      "name": "钠离子电池",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308535",
+      "code": "308535",
+      "name": "脑机接口",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308748",
+      "code": "308748",
+      "name": "NFT概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301511",
+      "code": "301511",
+      "name": "金属镍",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301632",
+      "code": "301632",
+      "name": "农村电商",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301306",
+      "code": "301306",
+      "name": "农机",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308016",
+      "code": "308016",
+      "name": "农业种植",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301154",
+      "code": "301154",
+      "name": "OLED",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308832",
+      "code": "308832",
+      "name": "PCB概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309105",
+      "code": "309105",
+      "name": "PEEK材料",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308774",
+      "code": "308774",
+      "name": "培育钻石",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309030",
+      "code": "309030",
+      "name": "PET铜箔",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301497",
+      "code": "301497",
+      "name": "啤酒概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308709",
+      "code": "308709",
+      "name": "拼多多概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300309",
+      "code": "300309",
+      "name": "苹果概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300134",
+      "code": "300134",
+      "name": "PM2.5",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309040",
+      "code": "309040",
+      "name": "POE胶膜",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301624",
+      "code": "301624",
+      "name": "PPP概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308694",
+      "code": "308694",
+      "name": "汽车拆解概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301471",
+      "code": "301471",
+      "name": "汽车电子",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308805",
+      "code": "308805",
+      "name": "汽车热管理",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308725",
+      "code": "308725",
+      "name": "汽车芯片",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300220",
+      "code": "300220",
+      "name": "期货概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301794",
+      "code": "301794",
+      "name": "青蒿素",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308491",
+      "code": "308491",
+      "name": "氢能源",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300075",
+      "code": "300075",
+      "name": "禽流感",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302045",
+      "code": "302045",
+      "name": "区块链",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301292",
+      "code": "301292",
+      "name": "染料",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300316",
+      "code": "300316",
+      "name": "燃料电池",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302035",
+      "code": "302035",
+      "name": "人工智能",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309119",
+      "code": "309119",
+      "name": "人形机器人",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308517",
+      "code": "308517",
+      "name": "人造肉",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301166",
+      "code": "301166",
+      "name": "人脸识别",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300900",
+      "code": "300900",
+      "name": "融资融券",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308467",
+      "code": "308467",
+      "name": "柔性屏(折叠屏)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308810",
+      "code": "308810",
+      "name": "柔性直流输电",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300983",
+      "code": "300983",
+      "name": "乳业",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301602",
+      "code": "301602",
+      "name": "赛马概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301402",
+      "code": "301402",
+      "name": "上海国企改革",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301128",
+      "code": "301128",
+      "name": "上海自贸区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309130",
+      "code": "309130",
+      "name": "商业航天",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301636",
+      "code": "301636",
+      "name": "深股通",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300106",
+      "code": "300106",
+      "name": "生物疫苗",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308989",
+      "code": "308989",
+      "name": "生物质能发电",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301171",
+      "code": "301171",
+      "name": "深圳国企改革",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300180",
+      "code": "300180",
+      "name": "时空大数据",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_307512",
+      "code": "307512",
+      "name": "石墨电极",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300337",
+      "code": "300337",
+      "name": "石墨烯",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300023",
+      "code": "300023",
+      "name": "食品安全",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301050",
+      "code": "301050",
+      "name": "手机游戏",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300345",
+      "code": "300345",
+      "name": "水利",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_307826",
+      "code": "307826",
+      "name": "水泥概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308801",
+      "code": "308801",
+      "name": "数据安全",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309037",
+      "code": "309037",
+      "name": "数据确权",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309060",
+      "code": "309060",
+      "name": "数据要素",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308642",
+      "code": "308642",
+      "name": "数据中心",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301997",
+      "code": "301997",
+      "name": "数字货币",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308870",
+      "code": "308870",
+      "name": "数字经济",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308479",
+      "code": "308479",
+      "name": "数字孪生",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309050",
+      "code": "309050",
+      "name": "数字水印",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308525",
+      "code": "308525",
+      "name": "数字乡村",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309118",
+      "code": "309118",
+      "name": "Sora概念(文生视频)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300862",
+      "code": "300862",
+      "name": "ST板块",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309068",
+      "code": "309068",
+      "name": "算力租赁",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300351",
+      "code": "300351",
+      "name": "钛白粉概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300795",
+      "code": "300795",
+      "name": "太赫兹",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300931",
+      "code": "300931",
+      "name": "碳交易",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300352",
+      "code": "300352",
+      "name": "碳纤维",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308728",
+      "code": "308728",
+      "name": "碳中和",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300845",
+      "code": "300845",
+      "name": "特钢概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300353",
+      "code": "300353",
+      "name": "特高压",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302010",
+      "code": "302010",
+      "name": "腾讯概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302674",
+      "code": "302674",
+      "name": "特色小镇",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301121",
+      "code": "301121",
+      "name": "特斯拉概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301229",
+      "code": "301229",
+      "name": "天津自贸区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300358",
+      "code": "300358",
+      "name": "天然气",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301605",
+      "code": "301605",
+      "name": "体育产业",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301577",
+      "code": "301577",
+      "name": "金属铜",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309127",
+      "code": "309127",
+      "name": "同花顺出海50",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308718",
+      "code": "308718",
+      "name": "同花顺漂亮100",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309062",
+      "code": "309062",
+      "name": "同花顺中特估100",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309125",
+      "code": "309125",
+      "name": "铜缆高速连接",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308901",
+      "code": "308901",
+      "name": "统一大市场",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308992",
+      "code": "308992",
+      "name": "TOPCON电池",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300858",
+      "code": "300858",
+      "name": "土地流转",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308862",
+      "code": "308862",
+      "name": "托育服务",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300925",
+      "code": "300925",
+      "name": "土壤修复",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308630",
+      "code": "308630",
+      "name": "网红经济",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300019",
+      "code": "300019",
+      "name": "网络游戏",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302142",
+      "code": "302142",
+      "name": "网约车",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308300",
+      "code": "308300",
+      "name": "MCU芯片",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300722",
+      "code": "300722",
+      "name": "卫星导航",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300806",
+      "code": "300806",
+      "name": "文化传媒概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308791",
+      "code": "308791",
+      "name": "WiFi 6",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300378",
+      "code": "300378",
+      "name": "物联网",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300889",
+      "code": "300889",
+      "name": "无人机",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301286",
+      "code": "301286",
+      "name": "无人驾驶",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_304756",
+      "code": "304756",
+      "name": "无人零售",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300374",
+      "code": "300374",
+      "name": "污水处理",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300723",
+      "code": "300723",
+      "name": "无线充电",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308612",
+      "code": "308612",
+      "name": "无线耳机",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308717",
+      "code": "308717",
+      "name": "物业管理",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302182",
+      "code": "302182",
+      "name": "雄安新区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300836",
+      "code": "300836",
+      "name": "乡村振兴",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309004",
+      "code": "309004",
+      "name": "先进封装",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308636",
+      "code": "308636",
+      "name": "消毒剂",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308384",
+      "code": "308384",
+      "name": "消费电子概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300809",
+      "code": "300809",
+      "name": "小金属概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301278",
+      "code": "301278",
+      "name": "小米概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309106",
+      "code": "309106",
+      "name": "小米汽车",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301543",
+      "code": "301543",
+      "name": "细胞免疫治疗",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309020",
+      "code": "309020",
+      "name": "信创",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309086",
+      "code": "309086",
+      "name": "星闪概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300870",
+      "code": "300870",
+      "name": "新股与次新股",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300386",
+      "code": "300386",
+      "name": "新疆振兴",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300008",
+      "code": "300008",
+      "name": "新能源汽车",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301085",
+      "code": "301085",
+      "name": "芯片概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301377",
+      "code": "301377",
+      "name": "信托概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300756",
+      "code": "300756",
+      "name": "网络安全",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300841",
+      "code": "300841",
+      "name": "新型城镇化",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309089",
+      "code": "309089",
+      "name": "新型工业化",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301362",
+      "code": "301362",
+      "name": "新型烟草(电子烟)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300382",
+      "code": "300382",
+      "name": "稀土永磁",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309042",
+      "code": "309042",
+      "name": "血氧仪",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308761",
+      "code": "308761",
+      "name": "虚拟电厂",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308794",
+      "code": "308794",
+      "name": "虚拟数字人",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301699",
+      "code": "301699",
+      "name": "虚拟现实",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308733",
+      "code": "308733",
+      "name": "牙科医疗",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308560",
+      "code": "308560",
+      "name": "烟草",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301576",
+      "code": "301576",
+      "name": "养鸡",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301494",
+      "code": "301494",
+      "name": "养老概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301546",
+      "code": "301546",
+      "name": "央企国企改革",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_307904",
+      "code": "307904",
+      "name": "盐湖提锂",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301252",
+      "code": "301252",
+      "name": "眼科医疗",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309061",
+      "code": "309061",
+      "name": "液冷服务器",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300402",
+      "code": "300402",
+      "name": "页岩气",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301365",
+      "code": "301365",
+      "name": "一带一路",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300188",
+      "code": "300188",
+      "name": "移动支付",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308638",
+      "code": "308638",
+      "name": "医疗废物处理",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308712",
+      "code": "308712",
+      "name": "医美概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309065",
+      "code": "309065",
+      "name": "英伟达概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308984",
+      "code": "308984",
+      "name": "一体化压铸",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301505",
+      "code": "301505",
+      "name": "医疗器械概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301279",
+      "code": "301279",
+      "name": "有机硅概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308818",
+      "code": "308818",
+      "name": "幽门螺杆菌概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308752",
+      "code": "308752",
+      "name": "元宇宙",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301491",
+      "code": "301491",
+      "name": "粤港澳大湾区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301572",
+      "code": "301572",
+      "name": "玉米",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308634",
+      "code": "308634",
+      "name": "云办公",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300419",
+      "code": "300419",
+      "name": "云计算",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308624",
+      "code": "308624",
+      "name": "云游戏",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300917",
+      "code": "300917",
+      "name": "语音技术",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308814",
+      "code": "308814",
+      "name": "预制菜",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301565",
+      "code": "301565",
+      "name": "医药电商",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301227",
+      "code": "301227",
+      "name": "在线教育",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301713",
+      "code": "301713",
+      "name": "中船系",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302046",
+      "code": "302046",
+      "name": "化债概念(AMC概念)",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300642",
+      "code": "300642",
+      "name": "智慧城市",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308841",
+      "code": "308841",
+      "name": "智慧灯杆",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308606",
+      "code": "308606",
+      "name": "智慧政务",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301175",
+      "code": "301175",
+      "name": "智能穿戴",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300037",
+      "code": "300037",
+      "name": "智能电网",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300920",
+      "code": "300920",
+      "name": "智能家居",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301797",
+      "code": "301797",
+      "name": "智能物流",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300682",
+      "code": "300682",
+      "name": "智能医疗",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302131",
+      "code": "302131",
+      "name": "智能音箱",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309092",
+      "code": "309092",
+      "name": "智能座舱",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308172",
+      "code": "308172",
+      "name": "知识产权保护",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301539",
+      "code": "301539",
+      "name": "职业教育",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308854",
+      "code": "308854",
+      "name": "中俄贸易概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301541",
+      "code": "301541",
+      "name": "中韩自贸区",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308690",
+      "code": "308690",
+      "name": "中芯国际概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300704",
+      "code": "300704",
+      "name": "中字头股票",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308740",
+      "code": "308740",
+      "name": "专精特新",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300435",
+      "code": "300435",
+      "name": "转基因",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_308697",
+      "code": "308697",
+      "name": "注册制次新股",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300451",
+      "code": "300451",
+      "name": "猪肉",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301715",
+      "code": "301715",
+      "name": "证金持股",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301455",
+      "code": "301455",
+      "name": "摘帽",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_305794",
+      "code": "305794",
+      "name": "装配式建筑",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_301100",
+      "code": "301100",
+      "name": "足球概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_302034",
+      "code": "302034",
+      "name": "租售同权",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_306398",
+      "code": "306398",
+      "name": "自由贸易港",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300127",
+      "code": "300127",
+      "name": "3D打印",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_300843",
+      "code": "300843",
+      "name": "5G",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309055",
+      "code": "309055",
+      "name": "6G概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309265",
+      "code": "309265",
+      "name": "2026一季报预增",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309264",
+      "code": "309264",
+      "name": "AI应用",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309263",
+      "code": "309263",
+      "name": "2025年报预增",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309261",
+      "code": "309261",
+      "name": "雅下水电概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309187",
+      "code": "309187",
+      "name": "中国AI 50",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309185",
+      "code": "309185",
+      "name": "兵装重组概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309184",
+      "code": "309184",
+      "name": "DeepSeek概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309183",
+      "code": "309183",
+      "name": "AI智能体",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309182",
+      "code": "309182",
+      "name": "小红书概念",
+      "top_stocks": []
+    },
+    {
+      "key": "ths_309177",
+      "code": "309177",
+      "name": "同花顺新质50",
+      "top_stocks": []
+    }
+  ]
+}
