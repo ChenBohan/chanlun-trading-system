@@ -64,7 +64,7 @@ cd "$PROJECT_DIR"
     python3 main.py run 2>&1
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pipeline complete."
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 2/2: Git push..."
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 2/3: Git push..."
     git add -A
     git diff --cached --quiet && {
         echo "No changes to commit."
@@ -73,6 +73,9 @@ cd "$PROJECT_DIR"
         git push
         echo "Pushed to remote."
     }
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: Deploy to Cloudflare Pages..."
+    python3 scripts/deploy_cloudflare.py 2>&1 || echo "WARNING: Cloudflare deploy failed (non-fatal)"
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auto-update complete."
     echo ""

@@ -34,31 +34,41 @@ DEPLOY_DIR = PROJECT_ROOT / "reports"
 ENV_FILE = PROJECT_ROOT / ".env"
 
 
-def load_token() -> str:
-    token = os.environ.get("CLOUDFLARE_API_TOKEN", "")
-    if not token and ENV_FILE.exists():
+def load_credentials():
+    """Load Cloudflare credentials from env or .env file.
+    Supports both API Token (Bearer) and Global API Key (email+key).
+    Returns dict with auth headers.
+    """
+    env_vars = {}
+    if ENV_FILE.exists():
         for line in ENV_FILE.read_text().splitlines():
             line = line.strip()
-            if line.startswith("CLOUDFLARE_API_TOKEN="):
-                token = line.split("=", 1)[1].strip().strip('"').strip("'")
-                break
-    if not token:
-        print("ERROR: CLOUDFLARE_API_TOKEN not set.")
-        print(f"Set it in environment or add to {ENV_FILE}:")
-        print('  CLOUDFLARE_API_TOKEN=your_token_here')
-        sys.exit(1)
-    return token
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                env_vars[k.strip()] = v.strip().strip('"').strip("'")
+
+    api_token = os.environ.get("CLOUDFLARE_API_TOKEN", env_vars.get("CLOUDFLARE_API_TOKEN", ""))
+    if api_token:
+        return {"Authorization": f"Bearer {api_token}"}
+
+    api_key = os.environ.get("CLOUDFLARE_API_KEY", env_vars.get("CLOUDFLARE_API_KEY", ""))
+    email = os.environ.get("CLOUDFLARE_EMAIL", env_vars.get("CLOUDFLARE_EMAIL", ""))
+    if api_key and email:
+        return {"X-Auth-Key": api_key, "X-Auth-Email": email}
+
+    print("ERROR: No Cloudflare credentials found.")
+    print(f"Set in environment or {ENV_FILE}:")
+    print("  Option A: CLOUDFLARE_API_TOKEN=your_token")
+    print("  Option B: CLOUDFLARE_API_KEY=your_key + CLOUDFLARE_EMAIL=your_email")
+    sys.exit(1)
 
 
-def get_headers(token: str) -> dict:
-    return {
-        "Authorization": f"Bearer {token}",
-    }
+def get_headers():
+    return load_credentials()
 
 
-def ensure_project(token: str) -> bool:
+def ensure_project(headers) -> bool:
     """Create project if not exists. Returns True if ready."""
-    headers = get_headers(token)
     r = requests.get(f"{BASE_URL}/{PROJECT_NAME}", headers=headers)
     if r.status_code == 200:
         return True
@@ -98,9 +108,8 @@ def compute_manifest(files):
     return h.hexdigest()
 
 
-def deploy(token: str):
-    """Deploy files via Direct Upload. Returns deployment URL or None."""
-    headers = get_headers(token)
+def deploy(headers):
+    """Deploy files via Direct Upload with manifest. Returns deployment URL or None."""
     files = collect_files(DEPLOY_DIR)
     if not files:
         print("No files to deploy!")
@@ -111,19 +120,27 @@ def deploy(token: str):
 
     deploy_url = f"{BASE_URL}/{PROJECT_NAME}/deployments"
 
-    multipart_files = []
+    # Build manifest: {"/<path>": "<sha256_hex>", ...}
+    # and collect file data keyed by hash
+    manifest = {}
+    file_data_by_hash = {}
     for rel, path in files:
-        content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
-        multipart_files.append(
-            (rel, (rel, path.open("rb"), content_type))
-        )
+        content = path.read_bytes()
+        file_hash = hashlib.sha256(content).hexdigest()
+        key = "/" + rel
+        manifest[key] = file_hash
+        if file_hash not in file_data_by_hash:
+            content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+            file_data_by_hash[file_hash] = (content, content_type)
+
+    # Multipart: "manifest" field + each file keyed by its hash
+    multipart = [("manifest", (None, json.dumps(manifest), "application/json"))]
+    for fhash, (content, ctype) in file_data_by_hash.items():
+        multipart.append((fhash, (fhash, content, ctype)))
 
     t0 = time.time()
-    r = requests.post(deploy_url, headers=headers, files=multipart_files)
+    r = requests.post(deploy_url, headers=headers, files=multipart)
     elapsed = time.time() - t0
-
-    for _, (_, fh, _) in multipart_files:
-        fh.close()
 
     if r.status_code in (200, 201):
         data = r.json()
@@ -146,14 +163,14 @@ def deploy(token: str):
 
 
 def main():
-    token = load_token()
-    if not ensure_project(token):
+    headers = get_headers()
+    if not ensure_project(headers):
         sys.exit(1)
-    url = deploy(token)
+    url = deploy(headers)
     if url:
-        print(f"\n Dashboard live at: {url}")
+        print(f"\nDashboard live at: {url}")
         prod_url = f"https://{PROJECT_NAME}.pages.dev"
-        print(f" Production URL: {prod_url}")
+        print(f"Production URL: {prod_url}")
     else:
         sys.exit(1)
 
