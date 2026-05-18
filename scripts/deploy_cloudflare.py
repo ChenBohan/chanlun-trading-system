@@ -79,7 +79,7 @@ def ensure_project(token: str) -> bool:
     return False
 
 
-def collect_files(deploy_dir: Path) -> list[tuple[str, Path]]:
+def collect_files(deploy_dir: Path):
     """Collect all files to deploy (relative path, absolute path)."""
     files = []
     for p in sorted(deploy_dir.rglob("*")):
@@ -89,7 +89,7 @@ def collect_files(deploy_dir: Path) -> list[tuple[str, Path]]:
     return files
 
 
-def compute_manifest(files: list[tuple[str, Path]]) -> str:
+def compute_manifest(files):
     """Compute a hash of all file contents for change detection."""
     h = hashlib.md5()
     for rel, path in files:
@@ -98,7 +98,7 @@ def compute_manifest(files: list[tuple[str, Path]]) -> str:
     return h.hexdigest()
 
 
-def deploy(token: str) -> str | None:
+def deploy(token: str):
     """Deploy files via Direct Upload. Returns deployment URL or None."""
     headers = get_headers(token)
     files = collect_files(DEPLOY_DIR)

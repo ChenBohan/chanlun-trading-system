@@ -44,3 +44,4 @@ stocks/*/tracking/signals.jsonl
 
 # Fundamental data
 stocks/*/fundamental/
+.env
