@@ -2283,10 +2283,9 @@ def generate_mobile_dashboard(data_dir: str = None,
     os.makedirs(data_out_dir, exist_ok=True)
     for key, chart_data in all_data.items():
         fpath = os.path.join(data_out_dir, f"{key}.js")
-        if not os.path.exists(fpath):
-            json_str = json.dumps(chart_data, ensure_ascii=False, separators=(",", ":"))
-            with open(fpath, "w", encoding="utf-8") as df:
-                df.write(f'DATA_CACHE["{key}"]={json_str};\n')
+        json_str = json.dumps(chart_data, ensure_ascii=False, separators=(",", ":"))
+        with open(fpath, "w", encoding="utf-8") as df:
+            df.write(f'DATA_CACHE["{key}"]={json_str};\n')
 
     data_keys_json = json.dumps(sorted(all_data.keys()), ensure_ascii=False)
     index_list_json = json.dumps(index_list, ensure_ascii=False)
