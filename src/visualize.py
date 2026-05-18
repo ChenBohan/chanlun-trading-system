@@ -334,9 +334,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   <span class="gen-time">数据：__DATA_TIME__ | 生成：__GEN_TIME__</span>
 </div>
 
-<div id="watchlist-panel" style="margin:8px 32px 16px;overflow-x:auto"></div>
-
 <div id="global-signals-table" style="margin:0 32px 16px"></div>
+
+<div id="watchlist-panel" style="margin:8px 32px 16px;overflow-x:auto"></div>
 
 <div style="display:flex;align-items:center;margin:24px 32px 0;gap:12px">
   <h2 style="color:#c9d1d9;font-size:17px;margin:0">📈 技术分析详情</h2>
@@ -386,6 +386,7 @@ let chart = null;
 
 // ─── Watchlist Panel (自选股最新买卖点) ───
 let wlActiveTab = '30分钟';
+let wlExpanded = false;
 function renderWatchlist() {
   const el = document.getElementById('watchlist-panel');
   if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) { el.innerHTML = ''; return; }
@@ -483,8 +484,21 @@ function renderWatchlist() {
     return t;
   }
 
-  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 16px">';
-  h += '<h3 style="color:#c9d1d9;font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:6px">⭐ 自选股最新买卖点</h3>';
+  let totalWl = 0;
+  levels.forEach(lv => {
+    const d = WATCHLIST_SIGNALS[lv] || {};
+    totalWl += (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
+  });
+
+  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden">';
+  h += '<div onclick="wlExpanded=!wlExpanded;renderWatchlist()" style="display:flex;align-items:center;padding:10px 16px;cursor:pointer;user-select:none">';
+  h += '<h3 style="color:#c9d1d9;font-size:15px;margin:0;flex:1;display:flex;align-items:center;gap:6px">⭐ 自选股最新买卖点';
+  h += ' <span style="font-size:12px;color:#8b949e;font-weight:400">' + totalWl + '个</span></h3>';
+  h += '<span style="color:#8b949e;font-size:12px;transition:transform 0.2s;transform:rotate(' + (wlExpanded ? '180' : '0') + 'deg)">▼</span>';
+  h += '</div>';
+
+  if (wlExpanded) {
+  h += '<div style="padding:0 16px 12px">';
   h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
   levels.forEach(lv => {
     const d = WATCHLIST_SIGNALS[lv] || {};
@@ -505,13 +519,15 @@ function renderWatchlist() {
   h += wlTable('🟠 第二类买卖点（回调确认）', t2, false);
   h += wlTable('🔵 第三类买卖点（中枢突破，最新10个）', t3, true);
   h += '</div>';
+  }
+  h += '</div>';
   el.innerHTML = h;
 }
 renderWatchlist();
 
 // ─── Global Signals Table (tabbed by level, split into type-1/2/3 sub-tables) ───
 let gsActiveTab = '30分钟';
-let gsExpanded = false;
+let gsExpanded = true;
 function renderGlobalSignals() {
   const el = document.getElementById('global-signals-table');
   const levels = ['日线', '30分钟', '5分钟'];
@@ -2487,8 +2503,8 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 <h1>缠论交易系统 v2</h1>
 <div class="subtitle">移动版 · 数据 {data_time} · 生成 {gen_time} · 日线→30分→5分</div>
 
-<div id="mobileWatchlist" style="margin-bottom:8px"></div>
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
+<div id="mobileWatchlist" style="margin-bottom:8px"></div>
 
 <div style="display:flex;align-items:center;margin:12px 0 6px;gap:8px;border-bottom:1px solid #30363d;padding-bottom:4px">
   <span style="color:#c9d1d9;font-size:14px;font-weight:bold">📈 技术分析详情</span>
@@ -2562,6 +2578,7 @@ function loadChartData(key) {{
 
 // ─── Mobile Watchlist Panel (自选股最新买卖点) ───
 let mWlTab = '30分钟';
+let mWlExpanded = false;
 function renderMobileWatchlist() {{
   const el = document.getElementById('mobileWatchlist');
   if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) {{ el.innerHTML = ''; return; }}
@@ -2649,8 +2666,21 @@ function renderMobileWatchlist() {{
     return t;
   }}
 
-  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 10px">';
-  h += '<div style="color:#c9d1d9;font-size:12px;font-weight:bold;margin-bottom:6px">⭐ 自选股最新买卖点</div>';
+  let totalWl = 0;
+  levels.forEach(lv => {{
+    const d = WATCHLIST_SIGNALS[lv] || {{}};
+    totalWl += (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
+  }});
+
+  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden">';
+  h += '<div onclick="mWlExpanded=!mWlExpanded;renderMobileWatchlist()" style="display:flex;align-items:center;padding:8px 10px;cursor:pointer;user-select:none">';
+  h += '<span style="color:#c9d1d9;font-size:12px;font-weight:bold;flex:1">⭐ 自选股最新买卖点';
+  h += ' <span style="font-size:10px;color:#8b949e;font-weight:400">' + totalWl + '个</span></span>';
+  h += '<span style="color:#8b949e;font-size:10px;transition:transform 0.2s;transform:rotate(' + (mWlExpanded ? '180' : '0') + 'deg)">▼</span>';
+  h += '</div>';
+
+  if (mWlExpanded) {{
+  h += '<div style="padding:0 10px 8px">';
   h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
   levels.forEach(lv => {{
     const d = WATCHLIST_SIGNALS[lv] || {{}};
@@ -2671,12 +2701,14 @@ function renderMobileWatchlist() {{
   h += mWlTable('🟠 第二类买卖点', t2, false);
   h += mWlTable('🔵 第三类买卖点（最新10个）', t3, true);
   h += '</div>';
+  }}
+  h += '</div>';
   el.innerHTML = h;
 }}
 renderMobileWatchlist();
 
 let mgsTab = '30分钟';
-let mgsExpanded = false;
+let mgsExpanded = true;
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
   const levels = ['日线', '30分钟', '5分钟'];
