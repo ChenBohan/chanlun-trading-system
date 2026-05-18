@@ -2922,58 +2922,54 @@ function updateInfoBar(data) {{
   const scoreBg = sc >= 140 ? '#3a1a1a' : (sc >= 110 ? '#2a2a1a' : (sc >= 80 ? '#1a2a1a' : '#1a1a2a'));
   const scoreClr = sc >= 140 ? '#f85149' : (sc >= 110 ? '#d29922' : (sc >= 80 ? '#3fb950' : '#8b949e'));
 
+  const mEnv = idx.daily_env || {{}};
+  const mEnvColor = mEnv.color || '#8b949e';
+  const mEnvAdvice = mEnv.advice || '';
+
   const isUp = (idx.trend||'').includes('上涨');
   const tCls = isUp ? 'tag-up' : ((idx.trend||'').includes('下跌') ? 'tag-down' : 'tag-neutral');
-  const tcActiveColor = isUp ? '#f85149' : '#3fb950';
-  const tcDoneColor = isUp ? '#3fb950' : '#f85149';
-  const tcText = (idx.status||'').includes('疑似') ? `<span style="color:#d29922">⚠️疑似</span>`
-    : ((idx.status||'').includes('已确认') ? `<span style="color:${{tcDoneColor}}">✅完成</span>`
-    : `<span style="color:${{tcActiveColor}}">🔄进行</span>`);
-  const dSigType = idx.latest_signal_type || '';
-  const dSigCls = dSigType.includes('B') ? 'tag-up' : (dSigType.includes('S') ? 'tag-down' : 'tag-neutral');
-
   const m30IsUp = (idx.m30_trend||'').includes('上涨');
   const m30Cls = m30IsUp ? 'tag-up' : ((idx.m30_trend||'').includes('下跌') ? 'tag-down' : 'tag-neutral');
-  const m30ActiveColor = m30IsUp ? '#f85149' : '#3fb950';
-  const m30DoneColor = m30IsUp ? '#3fb950' : '#f85149';
-  const m30TcText = (idx.m30_status||'').includes('疑似') ? `<span style="color:#d29922">⚠️疑似</span>`
-    : ((idx.m30_status||'').includes('已确认') ? `<span style="color:${{m30DoneColor}}">✅完成</span>`
-    : `<span style="color:${{m30ActiveColor}}">🔄进行</span>`);
+  const dSigType = idx.latest_signal_type || '';
+  const dSigCls = dSigType.includes('B') ? 'tag-up' : (dSigType.includes('S') ? 'tag-down' : 'tag-neutral');
   const m30SigType = idx.m30_signal_type || '';
   const m30SigCls = m30SigType.includes('B') ? 'tag-up' : (m30SigType.includes('S') ? 'tag-down' : 'tag-neutral');
 
-  const conParts = (idx.conclusion||'-').split(' · ');
-  const conHtml = conParts.map(p => {{
-    let color = '#c9d1d9';
-    if (p.includes('买点') || p.includes('加仓') || p.includes('满仓') || p.includes('多头共振')) color = '#f85149';
-    else if (p.includes('卖点') || p.includes('清仓') || p.includes('减仓') || p.includes('空头共振')) color = '#3fb950';
-    else if (p.startsWith('⚠')) color = '#d29922';
-    return `<span style="color:${{color}}">• ${{p}}</span>`;
-  }}).join(' ');
+  // One-line action conclusion: pick the most important bullet
+  const conParts = (idx.conclusion||'').split(' · ').filter(p => p);
+  let actionText = '';
+  let actionColor = '#c9d1d9';
+  for (const p of conParts) {{
+    if (p.includes('共振') || p.includes('买点') || p.includes('卖点') || p.startsWith('⚠')) {{
+      actionText = p;
+      if (p.includes('买') || p.includes('加仓') || p.includes('多头')) actionColor = '#f85149';
+      else if (p.includes('卖') || p.includes('清仓') || p.includes('空头')) actionColor = '#3fb950';
+      else actionColor = '#d29922';
+      break;
+    }}
+  }}
+  if (!actionText && conParts.length > 0) {{
+    actionText = conParts[0];
+  }}
 
   const d = getData();
   const tentTag = (d && d.tentative > 0)
-    ? '<span style="color:#d29922;font-weight:bold;font-size:11px" title="盘中数据，最后一根K线尚未确认"> ⚠盘中暂定</span>'
+    ? ' <span style="color:#d29922;font-size:10px">⚠暂定</span>'
     : '';
-  const mEnv = idx.daily_env || {{}};
-  const mEnvLabel = mEnv.label || '-';
-  const mEnvColor = mEnv.color || '#8b949e';
-  const mEnvOk = mEnv.m30_3b_ok;
-  const mEnvIcon = mEnvOk ? '✅' : '❌';
-  const mEnvAdvice = mEnv.advice || '';
 
-  const notesHtml = idx.notes ? `<span style="color:#8b949e;font-size:11px;margin-left:2px">${{idx.notes}}</span>` : '';
+  const notesHtml = idx.notes ? `<span style="color:#6e7681;font-size:10px">${{idx.notes}}</span>` : '';
 
   bar.innerHTML = `
     <span style="background:${{scoreBg}};color:${{scoreClr}};padding:1px 6px;border-radius:3px;font-weight:700">${{sc}}</span>
+    <span style="color:${{mEnvColor}};font-size:11px" title="${{mEnvAdvice}}">${{mEnvAdvice || '-'}}</span>
+    <span style="color:${{actionColor}};font-size:11px;font-weight:600">${{actionText}}</span>${{tentTag}}
+    <br>
+    <span class="tag ${{tCls}}" style="font-size:10px">${{(idx.trend||'-').replace('趋势','')}}</span>
+    ${{idx.latest_signal && idx.latest_signal !== '-' ? '<span class="tag ' + dSigCls + '" style="font-size:10px">' + idx.latest_signal + '</span>' : ''}}
+    <span style="color:#484f58;font-size:10px">→</span>
+    <span class="tag ${{m30Cls}}" style="font-size:10px">${{(idx.m30_trend||'-').replace('趋势','')}}</span>
+    ${{idx.m30_signal && idx.m30_signal !== '-' ? '<span class="tag ' + m30SigCls + '" style="font-size:10px">' + idx.m30_signal + '</span>' : ''}}
     ${{notesHtml}}
-    <span style="background:rgba(0,0,0,0.3);color:${{mEnvColor}};padding:1px 6px;border-radius:3px;font-weight:700;border:1px solid ${{mEnvColor}};font-size:11px" title="${{mEnvAdvice}}">${{mEnvIcon}}${{mEnvLabel}}</span>
-    <span class="tag ${{tCls}}">${{(idx.trend||'-').replace('趋势','')}}</span> ${{tcText}}
-    ${{idx.latest_signal && idx.latest_signal !== '-' ? '<span class="tag ' + dSigCls + '">' + idx.latest_signal + '</span>' : ''}}
-    <span style="color:#484f58">|</span>
-    <span class="tag ${{m30Cls}}">${{(idx.m30_trend||'-').replace('趋势','')}}</span> ${{m30TcText}}
-    ${{idx.m30_signal && idx.m30_signal !== '-' ? '<span class="tag ' + m30SigCls + '">' + idx.m30_signal + '</span>' : ''}}${{tentTag}}
-    <br><span style="font-size:11px;line-height:1.4">${{conHtml}}</span>
   `;
 }}
 
