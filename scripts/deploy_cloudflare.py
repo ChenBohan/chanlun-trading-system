@@ -169,7 +169,7 @@ def main():
     url = deploy(headers)
     if url:
         print(f"\nDashboard live at: {url}")
-        prod_url = f"https://{PROJECT_NAME}.pages.dev"
+        prod_url = f"https://{PROJECT_NAME}-9d9.pages.dev"
         print(f"Production URL: {prod_url}")
     else:
         sys.exit(1)
