@@ -799,10 +799,13 @@ function updateConclusionBar(data) {
   const envFactors = (env.factors || []).join(' · ');
   const envScoreVal = env.score !== undefined ? env.score : '-';
 
+  const notesLabel = idx.notes ? `<span style="color:#8b949e;font-size:12px;margin-left:6px">${idx.notes}</span>` : '';
+
   bar.innerHTML = `
     <div class="concl-group">
       <span class="concl-label">评分</span>
       <span style="background:${scoreBg};color:${scoreClr};padding:3px 10px;border-radius:5px;font-weight:700;font-size:16px">${sc}</span>
+      ${notesLabel}
     </div>
     <div class="concl-group" title="${envFactors}\n${envAdvice}">
       <span class="concl-label">日线环境</span>
@@ -1912,7 +1915,7 @@ def _build_index_list(indices, all_data, synthesis_data):
         entry = {"etf_code": i.etf_code, "index_name": i.index_name,
                  "etf_name": i.etf_name, "category": i.category,
                  "type": i.type, "index_code": i.index_code,
-                 "market": i.market}
+                 "market": i.market, "notes": i.notes}
         daily_key = f"{i.etf_code}_daily"
         m30_key = f"{i.etf_code}_30min"
         dd = all_data.get(daily_key, {})
@@ -2959,8 +2962,11 @@ function updateInfoBar(data) {{
   const mEnvIcon = mEnvOk ? '✅' : '❌';
   const mEnvAdvice = mEnv.advice || '';
 
+  const notesHtml = idx.notes ? `<span style="color:#8b949e;font-size:11px;margin-left:2px">${{idx.notes}}</span>` : '';
+
   bar.innerHTML = `
     <span style="background:${{scoreBg}};color:${{scoreClr}};padding:1px 6px;border-radius:3px;font-weight:700">${{sc}}</span>
+    ${{notesHtml}}
     <span style="background:rgba(0,0,0,0.3);color:${{mEnvColor}};padding:1px 6px;border-radius:3px;font-weight:700;border:1px solid ${{mEnvColor}};font-size:11px" title="${{mEnvAdvice}}">${{mEnvIcon}}${{mEnvLabel}}</span>
     <span class="tag ${{tCls}}">${{(idx.trend||'-').replace('趋势','')}}</span> ${{tcText}}
     ${{idx.latest_signal && idx.latest_signal !== '-' ? '<span class="tag ' + dSigCls + '">' + idx.latest_signal + '</span>' : ''}}
