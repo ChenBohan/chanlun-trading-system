@@ -278,42 +278,13 @@ _TENCENT_PERIOD_MAP = {
 }
 
 
-_TENCENT_MAX_DAILY = 800
+_TENCENT_MAX_PER_REQ = 800
 _TENCENT_MAX_MINUTE = 320
 
 
-def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
-                   datalen: int = 800, max_retries: int = 3) -> list[KlineBar]:
-    """Fetch K-line from Tencent Finance API.
-
-    Args:
-        sina_sym: symbol in sh/sz format (e.g. "sh510300")
-        period: "daily", "30min", or "5min"
-        beg: start date YYYYMMDD (only used for daily)
-        datalen: max bars to fetch (auto-capped to API limits)
-        max_retries: retry count on failure
-    """
-    tcfg = _TENCENT_PERIOD_MAP.get(period)
-    if not tcfg:
-        return []
-
-    if tcfg["url_type"] == "daily":
-        datalen = min(datalen, _TENCENT_MAX_DAILY)
-        start_iso = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}" if beg else "2020-01-01"
-        end_iso = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
-        url = (
-            f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"
-            f"param={sina_sym},day,{start_iso},{end_iso},{datalen},qfq"
-        )
-    else:
-        datalen = min(datalen, _TENCENT_MAX_MINUTE)
-        url = (
-            f"https://ifzq.gtimg.cn/appstock/app/kline/mkline?"
-            f"param={sina_sym},{tcfg['param']},,{datalen}"
-        )
-
-    data_key = tcfg["key"]
-
+def _fetch_tencent_single(sina_sym: str, url: str, data_key: str,
+                          url_type: str, max_retries: int = 3) -> list[KlineBar]:
+    """Fetch one batch of K-line from Tencent Finance API."""
     raw_json = None
     for attempt in range(max_retries):
         try:
@@ -342,7 +313,6 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
     sym_data = data.get(sina_sym, {})
     klines = sym_data.get(data_key, [])
 
-    # Tencent returns "day" for some symbols and "qfqday" for others
     if not klines and data_key == "qfqday":
         klines = sym_data.get("day", [])
 
@@ -355,7 +325,7 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
         if not isinstance(item, list) or len(item) < 6:
             continue
 
-        if tcfg["url_type"] == "daily":
+        if url_type == "daily":
             dt_str = item[0]
             o, c, h, l = float(item[1]), float(item[2]), float(item[3]), float(item[4])
             v = int(float(item[5]))
@@ -380,6 +350,70 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
         prev_close = c
 
     return bars
+
+
+# End-date boundaries for multi-window daily fetch (recent→old order).
+# Each window fetches up to 800 bars ending BEFORE the boundary.
+# Chosen to maximize coverage with minimal overlap.
+_TENCENT_DAILY_WINDOWS = [
+    None,          # window 0: beg ~ now        (latest ~3 yrs)
+    "2023-06-01",  # window 1: beg ~ 2023-06    (fills gap: ~2020 to ~2023)
+    "2020-06-01",  # window 2: beg ~ 2020-06    (fills gap: ~2017 to ~2020)
+    "2017-06-01",  # window 3: beg ~ 2017-06    (older: ~2014 to ~2017)
+    "2014-06-01",  # window 4: beg ~ 2014-06    (oldest: ~2011 to ~2014)
+]
+
+
+def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
+                   datalen: int = 800, max_retries: int = 3) -> list[KlineBar]:
+    """Fetch K-line from Tencent Finance API.
+
+    For daily data, uses multi-window fetch to get up to ~2400 bars
+    (3 windows × 800 bars each) when datalen > 800.
+
+    Args:
+        sina_sym: symbol in sh/sz format (e.g. "sh510300")
+        period: "daily", "30min", or "5min"
+        beg: start date YYYYMMDD (only used for daily)
+        datalen: desired total bars (daily auto-splits into windows)
+        max_retries: retry count on failure
+    """
+    tcfg = _TENCENT_PERIOD_MAP.get(period)
+    if not tcfg:
+        return []
+
+    if tcfg["url_type"] != "daily":
+        dl = min(datalen, _TENCENT_MAX_MINUTE)
+        url = (
+            f"https://ifzq.gtimg.cn/appstock/app/kline/mkline?"
+            f"param={sina_sym},{tcfg['param']},,{dl}"
+        )
+        return _fetch_tencent_single(sina_sym, url, tcfg["key"], "minute", max_retries)
+
+    # Daily: multi-window fetch to overcome 800-bar limit
+    start_iso = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}" if beg else "2010-01-01"
+    end_now = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
+    num_windows = max(1, min(len(_TENCENT_DAILY_WINDOWS), datalen // _TENCENT_MAX_PER_REQ + 1))
+
+    merged = OrderedDict()
+    data_key = tcfg["key"]
+
+    for i in range(num_windows):
+        end_iso = _TENCENT_DAILY_WINDOWS[i] or end_now
+        url = (
+            f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"
+            f"param={sina_sym},day,{start_iso},{end_iso},{_TENCENT_MAX_PER_REQ},qfq"
+        )
+        batch = _fetch_tencent_single(sina_sym, url, data_key, "daily", max_retries)
+        for b in batch:
+            merged[b.datetime] = b
+
+        if len(batch) < _TENCENT_MAX_PER_REQ // 2:
+            break
+
+    result = list(merged.values())
+    result.sort(key=lambda b: b.datetime)
+    return result
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -843,7 +877,7 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
                 idx.etf_code, period,
                 market=idx.market, beg=beg, datalen=dl,
             )
-            if strategy == _SMALL and csv_path:
+            if csv_path and bars:
                 bars = _merge_bars(csv_path, bars)
             if period == "daily":
                 result.daily = bars
