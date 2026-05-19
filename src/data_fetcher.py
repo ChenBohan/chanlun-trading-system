@@ -336,6 +336,10 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
     sym_data = data.get(sina_sym, {})
     klines = sym_data.get(data_key, [])
 
+    # Tencent returns "day" for some symbols and "qfqday" for others
+    if not klines and data_key == "qfqday":
+        klines = sym_data.get("day", [])
+
     if not klines:
         return []
 
