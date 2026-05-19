@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Auto-update script for Chanlun Trading System.
 # Fetches data, regenerates mobile dashboard, and pushes to git.
-# Runs all-day every 5 minutes via cron.
+# Schedule: every 5 min during A-share trading hours + post-close, Mon-Fri.
 #
 # Usage:
 #   ./scripts/auto_update.sh           # Run once
@@ -23,9 +23,13 @@ CRON_TAG="chanlun-auto-update"
 if [[ "${1:-}" == "--install" ]]; then
     SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
-    # All-day schedule: every 5 minutes at :01 and :06, 7 days a week.
+    # A-share trading hours only (Mon-Fri):
+    #   Morning  09:31-11:31  (every 5 min)
+    #   Afternoon 13:01-14:56 (every 5 min)
+    #   Post-close 15:06      (final closing data)
     CRON_LINES=$(cat <<CRON
-1-59/5 * * * * ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
+1-56/5 9-14 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
+6 15 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
 CRON
 )
     # Remove old entries then append
