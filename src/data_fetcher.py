@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import threading
 import time
 from collections import OrderedDict
@@ -129,12 +130,31 @@ PERIOD_MAP = {
 # Sina Finance API (Primary)
 # ════════════════════════════════════════════════════════════════════
 
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ),
-}
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+]
+
+
+def _random_headers(referer: str = "") -> dict:
+    """Build randomized browser-like HTTP headers."""
+    h = {
+        "User-Agent": random.choice(_USER_AGENTS),
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection": "keep-alive",
+    }
+    if referer:
+        h["Referer"] = referer
+    return h
+
+
+_HEADERS = _random_headers()
 
 
 def _fetch_sina(sina_sym: str, scale: str, datalen: int = 1500,
@@ -149,7 +169,7 @@ def _fetch_sina(sina_sym: str, scale: str, datalen: int = 1500,
     raw = None
     for attempt in range(max_retries):
         try:
-            req = Request(url, headers=_HEADERS)
+            req = Request(url, headers=_random_headers("https://finance.sina.com.cn"))
             with urlopen(req, timeout=30) as resp:
                 raw = json.loads(resp.read().decode())
             break
@@ -224,12 +244,11 @@ def _fetch_eastmoney(secid: str, klt: str, beg: str, end: str,
         "ut": "fa5fd1943c7b386f172d6893dbfba10b",
     }
     url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{urlencode(params)}"
-    headers = {**_HEADERS, "Referer": "https://quote.eastmoney.com"}
 
     data = None
     for attempt in range(max_retries):
         try:
-            req = Request(url, headers=headers)
+            req = Request(url, headers=_random_headers("https://quote.eastmoney.com"))
             with urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode())
             break
@@ -288,7 +307,7 @@ def _fetch_tencent_single(sina_sym: str, url: str, data_key: str,
     raw_json = None
     for attempt in range(max_retries):
         try:
-            req = Request(url, headers=_HEADERS)
+            req = Request(url, headers=_random_headers("https://web.ifzq.gtimg.cn"))
             with urlopen(req, timeout=30) as resp:
                 raw_json = json.loads(resp.read().decode())
             break
