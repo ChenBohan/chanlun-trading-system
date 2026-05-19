@@ -278,6 +278,10 @@ _TENCENT_PERIOD_MAP = {
 }
 
 
+_TENCENT_MAX_DAILY = 800
+_TENCENT_MAX_MINUTE = 320
+
+
 def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
                    datalen: int = 800, max_retries: int = 3) -> list[KlineBar]:
     """Fetch K-line from Tencent Finance API.
@@ -286,7 +290,7 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
         sina_sym: symbol in sh/sz format (e.g. "sh510300")
         period: "daily", "30min", or "5min"
         beg: start date YYYYMMDD (only used for daily)
-        datalen: max bars to fetch
+        datalen: max bars to fetch (auto-capped to API limits)
         max_retries: retry count on failure
     """
     tcfg = _TENCENT_PERIOD_MAP.get(period)
@@ -294,6 +298,7 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
         return []
 
     if tcfg["url_type"] == "daily":
+        datalen = min(datalen, _TENCENT_MAX_DAILY)
         start_iso = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}" if beg else "2020-01-01"
         end_iso = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
         url = (
@@ -301,6 +306,7 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
             f"param={sina_sym},day,{start_iso},{end_iso},{datalen},qfq"
         )
     else:
+        datalen = min(datalen, _TENCENT_MAX_MINUTE)
         url = (
             f"https://ifzq.gtimg.cn/appstock/app/kline/mkline?"
             f"param={sina_sym},{tcfg['param']},,{datalen}"
