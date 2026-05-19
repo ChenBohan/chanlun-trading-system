@@ -674,11 +674,10 @@ def fetch_kline(code: str, period: str, market: str = "",
 def _build_source_order(primary: str, period: str = "daily") -> list[str]:
     """Build the data source fallback chain.
 
-    For daily: Tencent first (multi-window up to ~4000 bars).
-    For intraday: Sina first (up to 2000 bars, vs Tencent's 320 limit).
+    Tencent is always first (most stable, no IP blocking).
+    Sina/EastMoney are fallbacks only — they rate-limit aggressively
+    when hit with bulk requests (241 symbols × 3 periods every 5 min).
     """
-    if period in ("30min", "5min"):
-        return ["sina", "tencent", "eastmoney"]
     all_sources = ["tencent", "eastmoney", "sina"]
     if primary in all_sources:
         all_sources.remove(primary)
