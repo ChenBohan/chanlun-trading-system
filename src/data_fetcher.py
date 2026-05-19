@@ -146,7 +146,6 @@ def _random_headers(referer: str = "") -> dict:
         "User-Agent": random.choice(_USER_AGENTS),
         "Accept": "application/json, text/javascript, */*; q=0.01",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate",
         "Connection": "keep-alive",
     }
     if referer:
@@ -444,9 +443,8 @@ def _fetch_realtime_bar(sina_sym: str) -> Optional[KlineBar]:
     Returns None if market has no data today (e.g. weekend/holiday).
     """
     url = f"https://hq.sinajs.cn/list={sina_sym}"
-    headers = {**_HEADERS, "Referer": "https://finance.sina.com.cn"}
     try:
-        req = Request(url, headers=headers)
+        req = Request(url, headers=_random_headers("https://finance.sina.com.cn"))
         with urlopen(req, timeout=10) as resp:
             raw = resp.read().decode("gbk")
     except Exception:
@@ -911,7 +909,7 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
             bar_counts[label] = "ERR"
 
         if delay > 0 and not skipped_all:
-            time.sleep(delay)
+            time.sleep(delay + random.uniform(0, delay * 0.5))
 
     tag = " [skip]" if skipped_all else (" [incr]" if not force and any(
         v == "✓" for v in bar_counts.values()) else "")
