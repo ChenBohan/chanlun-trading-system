@@ -626,7 +626,7 @@ def fetch_kline(code: str, period: str, market: str = "",
     source_used = None
     bars = []
 
-    source_order = _build_source_order(DATA_SOURCE_PRIMARY)
+    source_order = _build_source_order(DATA_SOURCE_PRIMARY, period)
 
     for source in source_order:
         if source == "tencent":
@@ -671,8 +671,14 @@ def fetch_kline(code: str, period: str, market: str = "",
     return bars
 
 
-def _build_source_order(primary: str) -> list[str]:
-    """Build the data source fallback chain starting from primary."""
+def _build_source_order(primary: str, period: str = "daily") -> list[str]:
+    """Build the data source fallback chain.
+
+    For daily: Tencent first (multi-window up to ~4000 bars).
+    For intraday: Sina first (up to 2000 bars, vs Tencent's 320 limit).
+    """
+    if period in ("30min", "5min"):
+        return ["sina", "tencent", "eastmoney"]
     all_sources = ["tencent", "eastmoney", "sina"]
     if primary in all_sources:
         all_sources.remove(primary)
