@@ -7,11 +7,10 @@ Fetches K-line data for index ETFs at three timeframes:
   - 5-min   (precision level)
 
 Data source priority is configurable via DATA_SOURCE_PRIMARY:
-  "eastmoney" (default) — more accurate close prices (includes auction),
-                          returns today's incomplete daily bar during market hours
-  "sina"                — stable, no IP restrictions, up to 2000 bars,
-                          but needs _fetch_realtime_bar supplement for daily
-Fallback: the other source, then BaoStock for individual stocks.
+  "tencent"    (default) — Tencent Finance (ifzq.gtimg.cn), stable, no IP blocking
+  "eastmoney"            — more accurate close prices (includes auction)
+  "sina"                 — historical option, currently IP-blocked (HTTP 456)
+Fallback chain: tencent → eastmoney → sina → BaoStock (stocks only).
 """
 
 from __future__ import annotations
@@ -37,10 +36,9 @@ except ImportError:
 _TZ_CHINA = timezone(timedelta(hours=8))
 
 # ── Data source configuration ─────────────────────────────────────
-# Switch primary source: "eastmoney" or "sina"
-# The other becomes the automatic fallback.
-# Note: East Money may rate-limit frequent requests; Sina is more stable.
-DATA_SOURCE_PRIMARY = "sina"
+# Switch primary source: "tencent", "eastmoney", or "sina"
+# Fallback chain tries remaining sources in order.
+DATA_SOURCE_PRIMARY = "tencent"
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -268,6 +266,113 @@ def _fetch_eastmoney(secid: str, klt: str, beg: str, end: str,
 
 
 # ════════════════════════════════════════════════════════════════════
+# Tencent Finance API (Primary)
+# Daily:   web.ifzq.gtimg.cn  — up to ~800 bars, qfq (forward-adjusted)
+# Intra:   ifzq.gtimg.cn      — up to ~320 bars for m30/m5
+# ════════════════════════════════════════════════════════════════════
+
+_TENCENT_PERIOD_MAP = {
+    "daily": {"url_type": "daily", "key": "qfqday"},
+    "30min": {"url_type": "minute", "param": "m30", "key": "m30"},
+    "5min":  {"url_type": "minute", "param": "m5",  "key": "m5"},
+}
+
+
+def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
+                   datalen: int = 800, max_retries: int = 3) -> list[KlineBar]:
+    """Fetch K-line from Tencent Finance API.
+
+    Args:
+        sina_sym: symbol in sh/sz format (e.g. "sh510300")
+        period: "daily", "30min", or "5min"
+        beg: start date YYYYMMDD (only used for daily)
+        datalen: max bars to fetch
+        max_retries: retry count on failure
+    """
+    tcfg = _TENCENT_PERIOD_MAP.get(period)
+    if not tcfg:
+        return []
+
+    if tcfg["url_type"] == "daily":
+        start_iso = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}" if beg else "2020-01-01"
+        end_iso = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
+        url = (
+            f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"
+            f"param={sina_sym},day,{start_iso},{end_iso},{datalen},qfq"
+        )
+    else:
+        url = (
+            f"https://ifzq.gtimg.cn/appstock/app/kline/mkline?"
+            f"param={sina_sym},{tcfg['param']},,{datalen}"
+        )
+
+    data_key = tcfg["key"]
+
+    raw_json = None
+    for attempt in range(max_retries):
+        try:
+            req = Request(url, headers=_HEADERS)
+            with urlopen(req, timeout=30) as resp:
+                raw_json = json.loads(resp.read().decode())
+            break
+        except Exception as e:
+            wait = 2 ** attempt
+            if attempt < max_retries - 1:
+                print(f"    [Tencent] retry {attempt+1}/{max_retries} in {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                print(f"    [Tencent] FAILED after {max_retries} attempts: {e}")
+                return []
+
+    if not raw_json:
+        return []
+
+    data = raw_json.get("data", {})
+    if isinstance(data, list):
+        if not data:
+            return []
+        data = data[0] if isinstance(data[0], dict) else {}
+
+    sym_data = data.get(sina_sym, {})
+    klines = sym_data.get(data_key, [])
+
+    if not klines:
+        return []
+
+    bars = []
+    prev_close = None
+    for item in klines:
+        if not isinstance(item, list) or len(item) < 6:
+            continue
+
+        if tcfg["url_type"] == "daily":
+            dt_str = item[0]
+            o, c, h, l = float(item[1]), float(item[2]), float(item[3]), float(item[4])
+            v = int(float(item[5]))
+            amt = 0.0
+        else:
+            raw_dt = item[0]  # "202604281030"
+            dt_str = f"{raw_dt[:4]}-{raw_dt[4:6]}-{raw_dt[6:8]} {raw_dt[8:10]}:{raw_dt[10:12]}:00"
+            o, c, h, l = float(item[1]), float(item[2]), float(item[3]), float(item[4])
+            v = int(float(item[5]))
+            amt = float(item[7]) if len(item) > 7 and isinstance(item[7], (int, float, str)) and item[7] != {} else 0.0
+
+        change = (c - prev_close) if prev_close else 0.0
+        change_pct = (change / prev_close * 100) if prev_close else 0.0
+
+        bars.append(KlineBar(
+            datetime=dt_str,
+            open=o, close=c, high=h, low=l,
+            volume=v, amount=amt,
+            change_pct=round(change_pct, 4),
+            change=round(change, 4),
+        ))
+        prev_close = c
+
+    return bars
+
+
+# ════════════════════════════════════════════════════════════════════
 # Real-time Quote (Sina hq API) — for today's provisional bar
 # ════════════════════════════════════════════════════════════════════
 
@@ -439,8 +544,8 @@ def fetch_kline(code: str, period: str, market: str = "",
                 beg: str = "", datalen: int = 1500) -> list[KlineBar]:
     """Fetch K-line data for an ETF or stock.
 
-    Data source order is controlled by DATA_SOURCE_PRIMARY ("eastmoney"/"sina").
-    Fallback chain: primary → secondary → BaoStock (stocks only).
+    Data source order is controlled by DATA_SOURCE_PRIMARY.
+    Fallback chain tries all sources: tencent → eastmoney → sina → BaoStock.
 
     Args:
         code: ETF/stock code, e.g. "510300"
@@ -458,36 +563,39 @@ def fetch_kline(code: str, period: str, market: str = "",
     end_date = datetime.now().strftime("%Y%m%d")
     em_beg = beg or "20250101"
     source_used = None
+    bars = []
 
-    if DATA_SOURCE_PRIMARY == "eastmoney":
-        bars = _fetch_eastmoney(secid, cfg["em_klt"], em_beg, end_date)
-        if bars:
-            source_used = "eastmoney"
-        else:
-            print(f"    EM empty for {secid}/{period}, fallback to Sina...")
-            bars = _fetch_sina(sina_sym, cfg["sina_scale"], datalen=datalen)
+    source_order = _build_source_order(DATA_SOURCE_PRIMARY)
+
+    for source in source_order:
+        if source == "tencent":
+            bars = _fetch_tencent(sina_sym, period, beg=beg, datalen=datalen)
             if bars:
-                source_used = "sina"
-    else:
-        bars = _fetch_sina(sina_sym, cfg["sina_scale"], datalen=datalen)
-        if bars:
-            source_used = "sina"
-        else:
-            print(f"    Sina empty for {sina_sym}/{period}, fallback to EM...")
+                source_used = "tencent"
+                break
+        elif source == "eastmoney":
             bars = _fetch_eastmoney(secid, cfg["em_klt"], em_beg, end_date)
             if bars:
                 source_used = "eastmoney"
+                break
+        elif source == "sina":
+            bars = _fetch_sina(sina_sym, cfg["sina_scale"], datalen=datalen)
+            if bars:
+                source_used = "sina"
+                break
+
+        if not bars:
+            print(f"    {source} empty for {code}/{period}, trying next...")
 
     if not bars and not _is_etf(code):
-        print(f"    Both Sina & EM empty for {code}/{period}, trying BaoStock...")
+        print(f"    All sources empty for {code}/{period}, trying BaoStock...")
         bars = _fetch_baostock(code, period, market, beg)
         if bars:
             source_used = "baostock"
 
-    # Sina daily K-line does NOT include today's in-progress bar;
-    # supplement it via the real-time quote API.
-    # EastMoney already includes today's bar, so skip this for EM source.
-    if bars and period == "daily" and source_used != "eastmoney":
+    # Tencent and Sina daily K-line may NOT include today's in-progress bar;
+    # supplement via real-time quote API when market is open.
+    if bars and period == "daily" and source_used not in ("eastmoney",):
         today_str = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
         last_date = bars[-1].datetime.split(" ")[0]
         if last_date < today_str:
@@ -500,6 +608,15 @@ def fetch_kline(code: str, period: str, market: str = "",
         bars = [b for b in bars if b.datetime >= beg_iso]
 
     return bars
+
+
+def _build_source_order(primary: str) -> list[str]:
+    """Build the data source fallback chain starting from primary."""
+    all_sources = ["tencent", "eastmoney", "sina"]
+    if primary in all_sources:
+        all_sources.remove(primary)
+        return [primary] + all_sources
+    return all_sources
 
 
 # ════════════════════════════════════════════════════════════════════
