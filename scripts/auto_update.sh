@@ -41,12 +41,22 @@ if [[ "${1:-}" == "--remove" ]]; then
     exit 0
 fi
 
+TIMEOUT_SEC=240  # 4 minutes max (cron interval is 5 min)
+
 # ─── Lock to prevent concurrent runs ───────────────────────────────
 if [[ -f "$LOCK_FILE" ]]; then
     pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Another instance running (pid=$pid), skipping." >> "$LOG_FILE"
-        exit 0
+        lock_age=$(( $(date +%s) - $(stat -c %Y "$LOCK_FILE") ))
+        if (( lock_age > TIMEOUT_SEC )); then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Stale lock (pid=$pid, age=${lock_age}s > ${TIMEOUT_SEC}s), killing." >> "$LOG_FILE"
+            kill "$pid" 2>/dev/null; sleep 2
+            kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+            rm -f "$LOCK_FILE"
+        else
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Another instance running (pid=$pid, age=${lock_age}s), skipping." >> "$LOG_FILE"
+            exit 0
+        fi
     fi
 fi
 echo $$ > "$LOCK_FILE"
@@ -61,7 +71,13 @@ cd "$PROJECT_DIR"
     echo "============================================================"
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 1/2: Fetch + analyze + dashboard..."
-    python3 main.py run 2>&1
+    run_exit=0
+    timeout "${TIMEOUT_SEC}s" python3 main.py run 2>&1 || run_exit=$?
+    if (( run_exit == 124 )); then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Pipeline timed out after ${TIMEOUT_SEC}s"
+    elif (( run_exit != 0 )); then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: Pipeline exited with code $run_exit"
+    fi
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pipeline complete."
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 2/3: Git push..."
