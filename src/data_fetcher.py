@@ -873,7 +873,52 @@ def _merge_bars(existing_csv_path: str, new_bars: list[KlineBar]) -> list[KlineB
 
     result = list(merged.values())
     result.sort(key=lambda b: b.datetime)
-    return result
+    return _normalize_volume_units(result)
+
+
+def _normalize_volume_units(bars: list[KlineBar]) -> list[KlineBar]:
+    """Fix volume unit discontinuity caused by Tencent API changes.
+
+    Around 2026-03-19, the Tencent intraday API changed volume units.
+    Old data (amount==0) has volumes ~50-100x larger than new data (amount>0).
+    This function detects the boundary and scales old volumes to match new ones.
+    """
+    if len(bars) < 20:
+        return bars
+
+    # Find transition: last bar with amount==0 followed by first bar with amount>0
+    boundary = -1
+    for i in range(1, len(bars)):
+        if bars[i].amount > 0 and bars[i - 1].amount == 0:
+            boundary = i
+            break
+
+    if boundary < 0:
+        return bars
+
+    # Compute median volume for a window around the boundary
+    window = 10
+    old_vols = [b.volume for b in bars[max(0, boundary - window):boundary] if b.volume > 0]
+    new_vols = [b.volume for b in bars[boundary:boundary + window] if b.volume > 0]
+
+    if not old_vols or not new_vols:
+        return bars
+
+    old_median = sorted(old_vols)[len(old_vols) // 2]
+    new_median = sorted(new_vols)[len(new_vols) // 2]
+
+    if old_median <= 0 or new_median <= 0:
+        return bars
+
+    ratio = old_median / new_median
+    if ratio < 5:
+        return bars
+
+    scale = new_median / old_median
+    for b in bars[:boundary]:
+        b.volume = int(b.volume * scale)
+
+    return bars
 
 
 # ════════════════════════════════════════════════════════════════════
