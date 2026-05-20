@@ -145,6 +145,7 @@ def cmd_run(args):
     from src.data_fetcher import (
         load_index_watchlist, fetch_all_indices,
         save_fetch_results, print_fetch_summary,
+        supplement_daily_with_sina,
     )
     import src.data_fetcher as _df
     from src.visualize import (
@@ -161,8 +162,8 @@ def cmd_run(args):
 
     t_start = _time.perf_counter()
 
-    # Step 1: Fetch
-    print("\n[Step 1/3] 数据拉取...")
+    # Step 1: Fetch (Tencent bulk, fast)
+    print("\n[Step 1/4] 数据拉取...")
     t0 = _time.perf_counter()
     indices = load_index_watchlist()
     results = fetch_all_indices(
@@ -171,18 +172,24 @@ def cmd_run(args):
         force=args.force,
     )
     print_fetch_summary(results)
+
+    # Step 1b: Sina supplement for shallow daily data
+    if not getattr(args, 'no_supplement', False):
+        print("\n[Step 1b/4] Sina 日线深度补充...")
+        supplement_daily_with_sina(results)
+
     save_fetch_results(results, fmt="csv")
     t_fetch = _time.perf_counter() - t0
 
     # Step 2: Analyze all
-    print("\n[Step 2/3] 缠论分析（多进程）...")
+    print("\n[Step 2/4] 缠论分析（多进程）...")
     t0 = _time.perf_counter()
     analyze_workers = min(args.analyze_workers, len(indices))
     cache = run_analysis_pipeline(max_workers=analyze_workers)
     t_analyze = _time.perf_counter() - t0
 
     # Step 3: Mobile dashboard (reuses analysis cache)
-    print("\n[Step 3/3] 生成移动版仪表盘...")
+    print("\n[Step 3/4] 生成移动版仪表盘...")
     t0 = _time.perf_counter()
     generate_mobile_dashboard(cache=cache)
     t_mobile = _time.perf_counter() - t0

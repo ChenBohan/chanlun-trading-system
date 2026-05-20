@@ -2358,7 +2358,7 @@ def generate_mobile_dashboard(data_dir: str = None,
                 entry_m["area_cmp"] = ""
             mobile_global_signals.append(entry_m)
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    mobile_type_limits = {"type1": 5, "type2": 5, "type3": 20}
+    mobile_type_limits = {"type1": 15, "type2": 15, "type3": 60}
     mobile_levels = ["日线", "30分钟", "5分钟"]
     mobile_gs_by_level_type: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": []} for lv in mobile_levels
@@ -2379,7 +2379,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     mobile_global_signals_json = json.dumps(mobile_global_signals_top, ensure_ascii=False)
 
     # Build watchlist-specific signals for mobile (pre-filtered)
-    mobile_wl_type_limits = {"type1": 10, "type2": 10, "type3": 10}
+    mobile_wl_type_limits = {"type1": 30, "type2": 30, "type3": 30}
     mobile_wl_signals: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": []} for lv in mobile_levels
     }
@@ -2399,6 +2399,104 @@ def generate_mobile_dashboard(data_dir: str = None,
             if len(mobile_wl_signals[lv][bucket]) < mobile_wl_type_limits[bucket]:
                 mobile_wl_signals[lv][bucket].append(s)
     mobile_watchlist_signals_json = json.dumps(mobile_wl_signals, ensure_ascii=False)
+
+    # ── Market Thermometer data ──
+    thermo_levels = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
+    thermo = {}
+    total_stocks = len(indices)
+    for lk, lv_label in thermo_levels.items():
+        hub_above = hub_inside = hub_below = 0
+        sig_3b = sig_pb = sig_1b = sig_ps = sig_3s = sig_other = 0
+        for idx in indices:
+            key = f"{idx.etf_code}_{lk}"
+            d = all_data.get(key)
+            if not d:
+                continue
+            hp = d.get("hub_position", "")
+            if "上方" in hp:
+                hub_above += 1
+            elif "下方" in hp:
+                hub_below += 1
+            else:
+                hub_inside += 1
+            bsp_list = d.get("bsp", [])
+            if bsp_list:
+                lt = bsp_list[-1].get("type", "")
+                if lt == "3B":
+                    sig_3b += 1
+                elif lt in ("PB",):
+                    sig_pb += 1
+                elif lt in ("1B", "2B"):
+                    sig_1b += 1
+                elif lt in ("PS",):
+                    sig_ps += 1
+                elif lt in ("3S",):
+                    sig_3s += 1
+                elif lt in ("1S", "2S"):
+                    sig_other += 1
+
+        thermo[lv_label] = {
+            "hub": {"above": hub_above, "inside": hub_inside, "below": hub_below},
+            "sig": {"3B": sig_3b, "PB": sig_pb, "1B": sig_1b, "PS": sig_ps, "3S": sig_3s, "other": sig_other},
+        }
+
+    above_30 = thermo.get("30分钟", {}).get("hub", {}).get("above", 0)
+    below_30 = thermo.get("30分钟", {}).get("hub", {}).get("below", 0)
+    buy3_30 = thermo.get("30分钟", {}).get("sig", {}).get("3B", 0)
+    sell3_30 = thermo.get("30分钟", {}).get("sig", {}).get("3S", 0)
+    above_pct = above_30 / total_stocks * 100 if total_stocks else 0
+    below_pct = below_30 / total_stocks * 100 if total_stocks else 0
+
+    if above_pct > 50 and buy3_30 > sell3_30 * 2:
+        thermo_assess = "强势"
+        thermo_color = "#f85149"
+    elif above_pct > 30 and buy3_30 > sell3_30:
+        thermo_assess = "偏强"
+        thermo_color = "#f0883e"
+    elif below_pct > 50 and sell3_30 > buy3_30 * 2:
+        thermo_assess = "弱势"
+        thermo_color = "#3fb950"
+    elif below_pct > 35 and sell3_30 > buy3_30:
+        thermo_assess = "偏弱"
+        thermo_color = "#7ee787"
+    else:
+        thermo_assess = "震荡"
+        thermo_color = "#d29922"
+
+    # Persist daily snapshot to thermo_history.json
+    thermo_history_path = os.path.join(_PROJECT_ROOT, "reports", "data", "thermo_history.json")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    thermo_history = {}
+    if os.path.exists(thermo_history_path):
+        try:
+            with open(thermo_history_path, "r", encoding="utf-8") as f:
+                thermo_history = json.load(f)
+        except Exception:
+            thermo_history = {}
+
+    thermo_history[today_str] = {
+        "levels": thermo,
+        "assess": thermo_assess,
+        "total": total_stocks,
+    }
+
+    sorted_dates = sorted(thermo_history.keys(), reverse=True)[:20]
+    thermo_history = {d: thermo_history[d] for d in sorted_dates}
+    os.makedirs(os.path.dirname(thermo_history_path), exist_ok=True)
+    with open(thermo_history_path, "w", encoding="utf-8") as f:
+        json.dump(thermo_history, f, ensure_ascii=False, indent=2)
+
+    recent_5 = sorted_dates[:5]
+    thermo_hist_recent = {d: thermo_history[d] for d in recent_5}
+
+    thermo_data = {
+        "total": total_stocks,
+        "levels": thermo,
+        "assess": thermo_assess,
+        "color": thermo_color,
+        "history": thermo_hist_recent,
+    }
+    market_thermo_json = json.dumps(thermo_data, ensure_ascii=False)
 
     tab_parts = []
     last_type = None
@@ -2553,6 +2651,8 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
   <div id="bspTooltip" style="display:none;position:fixed;z-index:1000;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;max-width:88vw;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-size:12px;line-height:1.6;color:#c9d1d9;pointer-events:auto"></div>
 </div>
 
+<div id="marketThermo" style="margin-top:8px;margin-bottom:8px"></div>
+
 </div>
 
 <script>
@@ -2563,6 +2663,7 @@ const SYNTHESIS = {synthesis_json};
 const GLOBAL_SIGNALS = {mobile_global_signals_json};
 const WATCHLIST_SIGNALS = {mobile_watchlist_signals_json};
 const WATCHLIST_CODES = {watchlist_codes_json};
+const MARKET_THERMO = {market_thermo_json};
 function getChartData(key) {{ return DATA_CACHE[key] || null; }}
 
 function loadChartData(key) {{
@@ -2579,6 +2680,8 @@ function loadChartData(key) {{
 // ─── Mobile Watchlist Panel (自选股最新买卖点) ───
 let mWlTab = '30分钟';
 let mWlExpanded = false;
+let mWlPage = 1;
+const mWlPageSize = {{t1: 10, t2: 10, t3: 10}};
 function renderMobileWatchlist() {{
   const el = document.getElementById('mobileWatchlist');
   if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) {{ el.innerHTML = ''; return; }}
@@ -2689,17 +2792,38 @@ function renderMobileWatchlist() {{
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
     const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="mWlTab='${{lv}}';renderMobileWatchlist()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{cnt}})</button>`;
+    h += `<button onclick="mWlTab='${{lv}}';mWlPage=1;renderMobileWatchlist()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{cnt}})</button>`;
   }});
   h += '</div>';
 
   const data = WATCHLIST_SIGNALS[mWlTab] || {{}};
-  const t1 = data.type1 || [];
-  const t2 = data.type2 || [];
-  const t3 = data.type3 || [];
+  const allT1 = data.type1 || [];
+  const allT2 = data.type2 || [];
+  const allT3 = data.type3 || [];
+  const maxItems = Math.max(allT1.length, allT2.length, allT3.length);
+  const maxPageSize = Math.max(mWlPageSize.t1, mWlPageSize.t2, mWlPageSize.t3);
+  const totalPages = Math.min(3, Math.max(1, Math.ceil(maxItems / maxPageSize)));
+  if (mWlPage > totalPages) mWlPage = totalPages;
+  const s1 = (mWlPage - 1) * mWlPageSize.t1;
+  const s2 = (mWlPage - 1) * mWlPageSize.t2;
+  const s3 = (mWlPage - 1) * mWlPageSize.t3;
+  const t1 = allT1.slice(s1, s1 + mWlPageSize.t1);
+  const t2 = allT2.slice(s2, s2 + mWlPageSize.t2);
+  const t3 = allT3.slice(s3, s3 + mWlPageSize.t3);
   h += mWlTable('🔴 第一类买卖点', t1, false);
   h += mWlTable('🟠 第二类买卖点', t2, false);
-  h += mWlTable('🔵 第三类买卖点（最新10个）', t3, true);
+  h += mWlTable('🔵 第三类买卖点', t3, true);
+  if (totalPages > 1) {{
+    h += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:8px 0 4px">';
+    for (let pg = 1; pg <= totalPages; pg++) {{
+      const isActive = pg === mWlPage;
+      const bgP = isActive ? '#58a6ff' : '#21262d';
+      const clrP = isActive ? '#fff' : '#8b949e';
+      h += `<button onclick="mWlPage=${{pg}};renderMobileWatchlist()" style="min-width:28px;padding:3px 8px;border:1px solid ${{isActive?'#58a6ff':'#30363d'}};border-radius:4px;background:${{bgP}};color:${{clrP}};cursor:pointer;font-size:11px">${{pg}}</button>`;
+    }}
+    h += `<span style="color:#484f58;font-size:10px;margin-left:4px">${{mWlPage}}/${{totalPages}}</span>`;
+    h += '</div>';
+  }}
   h += '</div>';
   }}
   h += '</div>';
@@ -2709,6 +2833,8 @@ renderMobileWatchlist();
 
 let mgsTab = '30分钟';
 let mgsExpanded = true;
+let mgsPage = 1;
+const mgsPageSize = {{t1: 5, t2: 5, t3: 20}};
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
   const levels = ['日线', '30分钟', '5分钟'];
@@ -2818,14 +2944,38 @@ function renderMobileGlobalSignals() {{
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
     const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-    h += `<button onclick="mgsTab='${{lv}}';renderMobileGlobalSignals()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{total}})</button>`;
+    h += `<button onclick="mgsTab='${{lv}}';mgsPage=1;renderMobileGlobalSignals()" style="padding:4px 10px;border:none;border-bottom:${{border}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}} (${{total}})</button>`;
   }});
   h += '</div>';
 
   const data = GLOBAL_SIGNALS[mgsTab] || {{}};
-  h += mgsTable('🔴 第一类买卖点（最新5个）', data.type1 || [], false);
-  h += mgsTable('🟠 第二类买卖点（最新5个）', data.type2 || [], false);
-  h += mgsTable('🔵 第三类买卖点（最新20个）', data.type3 || [], true);
+  const gAllT1 = data.type1 || [];
+  const gAllT2 = data.type2 || [];
+  const gAllT3 = data.type3 || [];
+  const gMaxItems = Math.max(gAllT1.length, gAllT2.length, gAllT3.length);
+  const gMaxPageSize = Math.max(mgsPageSize.t1, mgsPageSize.t2, mgsPageSize.t3);
+  const gTotalPages = Math.min(3, Math.max(1, Math.ceil(gMaxItems / gMaxPageSize)));
+  if (mgsPage > gTotalPages) mgsPage = gTotalPages;
+  const gs1 = (mgsPage - 1) * mgsPageSize.t1;
+  const gs2 = (mgsPage - 1) * mgsPageSize.t2;
+  const gs3 = (mgsPage - 1) * mgsPageSize.t3;
+  const gT1 = gAllT1.slice(gs1, gs1 + mgsPageSize.t1);
+  const gT2 = gAllT2.slice(gs2, gs2 + mgsPageSize.t2);
+  const gT3 = gAllT3.slice(gs3, gs3 + mgsPageSize.t3);
+  h += mgsTable('🔴 第一类买卖点', gT1, false);
+  h += mgsTable('🟠 第二类买卖点', gT2, false);
+  h += mgsTable('🔵 第三类买卖点', gT3, true);
+  if (gTotalPages > 1) {{
+    h += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:8px 0 4px">';
+    for (let pg = 1; pg <= gTotalPages; pg++) {{
+      const isActive = pg === mgsPage;
+      const bgP = isActive ? '#58a6ff' : '#21262d';
+      const clrP = isActive ? '#fff' : '#8b949e';
+      h += `<button onclick="mgsPage=${{pg}};renderMobileGlobalSignals()" style="min-width:28px;padding:3px 8px;border:1px solid ${{isActive?'#58a6ff':'#30363d'}};border-radius:4px;background:${{bgP}};color:${{clrP}};cursor:pointer;font-size:11px">${{pg}}</button>`;
+    }}
+    h += `<span style="color:#484f58;font-size:10px;margin-left:4px">${{mgsPage}}/${{gTotalPages}}</span>`;
+    h += '</div>';
+  }}
   h += '</div>';
   }}
   h += '</div>';
@@ -3442,6 +3592,208 @@ function setupInteraction() {{
     if (!e.target.closest('#bspTooltip') && !e.target.closest('#klineCanvas')) hideBspTooltip();
   }});
 }}
+
+// ─── Market Thermometer ───
+let thermoTab = '30分钟';
+let thermoExpanded = true;
+function renderThermo() {{
+  const el = document.getElementById('marketThermo');
+  if (!MARKET_THERMO || !MARKET_THERMO.levels) {{ el.innerHTML = ''; return; }}
+  const T = MARKET_THERMO;
+  const levels = ['日线', '30分钟', '5分钟'];
+
+  let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden">';
+  h += '<div onclick="thermoExpanded=!thermoExpanded;renderThermo()" style="display:flex;align-items:center;padding:8px 10px;cursor:pointer;user-select:none">';
+  h += '<span style="color:#c9d1d9;font-size:12px;font-weight:bold;flex:1">🌡️ 市场温度计';
+  h += ` <span style="font-size:11px;color:${{T.color}};font-weight:700;margin-left:4px">${{T.assess}}</span>`;
+  h += ` <span style="font-size:10px;color:#8b949e;font-weight:400">${{T.total}}个标的</span></span>`;
+  h += '<span style="color:#8b949e;font-size:10px;transition:transform 0.2s;transform:rotate(' + (thermoExpanded ? '180' : '0') + 'deg)">▼</span>';
+  h += '</div>';
+
+  if (thermoExpanded) {{
+    h += '<div style="padding:0 10px 10px">';
+
+    h += '<div style="display:flex;gap:4px;margin-bottom:8px">';
+    levels.forEach(lv => {{
+      const active = lv === thermoTab;
+      const bg = active ? '#21262d' : 'transparent';
+      const clr = active ? '#58a6ff' : '#8b949e';
+      const bdr = active ? '2px solid #58a6ff' : '2px solid transparent';
+      h += `<button onclick="thermoTab='${{lv}}';renderThermo()" style="padding:4px 10px;border:none;border-bottom:${{bdr}};background:${{bg}};color:${{clr}};cursor:pointer;font-size:12px;border-radius:4px 4px 0 0">${{lv}}</button>`;
+    }});
+    h += '</div>';
+
+    const lv = T.levels[thermoTab];
+    if (lv) {{
+      const hub = lv.hub;
+      const sig = lv.sig;
+      const total = T.total;
+
+      // Hub position bar
+      const abPct = (hub.above / total * 100).toFixed(1);
+      const inPct = (hub.inside / total * 100).toFixed(1);
+      const blPct = (hub.below / total * 100).toFixed(1);
+      h += '<div style="font-size:10px;color:#8b949e;margin-bottom:4px">中枢位置分布</div>';
+      h += '<div style="display:flex;height:20px;border-radius:4px;overflow:hidden;margin-bottom:2px">';
+      if (hub.above > 0) h += `<div style="flex:${{hub.above}};background:#f85149;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:600">${{hub.above}}</div>`;
+      if (hub.inside > 0) h += `<div style="flex:${{hub.inside}};background:#d29922;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:600">${{hub.inside}}</div>`;
+      if (hub.below > 0) h += `<div style="flex:${{hub.below}};background:#3fb950;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:600">${{hub.below}}</div>`;
+      h += '</div>';
+      h += '<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:10px">';
+      h += `<span style="color:#f85149">▲ 上方 ${{abPct}}%</span>`;
+      h += `<span style="color:#d29922">◆ 区间 ${{inPct}}%</span>`;
+      h += `<span style="color:#3fb950">▼ 下方 ${{blPct}}%</span>`;
+      h += '</div>';
+
+      // Signal distribution bar
+      const sigTotal = sig['3B'] + sig.PB + sig['1B'] + sig.PS + sig['3S'] + sig.other;
+      h += '<div style="font-size:10px;color:#8b949e;margin-bottom:4px">最后信号分布</div>';
+      h += '<div style="display:flex;height:20px;border-radius:4px;overflow:hidden;margin-bottom:2px">';
+      const sigItems = [
+        {{val: sig['3B'], clr: '#f85149', lbl: '三买'}},
+        {{val: sig.PB, clr: '#da3633', lbl: '盘买'}},
+        {{val: sig['1B'], clr: '#b62324', lbl: '一/二买'}},
+        {{val: sig.PS, clr: '#238636', lbl: '盘卖'}},
+        {{val: sig['3S'], clr: '#3fb950', lbl: '三卖'}},
+        {{val: sig.other, clr: '#7ee787', lbl: '一/二卖'}},
+      ];
+      sigItems.forEach(s => {{
+        if (s.val > 0) h += `<div style="flex:${{s.val}};background:${{s.clr}};display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:600" title="${{s.lbl}}: ${{s.val}}">${{s.val > 5 ? s.val : ''}}</div>`;
+      }});
+      h += '</div>';
+      h += '<div style="display:flex;flex-wrap:wrap;gap:6px 10px;font-size:10px;margin-bottom:10px">';
+      sigItems.forEach(s => {{
+        if (s.val > 0) {{
+          const pct = (s.val / total * 100).toFixed(1);
+          h += `<span style="color:${{s.clr}}">${{s.lbl}} ${{s.val}}(${{pct}}%)</span>`;
+        }}
+      }});
+      h += '</div>';
+
+      // Key metrics
+      const ratio3 = sig['3S'] > 0 ? (sig['3B'] / sig['3S']).toFixed(2) : (sig['3B'] > 0 ? '∞' : '-');
+      const buyPct = ((sig['3B'] + sig.PB + sig['1B']) / total * 100).toFixed(1);
+      const sellPct = ((sig['3S'] + sig.PS + sig.other) / total * 100).toFixed(1);
+      h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+      h += `<div style="flex:1;min-width:80px;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:6px 8px;text-align:center">`;
+      h += `<div style="font-size:9px;color:#8b949e">三买/三卖比</div>`;
+      const ratioClr = sig['3B'] > sig['3S'] ? '#f85149' : (sig['3B'] < sig['3S'] ? '#3fb950' : '#d29922');
+      h += `<div style="font-size:16px;font-weight:700;color:${{ratioClr}}">${{ratio3}}</div>`;
+      h += `<div style="font-size:9px;color:#8b949e">${{sig['3B']}}买 / ${{sig['3S']}}卖</div>`;
+      h += '</div>';
+      h += `<div style="flex:1;min-width:80px;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:6px 8px;text-align:center">`;
+      h += `<div style="font-size:9px;color:#8b949e">多方占比</div>`;
+      h += `<div style="font-size:16px;font-weight:700;color:#f85149">${{buyPct}}%</div>`;
+      h += `<div style="font-size:9px;color:#8b949e">${{sig['3B']+sig.PB+sig['1B']}}个标的</div>`;
+      h += '</div>';
+      h += `<div style="flex:1;min-width:80px;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:6px 8px;text-align:center">`;
+      h += `<div style="font-size:9px;color:#8b949e">空方占比</div>`;
+      h += `<div style="font-size:16px;font-weight:700;color:#3fb950">${{sellPct}}%</div>`;
+      h += `<div style="font-size:9px;color:#8b949e">${{sig['3S']+sig.PS+sig.other}}个标的</div>`;
+      h += '</div>';
+      h += `<div style="flex:1;min-width:80px;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:6px 8px;text-align:center">`;
+      h += `<div style="font-size:9px;color:#8b949e">中枢上方</div>`;
+      const abClr = parseFloat(abPct) > 40 ? '#f85149' : (parseFloat(abPct) < 25 ? '#3fb950' : '#d29922');
+      h += `<div style="font-size:16px;font-weight:700;color:${{abClr}}">${{abPct}}%</div>`;
+      h += `<div style="font-size:9px;color:#8b949e">${{hub.above}}个标的</div>`;
+      h += '</div>';
+      h += '</div>';
+
+      // Brief assessment
+      h += '<div style="margin-top:8px;padding:6px 8px;background:#0d1117;border:1px solid #21262d;border-radius:6px;font-size:11px;color:#c9d1d9;line-height:1.6">';
+      let assess = '';
+      if (parseFloat(blPct) > 50) assess += `<span style="color:#3fb950">⚠ ${{blPct}}% 标的在中枢下方，偏弱格局。</span> `;
+      else if (parseFloat(abPct) > 40) assess += `<span style="color:#f85149">✅ ${{abPct}}% 标的在中枢上方，偏强格局。</span> `;
+      else assess += `<span style="color:#d29922">◆ 中枢位置三分天下，震荡格局。</span> `;
+      if (sig['3B'] > sig['3S'] * 2) assess += '<span style="color:#f85149">三买显著多于三卖，做多窗口。</span>';
+      else if (sig['3S'] > sig['3B'] * 2) assess += '<span style="color:#3fb950">三卖显著多于三买，防守为主。</span>';
+      else if (sig['3B'] > 0 || sig['3S'] > 0) assess += `三买${{sig['3B']}}个 vs 三卖${{sig['3S']}}个，多空接近。`;
+      h += assess;
+      h += '</div>';
+
+      // 5-day history comparison
+      const hist = T.history;
+      if (hist) {{
+        const dates = Object.keys(hist).sort().reverse();
+        if (dates.length > 1) {{
+          h += '<div style="margin-top:10px;font-size:10px;color:#8b949e;margin-bottom:4px">近' + dates.length + '日趋势对比（' + thermoTab + '）</div>';
+          h += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+          h += '<table style="width:100%;border-collapse:collapse;font-size:10px;color:#c9d1d9;background:#0d1117">';
+          h += '<thead><tr style="background:#21262d;color:#8b949e">';
+          h += '<th style="padding:4px 6px;text-align:left;white-space:nowrap">日期</th>';
+          h += '<th style="padding:4px 6px;text-align:center">上方%</th>';
+          h += '<th style="padding:4px 6px;text-align:center">区间%</th>';
+          h += '<th style="padding:4px 6px;text-align:center">下方%</th>';
+          h += '<th style="padding:4px 6px;text-align:center">三买</th>';
+          h += '<th style="padding:4px 6px;text-align:center">三卖</th>';
+          h += '<th style="padding:4px 6px;text-align:center">评估</th>';
+          h += '</tr></thead><tbody>';
+          dates.forEach((dt, idx) => {{
+            const d = hist[dt];
+            const dl = d.levels ? d.levels[thermoTab] : null;
+            if (!dl) return;
+            const dHub = dl.hub || {{}};
+            const dSig = dl.sig || {{}};
+            const dTotal = d.total || 1;
+            const dAbPct = (dHub.above / dTotal * 100).toFixed(1);
+            const dInPct = (dHub.inside / dTotal * 100).toFixed(1);
+            const dBlPct = (dHub.below / dTotal * 100).toFixed(1);
+            const d3B = dSig['3B'] || 0;
+            const d3S = dSig['3S'] || 0;
+            const bg = idx === 0 ? '#161b22' : (idx % 2 === 0 ? '#0d1117' : '#161b22');
+            const today = idx === 0;
+            const dtLabel = dt.substring(5);
+            const assessClr = {{'强势':'#f85149','偏强':'#f0883e','震荡':'#d29922','偏弱':'#7ee787','弱势':'#3fb950'}};
+            const aC = assessClr[d.assess] || '#8b949e';
+
+            // Mini bar for hub position
+            const abW = Math.max(2, parseFloat(dAbPct));
+            const inW = Math.max(2, parseFloat(dInPct));
+            const blW = Math.max(2, parseFloat(dBlPct));
+
+            // Trend arrows comparing with previous day
+            let abArrow = '', blArrow = '', b3Arrow = '', s3Arrow = '';
+            if (idx < dates.length - 1) {{
+              const prevD = hist[dates[idx + 1]];
+              const prevL = prevD && prevD.levels ? prevD.levels[thermoTab] : null;
+              if (prevL) {{
+                const prevAbPct = (prevL.hub.above || 0) / (prevD.total || 1) * 100;
+                const prevBlPct = (prevL.hub.below || 0) / (prevD.total || 1) * 100;
+                const curAbN = parseFloat(dAbPct);
+                const curBlN = parseFloat(dBlPct);
+                if (curAbN > prevAbPct + 2) abArrow = '<span style="color:#f85149;font-size:8px">↑</span>';
+                else if (curAbN < prevAbPct - 2) abArrow = '<span style="color:#3fb950;font-size:8px">↓</span>';
+                if (curBlN > prevBlPct + 2) blArrow = '<span style="color:#3fb950;font-size:8px">↑</span>';
+                else if (curBlN < prevBlPct - 2) blArrow = '<span style="color:#f85149;font-size:8px">↓</span>';
+                const prev3B = prevL.sig['3B'] || 0;
+                const prev3S = prevL.sig['3S'] || 0;
+                if (d3B > prev3B + 3) b3Arrow = '<span style="color:#f85149;font-size:8px">↑</span>';
+                else if (d3B < prev3B - 3) b3Arrow = '<span style="color:#3fb950;font-size:8px">↓</span>';
+                if (d3S > prev3S + 3) s3Arrow = '<span style="color:#3fb950;font-size:8px">↑</span>';
+                else if (d3S < prev3S - 3) s3Arrow = '<span style="color:#f85149;font-size:8px">↓</span>';
+              }}
+            }}
+
+            h += `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{today?'font-weight:600':''}}">`;
+            h += `<td style="padding:3px 6px;white-space:nowrap">${{today?'📅 ':''}}${{dtLabel}}</td>`;
+            h += `<td style="padding:3px 6px;text-align:center;color:#f85149">${{dAbPct}}${{abArrow}}</td>`;
+            h += `<td style="padding:3px 6px;text-align:center;color:#d29922">${{dInPct}}</td>`;
+            h += `<td style="padding:3px 6px;text-align:center;color:#3fb950">${{dBlPct}}${{blArrow}}</td>`;
+            h += `<td style="padding:3px 6px;text-align:center;color:#f85149;font-weight:600">${{d3B}}${{b3Arrow}}</td>`;
+            h += `<td style="padding:3px 6px;text-align:center;color:#3fb950;font-weight:600">${{d3S}}${{s3Arrow}}</td>`;
+            h += `<td style="padding:3px 6px;text-align:center;color:${{aC}};font-weight:600">${{d.assess}}</td>`;
+            h += '</tr>';
+          }});
+          h += '</tbody></table></div>';
+        }}
+      }}
+    }}
+    h += '</div>';
+  }}
+  h += '</div>';
+  el.innerHTML = h;
+}}
+renderThermo();
 
 window.addEventListener('load', async () => {{ await loadAndRender(); setupInteraction(); }});
 window.addEventListener('resize', render);

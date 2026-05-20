@@ -155,10 +155,21 @@ def _random_headers(referer: str = "") -> dict:
 
 _HEADERS = _random_headers()
 
+_sina_last_call = 0.0
+_sina_lock = threading.Lock()
+_SINA_MIN_INTERVAL = 0.35
+
 
 def _fetch_sina(sina_sym: str, scale: str, datalen: int = 1500,
                 max_retries: int = 3) -> list[KlineBar]:
     """Fetch K-line from Sina Finance API."""
+    global _sina_last_call
+    with _sina_lock:
+        elapsed = time.monotonic() - _sina_last_call
+        if elapsed < _SINA_MIN_INTERVAL:
+            time.sleep(_SINA_MIN_INTERVAL - elapsed)
+        _sina_last_call = time.monotonic()
+
     url = (
         "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
         "CN_MarketData.getKLineData?"
@@ -442,6 +453,13 @@ def _fetch_realtime_bar(sina_sym: str) -> Optional[KlineBar]:
     """Fetch real-time quote from Sina hq API and build today's provisional bar.
     Returns None if market has no data today (e.g. weekend/holiday).
     """
+    global _sina_last_call
+    with _sina_lock:
+        elapsed = time.monotonic() - _sina_last_call
+        if elapsed < _SINA_MIN_INTERVAL:
+            time.sleep(_SINA_MIN_INTERVAL - elapsed)
+        _sina_last_call = time.monotonic()
+
     url = f"https://hq.sinajs.cn/list={sina_sym}"
     try:
         req = Request(url, headers=_random_headers("https://finance.sina.com.cn"))
@@ -853,7 +871,9 @@ def _merge_bars(existing_csv_path: str, new_bars: list[KlineBar]) -> list[KlineB
     for b in new_bars:
         merged[b.datetime] = b
 
-    return list(merged.values())
+    result = list(merged.values())
+    result.sort(key=lambda b: b.datetime)
+    return result
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -983,6 +1003,60 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
                 )
 
     return [r for r in ordered_results if r is not None]
+
+
+def supplement_daily_with_sina(results: list[FetchResult],
+                               data_dir: str = None,
+                               min_bars: int = 2000,
+                               datalen: int = 5000) -> int:
+    """Supplement shallow daily data with Sina (serial, rate-limited).
+
+    After the main Tencent bulk fetch, some ETFs/stocks may have <2000 daily
+    bars because Tencent caps at ~800 per window. This function fills the gap
+    by calling Sina one-by-one (serial, 1s delay) to get deeper history.
+
+    Returns the number of indices supplemented.
+    """
+    if data_dir is None:
+        data_dir = os.path.join(_PROJECT_ROOT, "data")
+
+    candidates = []
+    for res in results:
+        daily_count = len(res.daily)
+        if 0 < daily_count < min_bars:
+            candidates.append(res)
+
+    if not candidates:
+        print(f"  Sina supplement: all {len(results)} indices have ≥{min_bars} daily bars, skip.")
+        return 0
+
+    print(f"\n  Sina supplement: {len(candidates)} indices with <{min_bars} daily bars, "
+          f"fetching deeper history...")
+
+    count = 0
+    for i, res in enumerate(candidates):
+        idx = res.index_cfg
+        sina_sym = _sina_symbol(idx.etf_code, idx.market)
+
+        time.sleep(1.0 + random.uniform(0, 0.5))
+
+        bars = _fetch_sina(sina_sym, "240", datalen=datalen)
+        if not bars:
+            print(f"    [{i+1}/{len(candidates)}] {idx.etf_name}: Sina failed, skip")
+            continue
+
+        csv_path = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}", "daily.csv")
+        merged = _merge_bars(csv_path, bars)
+
+        before = len(res.daily)
+        res.daily = merged
+        gained = len(merged) - before
+        count += 1
+        print(f"    [{i+1}/{len(candidates)}] {idx.etf_name}: {before} → {len(merged)} "
+              f"(+{gained} bars)")
+
+    print(f"  Sina supplement done: {count}/{len(candidates)} indices enriched.")
+    return count
 
 
 # ════════════════════════════════════════════════════════════════════
