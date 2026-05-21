@@ -999,10 +999,59 @@ function renderChart(data) {
     const confMap = {'high': '🔴 高', 'medium': '🟡 中', 'low': '⚪ 低'};
     const strMap = {strongest: '🔥最强', strong: '💪强势', standard: '📌标准', weak: '⚠弱'};
     const statusMap = {'active': '✅ 有效', 'confirmed': '✅ 已确认', 'invalidated': '❌ 失效', 'pending': '⏳ 待确认'};
-    let h = '<div style="max-width:400px;font-size:13px;line-height:1.6">';
+    const isT3 = p.type === '3B' || p.type === '3S';
+    let h = '<div style="max-width:420px;font-size:13px;line-height:1.6">';
     const typeColor = p.is_buy ? '#f85149' : '#3fb950';
     h += '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">#' + p.bsp_idx + ' ' + p.label + '</div>';
     h += '<div style="color:#8b949e;margin:2px 0">日期: ' + (data.dates[p.idx] || '') + ' | 价格: ' + p.price.toFixed(3) + '</div>';
+
+    // --- Type-3 buy/sell: hub context panel ---
+    if (isT3 && p.hub_zg !== undefined) {
+      const hubNum = (p.hub_idx !== undefined ? p.hub_idx + 1 : '?');
+      const rankMap = {0: '下跌末端', 1: '首个中枢', 2: '第二中枢', 3: '第三中枢'};
+      const rankLabel = p.hub_rank !== undefined ? (rankMap[p.hub_rank] || '第' + p.hub_rank + '中枢') : '-';
+      const rankColor = p.hub_rank <= 1 ? '#3fb950' : (p.hub_rank === 2 ? '#d29922' : '#f85149');
+      const hubW = p.hub_width || '-';
+      const hubWColor = hubW >= 7 ? '#3fb950' : (hubW >= 4 ? '#d29922' : '#f85149');
+      const hubWLabel = hubW >= 7 ? '充分' : (hubW >= 4 ? '一般' : '偏窄');
+      const evo = p.hub_evo || '-';
+
+      h += '<div style="margin:4px 0;padding:6px 8px;background:#0d1117;border:1px solid #30363d;border-radius:6px">';
+      h += '<div style="font-size:12px;color:#58a6ff;font-weight:bold;margin-bottom:4px">📐 中枢信息</div>';
+      h += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      h += '<tr>';
+      h += '<td style="color:#8b949e;padding:1px 4px">中枢</td>';
+      h += '<td style="color:#c9d1d9;padding:1px 4px">#' + hubNum + ' ' + evo + '</td>';
+      h += '<td style="color:#8b949e;padding:1px 4px">位次</td>';
+      h += '<td style="color:' + rankColor + ';padding:1px 4px;font-weight:bold">' + rankLabel + '</td>';
+      h += '</tr><tr>';
+      h += '<td style="color:#8b949e;padding:1px 4px">ZG</td>';
+      h += '<td style="color:#f85149;padding:1px 4px;font-weight:bold">' + p.hub_zg.toFixed(3) + '</td>';
+      h += '<td style="color:#8b949e;padding:1px 4px">ZD</td>';
+      h += '<td style="color:#3fb950;padding:1px 4px">' + p.hub_zd.toFixed(3) + '</td>';
+      h += '</tr><tr>';
+      h += '<td style="color:#8b949e;padding:1px 4px">笔数</td>';
+      h += '<td style="color:' + hubWColor + ';padding:1px 4px">' + hubW + '笔 (' + hubWLabel + ')</td>';
+      h += '<td style="color:#8b949e;padding:1px 4px">宽度</td>';
+      h += '<td style="color:#c9d1d9;padding:1px 4px">' + (p.hub_zg - p.hub_zd).toFixed(3) + '</td>';
+      h += '</tr></table>';
+
+      // Stop-loss / invalidation level
+      if (p.inv_price > 0) {
+        const invDist = p.is_buy
+          ? ((p.price - p.inv_price) / p.price * 100).toFixed(1)
+          : ((p.inv_price - p.price) / p.price * 100).toFixed(1);
+        const invLabel = p.is_buy ? '止损位 (ZG)' : '止盈位 (ZD)';
+        const invColor = p.is_buy ? '#f85149' : '#3fb950';
+        h += '<div style="margin-top:4px;padding:3px 6px;background:#21262d;border-radius:4px;font-size:12px">';
+        h += '<span style="color:#8b949e">' + invLabel + ': </span>';
+        h += '<span style="color:' + invColor + ';font-weight:bold">' + p.inv_price.toFixed(3) + '</span>';
+        h += ' <span style="color:#8b949e">(距' + invDist + '%)</span>';
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+
     h += '<table style="width:100%;border-collapse:collapse;margin:4px 0">';
     h += '<tr><td style="color:#8b949e;padding:2px 6px 2px 0">强度</td><td>' + (strMap[p.strength] || p.strength || '-');
     if (p.str_score !== undefined && p.str_score !== null) h += ' <span style="color:#8b949e;font-size:11px">(' + p.str_score + '分)</span>';
@@ -1046,6 +1095,32 @@ function renderChart(data) {
     if (p.status === 'invalidated' && p.inv_reason) {
       h += '<div style="margin:3px 0;color:#da3633">失效原因: ' + p.inv_reason + '</div>';
     }
+
+    // --- Type-3 buy/sell: risk assessment summary ---
+    if (isT3 && p.strength !== 'weak') {
+      h += '<div style="margin:4px 0;padding:5px 8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;font-size:12px">';
+      h += '<div style="color:#d29922;font-weight:bold;margin-bottom:2px">⚡ 风险提示</div>';
+      const risks = [];
+      if (p.hub_rank !== undefined && p.hub_rank >= 3) risks.push('趋势位置偏晚期（第' + p.hub_rank + '中枢）');
+      if (p.hub_width !== undefined && p.hub_width <= 3) risks.push('中枢偏窄（' + p.hub_width + '笔），筹码交换不充分');
+      if (p.wolf) risks.push('MACD防狼：' + p.wolf);
+      const goods = [];
+      if (p.hub_rank !== undefined && p.hub_rank <= 1) goods.push(p.hub_rank === 0 ? '下跌末端三买，转势确认' : '首个中枢三买，空间最大');
+      if (p.hub_width !== undefined && p.hub_width >= 7) goods.push('中枢构建充分（' + p.hub_width + '笔）');
+      if (!p.wolf) goods.push('MACD环境安全');
+      if (goods.length > 0) {
+        h += '<div style="color:#3fb950;line-height:1.5">';
+        goods.forEach(function(g) { h += '✅ ' + g + '<br>'; });
+        h += '</div>';
+      }
+      if (risks.length > 0) {
+        h += '<div style="color:#f85149;line-height:1.5">';
+        risks.forEach(function(r) { h += '⚠ ' + r + '<br>'; });
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+
     h += '<div style="margin:4px 0 0;color:#8b949e;font-size:11px;border-top:1px solid #30363d;padding-top:4px">' + (p.desc || '') + '</div>';
     h += '</div>';
     return h;
