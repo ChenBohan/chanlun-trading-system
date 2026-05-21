@@ -1186,6 +1186,73 @@ def supplement_daily_with_sina(results: list[FetchResult],
     return count
 
 
+def supplement_intraday_with_sina(results: list[FetchResult],
+                                  data_dir: str = None,
+                                  min_bars: int = 800,
+                                  datalen: int = 1500) -> int:
+    """Supplement shallow intraday (30min/5min) data with Sina.
+
+    Tencent caps minute data at 320 bars (~40 trading days for 30min).
+    Sina can return up to 1500 bars (~187 trading days for 30min).
+    This function fills the gap by calling Sina one-by-one.
+
+    Returns the total number of period-index pairs supplemented.
+    """
+    if data_dir is None:
+        data_dir = os.path.join(_PROJECT_ROOT, "data")
+
+    periods = [
+        ("30min", "30", "min30", "30min.csv"),
+        ("5min", "5", "min5", "5min.csv"),
+    ]
+
+    total_enriched = 0
+
+    for period, sina_scale, attr_name, csv_name in periods:
+        candidates = []
+        for res in results:
+            bars_list = getattr(res, attr_name, None) or []
+            if 0 < len(bars_list) < min_bars:
+                candidates.append(res)
+
+        if not candidates:
+            print(f"  Sina {period} supplement: all have ≥{min_bars} bars, skip.")
+            continue
+
+        print(f"\n  Sina {period} supplement: {len(candidates)} indices with "
+              f"<{min_bars} bars, fetching deeper history...")
+
+        count = 0
+        for i, res in enumerate(candidates):
+            idx = res.index_cfg
+            sina_sym = _sina_symbol(idx.etf_code, idx.market)
+
+            time.sleep(1.0 + random.uniform(0, 0.5))
+
+            bars = _fetch_sina(sina_sym, sina_scale, datalen=datalen)
+            if not bars:
+                print(f"    [{i+1}/{len(candidates)}] {idx.etf_name} {period}: "
+                      f"Sina failed, skip")
+                continue
+
+            csv_path = os.path.join(
+                data_dir, f"{idx.etf_code}_{idx.etf_name}", csv_name)
+            merged = _merge_bars(csv_path, bars)
+
+            old_bars = getattr(res, attr_name, None) or []
+            before = len(old_bars)
+            setattr(res, attr_name, merged)
+            gained = len(merged) - before
+            count += 1
+            print(f"    [{i+1}/{len(candidates)}] {idx.etf_name} {period}: "
+                  f"{before} → {len(merged)} (+{gained} bars)")
+
+        print(f"  Sina {period} supplement done: {count}/{len(candidates)} enriched.")
+        total_enriched += count
+
+    return total_enriched
+
+
 # ════════════════════════════════════════════════════════════════════
 # Data Persistence (CSV)
 # ════════════════════════════════════════════════════════════════════
