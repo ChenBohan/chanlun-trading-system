@@ -873,20 +873,27 @@ def _merge_bars(existing_csv_path: str, new_bars: list[KlineBar]) -> list[KlineB
 
     result = list(merged.values())
     result.sort(key=lambda b: b.datetime)
-    return _normalize_volume_units(result)
+
+    daily_csv = ""
+    if existing_csv_path:
+        parent = os.path.dirname(existing_csv_path)
+        daily_csv = os.path.join(parent, "daily.csv")
+
+    return _normalize_volume_units(result, daily_csv_path=daily_csv)
 
 
-def _normalize_volume_units(bars: list[KlineBar]) -> list[KlineBar]:
+def _normalize_volume_units(bars: list[KlineBar],
+                            daily_csv_path: str = "") -> list[KlineBar]:
     """Fix volume unit discontinuity caused by Tencent API changes.
 
     Around 2026-03-19, the Tencent intraday API changed volume units.
-    Old data (amount==0) has volumes ~50-100x larger than new data (amount>0).
-    This function detects the boundary and scales old volumes to match new ones.
+    The exact unit ratio varies per symbol (e.g., daily/30m_sum can be 44x or 100x).
+    Uses daily CSV data as ground truth to compute the precise scaling factor.
+    Falls back to median comparison when daily data is unavailable.
     """
     if len(bars) < 20:
         return bars
 
-    # Find transition: last bar with amount==0 followed by first bar with amount>0
     boundary = -1
     for i in range(1, len(bars)):
         if bars[i].amount > 0 and bars[i - 1].amount == 0:
@@ -896,29 +903,104 @@ def _normalize_volume_units(bars: list[KlineBar]) -> list[KlineBar]:
     if boundary < 0:
         return bars
 
-    # Compute median volume for a window around the boundary
-    window = 10
-    old_vols = [b.volume for b in bars[max(0, boundary - window):boundary] if b.volume > 0]
-    new_vols = [b.volume for b in bars[boundary:boundary + window] if b.volume > 0]
+    scale = _calc_scale_from_daily(bars, boundary, daily_csv_path)
 
-    if not old_vols or not new_vols:
-        return bars
+    if scale is None:
+        scale = _calc_scale_from_median(bars, boundary)
+
+    if scale is not None and scale > 0:
+        for b in bars[:boundary]:
+            b.volume = int(b.volume * scale)
+
+    return bars
+
+
+def _calc_scale_from_daily(bars: list[KlineBar], boundary: int,
+                           daily_csv_path: str) -> float | None:
+    """Compute volume scale factor using daily data as ground truth.
+
+    Compares daily_vol / intraday_sum ratios for old (amount=0) and new (amount>0)
+    eras. If they differ by >1.3x, returns the scale factor to normalize old data.
+    """
+    if not daily_csv_path or not os.path.exists(daily_csv_path):
+        return None
+
+    daily_vols = {}
+    try:
+        with open(daily_csv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("datetime"):
+                    continue
+                parts = line.split(",")
+                if len(parts) >= 6:
+                    d_vol = int(float(parts[5]))
+                    if d_vol > 0:
+                        daily_vols[parts[0].split(" ")[0]] = d_vol
+    except Exception:
+        return None
+
+    if not daily_vols:
+        return None
+
+    from collections import defaultdict
+    intra_sums_old: dict[str, int] = defaultdict(int)
+    intra_sums_new: dict[str, int] = defaultdict(int)
+
+    for i, b in enumerate(bars):
+        day = b.datetime.split(" ")[0]
+        if b.volume <= 0:
+            continue
+        if i < boundary:
+            intra_sums_old[day] += b.volume
+        else:
+            intra_sums_new[day] += b.volume
+
+    old_ratios = []
+    for day, s in intra_sums_old.items():
+        if day in daily_vols and s > 0:
+            old_ratios.append(daily_vols[day] / s)
+
+    new_ratios = []
+    for day, s in intra_sums_new.items():
+        if day in daily_vols and s > 0:
+            new_ratios.append(daily_vols[day] / s)
+
+    if len(old_ratios) < 3 or len(new_ratios) < 3:
+        return None
+
+    old_median = sorted(old_ratios)[len(old_ratios) // 2]
+    new_median = sorted(new_ratios)[len(new_ratios) // 2]
+
+    if old_median <= 0 or new_median <= 0:
+        return None
+
+    diff = max(old_median, new_median) / min(old_median, new_median)
+    if diff < 1.3:
+        return None
+
+    return old_median / new_median
+
+
+def _calc_scale_from_median(bars: list[KlineBar], boundary: int) -> float | None:
+    """Fallback: compute scale from volume medians across the full old/new eras."""
+    old_vols = [b.volume for b in bars[:boundary] if b.volume > 0]
+    new_vols = [b.volume for b in bars[boundary:] if b.volume > 0]
+
+    if len(old_vols) < 10 or len(new_vols) < 10:
+        return None
 
     old_median = sorted(old_vols)[len(old_vols) // 2]
     new_median = sorted(new_vols)[len(new_vols) // 2]
 
     if old_median <= 0 or new_median <= 0:
-        return bars
+        return None
 
     ratio = old_median / new_median
-    if ratio < 5:
-        return bars
+    if ratio < 1.5:
+        return None
 
-    scale = new_median / old_median
-    for b in bars[:boundary]:
-        b.volume = int(b.volume * scale)
-
-    return bars
+    return new_median / old_median
 
 
 # ════════════════════════════════════════════════════════════════════

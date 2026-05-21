@@ -173,10 +173,14 @@ def cmd_run(args):
     )
     print_fetch_summary(results)
 
-    # Step 1b: Sina supplement for shallow daily data
+    # Step 1b: Sina supplement for shallow daily data (skip during trading hours)
     if not getattr(args, 'no_supplement', False):
-        print("\n[Step 1b/4] Sina 日线深度补充...")
-        supplement_daily_with_sina(results)
+        from src.data_fetcher import _is_cn_market_closed
+        if _is_cn_market_closed():
+            print("\n[Step 1b/4] Sina 日线深度补充...")
+            supplement_daily_with_sina(results)
+        else:
+            print("\n[Step 1b/4] Sina 日线深度补充... 盘中跳过（收盘后自动执行）")
 
     save_fetch_results(results, fmt="csv")
     t_fetch = _time.perf_counter() - t0
