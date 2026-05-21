@@ -187,7 +187,15 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "inv_reason": p.invalidation_reason,
                 "hub_rank": p.trend_hub_rank,
                 "hub_idx": p.hub_idx,
+                "inv_price": p.invalidation_price,
             }
+            if p.type in ("3B", "3S") and p.hub_idx >= 0:
+                hub_obj = all_hubs[p.hub_idx] if p.hub_idx < len(all_hubs) else None
+                if hub_obj:
+                    entry["hub_zg"] = hub_obj.zg
+                    entry["hub_zd"] = hub_obj.zd
+                    entry["hub_width"] = len(hub_obj.strokes)
+                    entry["hub_evo"] = hub_obj.evolution_type
             if ranges:
                 entry["ranges"] = ranges
             struct_list = []
