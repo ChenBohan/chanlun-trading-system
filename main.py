@@ -26,6 +26,9 @@ def cmd_fetch(args):
     from src.data_fetcher import (
         load_index_watchlist, fetch_all_indices,
         save_fetch_results, print_fetch_summary,
+        supplement_daily_with_sina,
+        supplement_intraday_with_sina,
+        _is_cn_market_closed,
     )
     import src.data_fetcher as _df
 
@@ -49,6 +52,11 @@ def cmd_fetch(args):
         force=getattr(args, 'force', False),
     )
     print_fetch_summary(results)
+
+    if not getattr(args, 'no_supplement', False) and _is_cn_market_closed():
+        print("\nSina 深度补充（日线 + 分钟线）...")
+        supplement_daily_with_sina(results)
+        supplement_intraday_with_sina(results)
 
     fmt = args.format
     print(f"\n保存数据（格式：{fmt}）...")
