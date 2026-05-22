@@ -667,7 +667,7 @@ function renderGlobalSignals() {
   h += '</div>';
 
   const data = GLOBAL_SIGNALS[gsActiveTab] || {};
-  h += makeTable('🔴 第一类买卖点（趋势背驰，最新5个）', data.type1 || [], false);
+  h += makeTable('🔴 第一类买卖点（趋势背驰，最新10个）', data.type1 || [], false);
   h += makeTable('🟠 第二类买卖点（回调确认，最新5个）', data.type2 || [], false);
   h += makeTable('🔵 第三类买卖点（中枢突破，最新20个）', data.type3 || [], true);
   h += '</div>'; // close content wrapper
@@ -2259,7 +2259,7 @@ def generate_dashboard(data_dir: str = None,
                 entry["area_cmp"] = ""
             global_signals.append(entry)
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    type_limits = {"type1": 5, "type2": 5, "type3": 20}
+    type_limits = {"type1": 10, "type2": 5, "type3": 20}
     levels = ["日线", "30分钟", "5分钟"]
     global_signals_by_level_type: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": []} for lv in levels
@@ -2285,7 +2285,7 @@ def generate_dashboard(data_dir: str = None,
         with open(_wl_path_early, "r", encoding="utf-8") as wf:
             _wl_early = json.load(wf)
             _wl_codes_set = {item["etf_code"] for item in _wl_early.get("watchlist", [])}
-    wl_type_limits = {"type1": 10, "type2": 10, "type3": 10}
+    wl_type_limits = {"type1": 10, "type2": 5, "type3": 10}
     watchlist_signals_by_level: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": []} for lv in levels
     }
@@ -2441,7 +2441,7 @@ def generate_mobile_dashboard(data_dir: str = None,
                 entry_m["area_cmp"] = ""
             mobile_global_signals.append(entry_m)
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    mobile_type_limits = {"type1": 15, "type2": 15, "type3": 60}
+    mobile_type_limits = {"type1": 30, "type2": 15, "type3": 60}
     mobile_levels = ["日线", "30分钟", "5分钟"]
     mobile_gs_by_level_type: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": []} for lv in mobile_levels
@@ -2764,7 +2764,7 @@ function loadChartData(key) {{
 let mWlTab = '30分钟';
 let mWlExpanded = false;
 let mWlPage = 1;
-const mWlPageSize = {{t1: 10, t2: 10, t3: 10}};
+const mWlPageSize = {{t1: 10, t2: 5, t3: 10}};
 function renderMobileWatchlist() {{
   const el = document.getElementById('mobileWatchlist');
   if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) {{ el.innerHTML = ''; return; }}
@@ -2917,7 +2917,7 @@ renderMobileWatchlist();
 let mgsTab = '30分钟';
 let mgsExpanded = true;
 let mgsPage = 1;
-const mgsPageSize = {{t1: 5, t2: 5, t3: 20}};
+const mgsPageSize = {{t1: 10, t2: 5, t3: 20}};
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
   const levels = ['日线', '30分钟', '5分钟'];
