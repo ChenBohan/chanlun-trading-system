@@ -2881,7 +2881,8 @@ function renderMobileWatchlist() {{
   const strMap = {{strongest: '🔥最强', strong: '💪强', standard: '📌标准', weak: '⚠弱'}};
 
   function mWlRow(s, i, isType3) {{
-    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+    const _mwSnap = s.source === 'snapshot';
+    const bg = _mwSnap ? '#1a1510' : (i % 2 === 0 ? '#0d1117' : '#161b22');
     const tc = tClrs[s.type] || '#c9d1d9';
     let confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
     if (s.conf_score !== undefined && s.conf_score !== null) confStr += '<span style="color:#8b949e;font-size:9px">(' + s.conf_score + ')</span>';
@@ -2890,11 +2891,11 @@ function renderMobileWatchlist() {{
     const dtShort = s.dt ? s.dt.substring(5) : '-';
     const inv = s.status === 'invalidated';
     const pending = s.status === 'pending';
-    const rowOpacity = inv ? 'opacity:0.45;' : '';
+    const rowOpacity = inv ? 'opacity:0.45;' : (_mwSnap ? 'opacity:0.75;' : '');
     const strike = inv ? 'text-decoration:line-through;' : '';
     const mBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const mConfClr = mBuyType ? '#f85149' : '#3fb950';
-    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mConfClr + ';margin-left:2px">✓</span>');
+    const statusTag = _mwSnap ? '<span style="font-size:9px;color:#d29922;margin-left:2px">📸</span>' : (inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mConfClr + ';margin-left:2px">✓</span>'));
     const mIdxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
     const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
     const _mBk = mTrend.includes('破坏');
@@ -3036,7 +3037,8 @@ function renderMobileGlobalSignals() {{
     }});
   }});
   function mgsRow(s, i, isType3) {{
-    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+    const _mgsSnap = s.source === 'snapshot';
+    const bg = _mgsSnap ? '#1a1510' : (i % 2 === 0 ? '#0d1117' : '#161b22');
     const tc = tClrs[s.type] || '#c9d1d9';
     let confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
     if (s.conf_score !== undefined && s.conf_score !== null) confStr += '<span style="color:#8b949e;font-size:9px">(' + s.conf_score + ')</span>';
@@ -3045,11 +3047,11 @@ function renderMobileGlobalSignals() {{
     const dtShort = s.dt ? s.dt.substring(5) : '-';
     const inv = s.status === 'invalidated';
     const pending = s.status === 'pending';
-    const rowOpacity = inv ? 'opacity:0.45;' : '';
+    const rowOpacity = inv ? 'opacity:0.45;' : (_mgsSnap ? 'opacity:0.75;' : '');
     const strike = inv ? 'text-decoration:line-through;' : '';
     const mGsBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const mGsConfClr = mGsBuyType ? '#f85149' : '#3fb950';
-    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>');
+    const statusTag = _mgsSnap ? '<span style="font-size:9px;color:#d29922;margin-left:2px">📸</span>' : (inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>'));
     const mIdxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
     const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
     const _mBk = mTrend.includes('破坏');
