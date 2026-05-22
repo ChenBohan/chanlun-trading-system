@@ -128,6 +128,122 @@ def update_signal_snapshots(live_signals: list[dict]) -> list[dict]:
     return merged
 
 
+def backfill_signal_snapshots(data_dir: str = None, max_workers: int = 8) -> int:
+    """Replay historical K-line data to recover all buy/sell points that ever existed.
+
+    For each symbol × level, analyzes data at expanding windows (one trading day
+    at a time) and records every unique signal discovered. This populates the
+    snapshot file with historical signals that would otherwise be lost.
+
+    Returns total number of unique signals discovered.
+    """
+    from .data_fetcher import load_index_watchlist
+    if data_dir is None:
+        data_dir = os.path.join(_PROJECT_ROOT, "data")
+
+    indices = load_index_watchlist()
+    level_labels = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
+    step_sizes = {"daily": 20, "30min": 8, "5min": 48}
+    min_bars = 200
+
+    tasks = []
+    for idx in indices:
+        sym_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}")
+        if not os.path.isdir(sym_dir):
+            continue
+        for level_key in ["daily", "30min", "5min"]:
+            csv_path = os.path.join(sym_dir, f"{level_key}.csv")
+            if os.path.isfile(csv_path):
+                tasks.append((idx.etf_code, idx.etf_name, level_key, csv_path,
+                              step_sizes[level_key], min_bars))
+
+    print(f"Backfill: {len(tasks)} tasks ({len(indices)} symbols × 3 levels)")
+    print(f"Step sizes: 日线={step_sizes['daily']}, 30分钟={step_sizes['30min']}, 5分钟={step_sizes['5min']}")
+
+    all_discovered: dict[str, dict] = {}
+    done = 0
+
+    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_backfill_one, *t): t for t in tasks}
+        for fut in as_completed(futures):
+            done += 1
+            signals = fut.result()
+            for sig in signals:
+                key = _signal_key(sig)
+                if key not in all_discovered or sig.get("first_seen", "") < all_discovered[key].get("first_seen", "z"):
+                    all_discovered[key] = sig
+            if done % 50 == 0 or done == len(tasks):
+                print(f"  [{done}/{len(tasks)}] discovered {len(all_discovered)} unique signals so far")
+
+    existing = _load_snapshots()
+    merged_count = 0
+    for key, sig in all_discovered.items():
+        if key not in existing:
+            existing[key] = sig
+            merged_count += 1
+        else:
+            if sig.get("first_seen", "z") < existing[key].get("first_seen", "z"):
+                existing[key]["first_seen"] = sig["first_seen"]
+
+    _save_snapshots(existing)
+    print(f"Backfill complete: {len(all_discovered)} signals discovered, "
+          f"{merged_count} new entries merged. Total: {len(existing)}")
+    return len(all_discovered)
+
+
+def _backfill_one(etf_code: str, etf_name: str, level_key: str,
+                  csv_path: str, step: int, min_bars: int) -> list[dict]:
+    """Backfill signals for one symbol × one level (runs in subprocess)."""
+    bars = load_bars_from_csv(csv_path)
+    if len(bars) < min_bars:
+        return []
+
+    level_cn = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}.get(level_key, level_key)
+    all_seen: dict[str, dict] = {}
+
+    for end_idx in range(min_bars, len(bars) + 1, step):
+        sub = bars[:end_idx]
+        try:
+            result = analyze(sub, level_key)
+        except Exception:
+            continue
+        last_dt = sub[-1].dt
+        for p in result.buy_sell_points:
+            if p.type in ("PB", "PS"):
+                continue
+            if p.type in ("3B", "3S") and getattr(p, "strength", "") == "weak":
+                continue
+            sig_key = f"{etf_code}|{level_key}|{p.type}|{p.dt}"
+            if sig_key not in all_seen:
+                entry = {
+                    "etf_code": etf_code, "etf_name": etf_name,
+                    "level": level_cn, "level_key": level_key,
+                    "type": p.type, "label": p.label,
+                    "dt": p.dt, "price": p.price,
+                    "conf": getattr(p, "confidence", ""),
+                    "strength": getattr(p, "strength", ""),
+                    "status": "active", "hub_rank": getattr(p, "hub_rank", -1),
+                    "first_seen": last_dt, "last_seen": last_dt,
+                    "source": "backfill",
+                }
+                all_seen[sig_key] = entry
+            else:
+                all_seen[sig_key]["last_seen"] = last_dt
+
+    final = []
+    last_run = analyze(bars, level_key)
+    last_keys = set()
+    for p in last_run.buy_sell_points:
+        last_keys.add(f"{etf_code}|{level_key}|{p.type}|{p.dt}")
+    for key, sig in all_seen.items():
+        if key not in last_keys:
+            sig["source"] = "snapshot"
+        else:
+            sig["source"] = "live"
+        final.append(sig)
+    return final
+
+
 def _is_ashare_market_open() -> bool:
     """Check if A-share market is currently in trading hours (Beijing time)."""
     now = datetime.now(_TZ_CHINA)

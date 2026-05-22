@@ -269,11 +269,25 @@ def main():
     p_run.add_argument("--source", choices=["sina", "eastmoney"], default=None,
                         help="主数据源 (默认: 代码中的配置)")
 
+    # backfill
+    p_backfill = sub.add_parser("backfill", help="回填历史信号快照")
+    p_backfill.add_argument("--data-dir", default=None, help="数据目录")
+    p_backfill.add_argument("--workers", type=int,
+                            default=max(4, (os.cpu_count() or 4) // 2),
+                            help="并行进程数")
+
     args = parser.parse_args()
 
     if args.command is None:
         parser.print_help()
         sys.exit(0)
+
+    def cmd_backfill(a):
+        from src.visualize import backfill_signal_snapshots
+        print("=" * 60)
+        print("缠论交易系统 v2 — 历史信号快照回填")
+        print("=" * 60)
+        backfill_signal_snapshots(data_dir=a.data_dir, max_workers=a.workers)
 
     dispatch = {
         "fetch": cmd_fetch,
@@ -281,6 +295,7 @@ def main():
         "batch": cmd_batch,
         "dashboard": cmd_dashboard,
         "run": cmd_run,
+        "backfill": cmd_backfill,
     }
     dispatch[args.command](args)
 
