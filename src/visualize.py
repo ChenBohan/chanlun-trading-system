@@ -30,6 +30,100 @@ from .chanlun_engine import (
 
 _TZ_CHINA = timezone(timedelta(hours=8))
 
+_SNAPSHOT_FILE = os.path.join(_PROJECT_ROOT, "data", "signal_snapshots.jsonl")
+_SNAPSHOT_MAX_AGE_DAYS = 5
+
+
+def _signal_key(sig: dict) -> str:
+    """Unique key for deduplication: code + level + type + datetime."""
+    return f"{sig['etf_code']}|{sig['level_key']}|{sig['type']}|{sig['dt']}"
+
+
+def _load_snapshots() -> dict[str, dict]:
+    """Load existing signal snapshots from JSONL, keyed by signal_key."""
+    result: dict[str, dict] = {}
+    if not os.path.exists(_SNAPSHOT_FILE):
+        return result
+    with open(_SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+                key = _signal_key(entry)
+                result[key] = entry
+            except (json.JSONDecodeError, KeyError):
+                continue
+    return result
+
+
+def _save_snapshots(snapshots: dict[str, dict]) -> None:
+    """Save snapshots back to JSONL, pruning entries older than max age."""
+    os.makedirs(os.path.dirname(_SNAPSHOT_FILE), exist_ok=True)
+    cutoff = (datetime.now(_TZ_CHINA) - timedelta(days=_SNAPSHOT_MAX_AGE_DAYS)).strftime("%Y-%m-%d")
+    with open(_SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+        for entry in sorted(snapshots.values(), key=lambda x: x.get("dt", ""), reverse=True):
+            if entry.get("first_seen", "")[:10] < cutoff and entry.get("source") == "snapshot":
+                continue
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def update_signal_snapshots(live_signals: list[dict]) -> list[dict]:
+    """Compare live signals with stored snapshots, persist new ones, return merged list.
+
+    Returns all signals: live ones (source="live") + historical snapshot-only ones
+    (source="snapshot") that no longer appear in the current analysis.
+    """
+    now_str = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d %H:%M")
+    existing = _load_snapshots()
+
+    live_keys = set()
+    for sig in live_signals:
+        key = _signal_key(sig)
+        live_keys.add(key)
+        if key in existing:
+            existing[key]["last_seen"] = now_str
+            existing[key]["source"] = "live"
+            for field in ("conf", "conf_score", "strength", "str_score",
+                          "area_cmp", "status", "inv_reason", "price"):
+                if field in sig:
+                    existing[key][field] = sig[field]
+        else:
+            entry = dict(sig)
+            entry["first_seen"] = now_str
+            entry["last_seen"] = now_str
+            entry["source"] = "live"
+            existing[key] = entry
+
+    for key, entry in existing.items():
+        if key not in live_keys and entry.get("source") != "snapshot":
+            entry["source"] = "snapshot"
+
+    _save_snapshots(existing)
+
+    merged: list[dict] = []
+    for sig in live_signals:
+        s = dict(sig)
+        s["source"] = "live"
+        merged.append(s)
+
+    today = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
+    cutoff_recent = (datetime.now(_TZ_CHINA) - timedelta(days=_SNAPSHOT_MAX_AGE_DAYS)).strftime("%Y-%m-%d")
+    for key, entry in existing.items():
+        if key in live_keys:
+            continue
+        if entry.get("source") != "snapshot":
+            continue
+        if entry.get("dt", "")[:10] < cutoff_recent:
+            continue
+        s = dict(entry)
+        s["source"] = "snapshot"
+        merged.append(s)
+
+    merged.sort(key=lambda x: x.get("dt", ""), reverse=True)
+    return merged
+
 
 def _is_ashare_market_open() -> bool:
     """Check if A-share market is currently in trading hours (Beijing time)."""
@@ -411,7 +505,8 @@ function renderWatchlist() {
   const strengthMap = {'strongest': '🔥最强', 'strong': '💪强势', 'standard': '📌标准', 'weak': '⚠弱'};
 
   function wlSignalRow(s, i, isType3) {
-    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+    const isSnapshot = s.source === 'snapshot';
+    const bg = isSnapshot ? '#1a1510' : (i % 2 === 0 ? '#0d1117' : '#161b22');
     const tClr = typeColors[s.type] || '#c9d1d9';
     let confStr = confIcons[s.conf] || s.conf || '-';
     if (s.conf_score !== undefined && s.conf_score !== null) confStr += ' <span style="color:#8b949e;font-size:11px">(' + s.conf_score + ')</span>';
@@ -421,7 +516,7 @@ function renderWatchlist() {
     if (s.str_score !== undefined && s.str_score !== null) strStr += ' <span style="color:#8b949e;font-size:11px">(' + s.str_score + ')</span>';
     const inv = s.status === 'invalidated';
     const pending = s.status === 'pending';
-    const rowOpacity = inv ? 'opacity:0.45;' : '';
+    const rowOpacity = inv ? 'opacity:0.45;' : (isSnapshot ? 'opacity:0.75;' : '');
     const strike = inv ? 'text-decoration:line-through;' : '';
     const isBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const confirmedColor = isBuyType ? '#f85149' : '#3fb950';
@@ -445,11 +540,12 @@ function renderWatchlist() {
       : _isPanDn ? '<span style="color:#7ee787" title="日线盘整偏空">◆↓</span>'
       : _isPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
       : '<span style="color:#8b949e" title="日线方向不明">—</span>';
+    const wlSnapBadge = isSnapshot ? ' <span title="历史快照：曾于' + (s.first_seen||'') + '发现" style="font-size:10px;color:#d29922;cursor:help">📸</span>' : '';
     let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
     r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="日线:' + trend + '">' + s.etf_name + '</a></td>';
-    r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + wlSnapBadge + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center">' + (isSnapshot ? '<span style="color:#d29922" title="走势延续后结构变化">📸历史</span>' : statusHtml) + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
     r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
     r += '<td style="padding:6px 8px;font-size:12px">' + (s.pos_advice || '-') + '</td>';
@@ -573,7 +669,8 @@ function renderGlobalSignals() {
     h += '<div style="padding:0 16px 12px">';
 
   function signalRow(s, i, isType3) {
-    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+    const isSnapshot = s.source === 'snapshot';
+    const bg = isSnapshot ? '#1a1510' : (i % 2 === 0 ? '#0d1117' : '#161b22');
     const tClr = typeColors[s.type] || '#c9d1d9';
     let confStr = confIcons[s.conf] || s.conf || '-';
     if (s.conf_score !== undefined && s.conf_score !== null) confStr += ' <span style="color:#8b949e;font-size:11px">(' + s.conf_score + ')</span>';
@@ -583,7 +680,7 @@ function renderGlobalSignals() {
     if (s.str_score !== undefined && s.str_score !== null) strStr += ' <span style="color:#8b949e;font-size:11px">(' + s.str_score + ')</span>';
     const inv = s.status === 'invalidated';
     const pending = s.status === 'pending';
-    const rowOpacity = inv ? 'opacity:0.45;' : '';
+    const rowOpacity = inv ? 'opacity:0.45;' : (isSnapshot ? 'opacity:0.75;' : '');
     const strike = inv ? 'text-decoration:line-through;' : '';
     const isBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const confirmedColor = isBuyType ? '#f85149' : '#3fb950';
@@ -607,11 +704,12 @@ function renderGlobalSignals() {
       : _isPanDn ? '<span style="color:#7ee787" title="日线盘整偏空(中枢构成方向一致向下)">◆↓</span>'
       : _isPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
       : '<span style="color:#8b949e" title="日线方向不明">—</span>';
+    const gsSnapBadge = isSnapshot ? ' <span title="历史快照：曾于' + (s.first_seen||'') + '发现" style="font-size:10px;color:#d29922;cursor:help">📸</span>' : '';
     let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
     r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="日线:' + trend + '">' + s.etf_name + '</a></td>';
-    r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + gsSnapBadge + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center">' + (isSnapshot ? '<span style="color:#d29922" title="走势延续后结构变化">📸历史</span>' : statusHtml) + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
     r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
     r += '<td style="padding:6px 8px;font-size:12px">' + (s.pos_advice || '-') + '</td>';
@@ -2259,6 +2357,7 @@ def generate_dashboard(data_dir: str = None,
                 entry["area_cmp"] = ""
             global_signals.append(entry)
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
+    global_signals = update_signal_snapshots(global_signals)
     type_limits = {"type1": 10, "type2": 5, "type3": 20}
     levels = ["日线", "30分钟", "5分钟"]
     global_signals_by_level_type: dict[str, dict[str, list]] = {
@@ -2441,6 +2540,7 @@ def generate_mobile_dashboard(data_dir: str = None,
                 entry_m["area_cmp"] = ""
             mobile_global_signals.append(entry_m)
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
+    mobile_global_signals = update_signal_snapshots(mobile_global_signals)
     mobile_type_limits = {"type1": 30, "type2": 15, "type3": 60}
     mobile_levels = ["日线", "30分钟", "5分钟"]
     mobile_gs_by_level_type: dict[str, dict[str, list]] = {
