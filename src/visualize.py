@@ -31,7 +31,8 @@ from .chanlun_engine import (
 _TZ_CHINA = timezone(timedelta(hours=8))
 
 _SNAPSHOT_FILE = os.path.join(_PROJECT_ROOT, "data", "signal_snapshots.jsonl")
-_SNAPSHOT_MAX_AGE_DAYS = 5
+_SNAPSHOT_PRUNE_DAYS = 0       # 0 = keep forever
+_SNAPSHOT_DISPLAY_DAYS = 5     # only show disappeared signals from last N days in dashboard
 
 
 def _signal_key(sig: dict) -> str:
@@ -59,12 +60,14 @@ def _load_snapshots() -> dict[str, dict]:
 
 
 def _save_snapshots(snapshots: dict[str, dict]) -> None:
-    """Save snapshots back to JSONL, pruning entries older than max age."""
+    """Save snapshots back to JSONL. Prune if _SNAPSHOT_PRUNE_DAYS > 0."""
     os.makedirs(os.path.dirname(_SNAPSHOT_FILE), exist_ok=True)
-    cutoff = (datetime.now(_TZ_CHINA) - timedelta(days=_SNAPSHOT_MAX_AGE_DAYS)).strftime("%Y-%m-%d")
+    cutoff = ""
+    if _SNAPSHOT_PRUNE_DAYS > 0:
+        cutoff = (datetime.now(_TZ_CHINA) - timedelta(days=_SNAPSHOT_PRUNE_DAYS)).strftime("%Y-%m-%d")
     with open(_SNAPSHOT_FILE, "w", encoding="utf-8") as f:
         for entry in sorted(snapshots.values(), key=lambda x: x.get("dt", ""), reverse=True):
-            if entry.get("first_seen", "")[:10] < cutoff and entry.get("source") == "snapshot":
+            if cutoff and entry.get("first_seen", "")[:10] < cutoff and entry.get("source") == "snapshot":
                 continue
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
@@ -109,7 +112,7 @@ def update_signal_snapshots(live_signals: list[dict]) -> list[dict]:
         merged.append(s)
 
     today = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
-    cutoff_recent = (datetime.now(_TZ_CHINA) - timedelta(days=_SNAPSHOT_MAX_AGE_DAYS)).strftime("%Y-%m-%d")
+    cutoff_recent = (datetime.now(_TZ_CHINA) - timedelta(days=_SNAPSHOT_DISPLAY_DAYS)).strftime("%Y-%m-%d")
     for key, entry in existing.items():
         if key in live_keys:
             continue
