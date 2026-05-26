@@ -1203,14 +1203,21 @@ function renderChart(data) {
   }
   function bspLabel(p) {
     const tier = bspTier(p);
-    if (tier === 3) return '#' + p.bsp_idx;
-    let text = '#' + p.bsp_idx + ' ' + p.label;
-    if (tier === 1) {
+    const isT3 = p.type === '3B' || p.type === '3S';
+    const effTier = (isT3 && p.status !== 'invalidated' && tier > 1) ? Math.max(tier - 1, 1) : tier;
+    const prefix = isT3 ? '◆' : '#';
+    if (effTier === 3) return prefix + p.bsp_idx;
+    let text = prefix + p.bsp_idx + ' ' + p.label;
+    if (effTier === 1) {
       if (p.conf) text += ' [' + (confIcons[p.conf] || p.conf) + ']';
       if (p.ranges && p.ranges.length >= 2) {
         const r0 = p.ranges[0], r1 = p.ranges[1];
         const ratio = r0.area > 0 ? (r1.area / r0.area).toFixed(2) : '-';
         text += '\n' + r1.label + '/' + r0.label + '=' + ratio;
+      }
+      if (isT3 && p.strength) {
+        const strEmoji = {strongest: '🔥', strong: '💪', standard: '📌', weak: '⚠'}[p.strength] || '';
+        text += '\n' + strEmoji + p.strength;
       }
     } else {
       if (p.conf) text += (confShort[p.conf] || '');
@@ -1369,22 +1376,29 @@ function renderChart(data) {
       const tier = bspTier(p);
       const inv = p.status === 'invalidated';
       const pending = p.status === 'pending';
-      const sz = tier === 1 ? 12 : (tier === 2 ? 8 : 6);
-      const fs = tier === 1 ? 10 : (tier === 2 ? 8 : 7);
-      const lh = tier === 1 ? 13 : 10;
+      const isT3 = p.type === '3B' || p.type === '3S';
+      const effTier = (isT3 && !inv && tier > 1) ? Math.max(tier - 1, 1) : tier;
+      const sz = effTier === 1 ? 12 : (effTier === 2 ? 8 : 6);
+      const fs = effTier === 1 ? 10 : (effTier === 2 ? 8 : 7);
+      const lh = effTier === 1 ? 13 : 10;
       const prevClose = i > 0 && (p.idx - list[i-1].idx) < 8;
-      const baseDist = tier === 1 ? 10 : (tier === 2 ? 6 : 4);
+      const baseDist = effTier === 1 ? 10 : (effTier === 2 ? 6 : 4);
       const dist = prevClose && (i % 2 === 1) ? baseDist + 18 : baseDist;
       const color = inv ? '#484f58' : (pending ? '#d29922' : baseColor);
       const statusSuffix = inv ? '\n❌失效' : (pending ? '\n⏳待确认' : '');
       const labelText = bspLabel(p) + statusSuffix;
+      const style = { color: color, opacity: inv ? 0.4 : 1 };
+      if (isT3 && !inv) {
+        style.borderColor = '#ffd700';
+        style.borderWidth = 2;
+      }
       return {
         coord: [data.dates[p.idx], p.price],
         value: p.label,
-        symbol: 'triangle',
-        symbolSize: inv ? Math.max(sz - 2, 4) : sz,
-        symbolRotate: rot,
-        itemStyle: { color: color, opacity: inv ? 0.4 : 1 },
+        symbol: isT3 ? 'diamond' : 'triangle',
+        symbolSize: inv ? Math.max(sz - 2, 4) : (isT3 ? sz + 2 : sz),
+        symbolRotate: isT3 ? 0 : rot,
+        itemStyle: style,
         label: { show: true, formatter: labelText, position: pos,
                  fontSize: fs, color: color,
                  lineHeight: lh, align: 'center', distance: dist },
@@ -3608,10 +3622,20 @@ function renderKline(data) {{
     const y = scaleY(p.price);
     const mIsInv = p.status === 'invalidated';
     const mIsPending = p.status === 'pending';
+    const mIsT3 = p.type === '3B' || p.type === '3S';
     const triColor = mIsInv ? '#484f58' : (mIsPending ? '#d29922' : (p.is_buy ? '#f85149' : '#3fb950'));
+    const markerSize = mIsT3 && !mIsInv ? 8 : 6;
     ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
     ctx.beginPath();
-    if (p.is_buy) {{
+    if (mIsT3 && !mIsInv) {{
+      ctx.moveTo(x, y + (p.is_buy ? 10 : -10) - markerSize);
+      ctx.lineTo(x + markerSize, y + (p.is_buy ? 10 : -10));
+      ctx.lineTo(x, y + (p.is_buy ? 10 : -10) + markerSize);
+      ctx.lineTo(x - markerSize, y + (p.is_buy ? 10 : -10));
+      ctx.closePath();
+      ctx.fillStyle = triColor; ctx.fill();
+      ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1.5; ctx.stroke();
+    }} else if (p.is_buy) {{
       ctx.moveTo(x, y + 10); ctx.lineTo(x - 6, y + 18); ctx.lineTo(x + 6, y + 18); ctx.closePath();
       ctx.fillStyle = triColor; ctx.fill();
     }} else {{
@@ -3621,9 +3645,10 @@ function renderKline(data) {{
     bspHitAreas.push({{cx: x, cy: p.is_buy ? y + 14 : y - 14, bp: p}});
     ctx.fillStyle = mIsInv ? '#484f58' : (mIsPending ? '#d29922' : (p.is_buy ? '#f85149' : '#3fb950'));
     ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
-    ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
+    ctx.font = mIsT3 ? 'bold 9px sans-serif' : 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mConfIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
-    let bspText = '#' + p.bsp_idx + ' ' + p.label.substring(0, 2);
+    const mPrefix = mIsT3 ? '◆' : '#';
+    let bspText = mPrefix + p.bsp_idx + ' ' + p.label.substring(0, 2);
     if (p.conf) bspText += (mConfIcons[p.conf] || '');
     if (mIsInv) bspText += '✗';
     else if (mIsPending) bspText += '⏳';
