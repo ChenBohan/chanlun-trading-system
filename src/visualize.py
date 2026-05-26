@@ -361,6 +361,17 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "dir": hub_dir,
             })
 
+    # Build fractal merge map: fractal_dt → list of raw bar indices (if merged)
+    fractal_merge = {}
+    for f in result.fractals:
+        if f.mk_idx < len(result.merged_bars):
+            mb = result.merged_bars[f.mk_idx]
+            if len(mb.dates) > 1:
+                raw_idxs = [dt_index.get(d) for d in mb.dates]
+                raw_idxs = [x for x in raw_idxs if x is not None]
+                if raw_idxs:
+                    fractal_merge[f.dt] = raw_idxs
+
     # Buy/sell points as markers
     bsp_markers = []
     for p in result.buy_sell_points:
@@ -423,6 +434,8 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                     struct_list.append(item)
             if struct_list:
                 entry["structure"] = struct_list
+            if p.dt in fractal_merge:
+                entry["fractal_bars"] = fractal_merge[p.dt]
             bsp_markers.append(entry)
 
     # For daily K-lines: tentative if last bar is today and market hasn't closed
@@ -1338,6 +1351,12 @@ function renderChart(data) {
       h += '</div>';
     }
 
+    if (p.fractal_bars && p.fractal_bars.length > 1) {
+      const barLabels = p.fractal_bars.map(function(bi) { return 'K' + (data.dates[bi] || '').substring(5).replace(':00', ''); });
+      h += '<div style="margin:3px 0;padding:3px 6px;background:#161b22;border-radius:4px;font-size:11px;color:#d2a8ff">';
+      h += '📐 分型中间 = ' + barLabels.join('+') + ' 包含合并';
+      h += '</div>';
+    }
     h += '<div style="margin:4px 0 0;color:#8b949e;font-size:11px;border-top:1px solid #30363d;padding-top:4px">' + (p.desc || '') + '</div>';
     h += '</div>';
     return h;
@@ -3770,6 +3789,12 @@ function showBspTooltip(bp, screenX, screenY) {{
   }}
   if (bp.status === 'invalidated' && bp.inv_reason) {{
     h += '<div style="margin:3px 0;color:#da3633">失效: ' + bp.inv_reason + '</div>';
+  }}
+  if (bp.fractal_bars && bp.fractal_bars.length > 1) {{
+    const barLabels = bp.fractal_bars.map(function(bi) {{ return 'K' + (dates[bi] || '').substring(5).replace(':00', ''); }});
+    h += '<div style="margin:3px 0;padding:3px 6px;background:#161b22;border-radius:4px;font-size:11px;color:#d2a8ff">';
+    h += '📐 分型中间 = ' + barLabels.join('+') + ' 包含合并';
+    h += '</div>';
   }}
   h += '<div style="margin:4px 0 0;color:#8b949e;font-size:11px;border-top:1px solid #30363d;padding-top:4px">' + (bp.desc || '') + '</div>';
   el.innerHTML = h;
