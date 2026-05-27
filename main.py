@@ -77,14 +77,16 @@ def cmd_analyze(args):
 
 
 def cmd_dashboard(args):
-    """Generate the mobile HTML dashboard from existing data."""
-    from src.visualize import generate_mobile_dashboard
+    """Generate both PC and mobile HTML dashboards from existing data."""
+    from src.visualize import generate_dashboard, generate_mobile_dashboard, run_analysis_pipeline
 
     print("=" * 60)
     print("缠论交易系统 v2 — 可视化仪表盘生成")
     print("=" * 60)
 
-    generate_mobile_dashboard(data_dir=args.data_dir, output_path=args.output)
+    cache = run_analysis_pipeline(data_dir=args.data_dir)
+    generate_dashboard(cache=cache)
+    generate_mobile_dashboard(data_dir=args.data_dir, output_path=args.output, cache=cache)
 
 
 def cmd_batch(args):

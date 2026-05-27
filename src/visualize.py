@@ -621,6 +621,9 @@ let chart = null;
 // ─── Watchlist Panel (自选股最新买卖点) ───
 let wlActiveTab = '30分钟';
 let wlExpanded = false;
+let wlT1Open = false;
+let wlT2Open = false;
+let wlT3Open = true;
 function renderWatchlist() {
   const el = document.getElementById('watchlist-panel');
   if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) { el.innerHTML = ''; return; }
@@ -697,26 +700,35 @@ function renderWatchlist() {
     return r;
   }
 
-  function wlTable(title, signals, isType3) {
-    let t = '<h4 style="color:#c9d1d9;margin:12px 0 6px;font-size:14px">' + title + '</h4>';
-    t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden;margin-bottom:6px">';
-    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
-    t += '<th style="padding:8px;text-align:left">时间</th>';
-    t += '<th style="padding:8px;text-align:left">标的</th>';
-    t += '<th style="padding:8px;text-align:center">类型</th>';
-    t += '<th style="padding:8px;text-align:center">状态</th>';
-    t += '<th style="padding:8px;text-align:center">置信度</th>';
-    t += '<th style="padding:8px;text-align:center">强弱</th>';
-    t += '<th style="padding:8px;text-align:left">仓位建议</th>';
-    t += '<th style="padding:8px;text-align:center">防狼</th>';
-    if (isType3) t += '<th style="padding:8px;text-align:center">位次</th>';
-    t += '</tr></thead><tbody>';
-    signals.forEach((s, i) => { t += wlSignalRow(s, i, isType3); });
-    const cols = isType3 ? 9 : 8;
-    if (signals.length === 0) {
-      t += '<tr><td colspan="' + cols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+  function wlTable(title, signals, isType3, toggleVar, isOpen) {
+    const cnt = signals.length;
+    const arrow = isOpen ? '▼' : '▶';
+    const cntBadge = cnt > 0 ? ' <span style="font-size:11px;color:#8b949e;font-weight:400">' + cnt + '个</span>' : '';
+    let t = '<div style="margin-bottom:6px">';
+    t += '<h4 onclick="' + toggleVar + '=!' + toggleVar + ';renderWatchlist()" style="color:#c9d1d9;margin:12px 0 6px;font-size:14px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px">';
+    t += '<span style="font-size:10px;color:#8b949e">' + arrow + '</span> ' + title + cntBadge;
+    t += '</h4>';
+    if (isOpen) {
+      t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
+      t += '<th style="padding:8px;text-align:left">时间</th>';
+      t += '<th style="padding:8px;text-align:left">标的</th>';
+      t += '<th style="padding:8px;text-align:center">类型</th>';
+      t += '<th style="padding:8px;text-align:center">状态</th>';
+      t += '<th style="padding:8px;text-align:center">置信度</th>';
+      t += '<th style="padding:8px;text-align:center">强弱</th>';
+      t += '<th style="padding:8px;text-align:left">仓位建议</th>';
+      t += '<th style="padding:8px;text-align:center">防狼</th>';
+      if (isType3) t += '<th style="padding:8px;text-align:center">位次</th>';
+      t += '</tr></thead><tbody>';
+      signals.forEach((s, i) => { t += wlSignalRow(s, i, isType3); });
+      const cols = isType3 ? 9 : 8;
+      if (signals.length === 0) {
+        t += '<tr><td colspan="' + cols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+      }
+      t += '</tbody></table>';
     }
-    t += '</tbody></table>';
+    t += '</div>';
     return t;
   }
 
@@ -751,9 +763,9 @@ function renderWatchlist() {
   const t1 = data.type1 || [];
   const t2 = data.type2 || [];
   const t3 = data.type3 || [];
-  h += wlTable('🔴 第一类买卖点（趋势背驰）', t1, false);
-  h += wlTable('🟠 第二类买卖点（回调确认）', t2, false);
-  h += wlTable('🔵 第三类买卖点（中枢突破，最新10个）', t3, true);
+  h += wlTable('🔴 第一类买卖点（趋势背驰）', t1, false, 'wlT1Open', wlT1Open);
+  h += wlTable('🟠 第二类买卖点（回调确认）', t2, false, 'wlT2Open', wlT2Open);
+  h += wlTable('🔵 第三类买卖点（中枢突破，最新10个）', t3, true, 'wlT3Open', wlT3Open);
   h += '</div>';
   }
   h += '</div>';
@@ -764,6 +776,9 @@ renderWatchlist();
 // ─── Global Signals Table (tabbed by level, split into type-1/2/3 sub-tables) ───
 let gsActiveTab = '30分钟';
 let gsExpanded = true;
+let gsT1Open = false;
+let gsT2Open = false;
+let gsT3Open = true;
 function renderGlobalSignals() {
   const el = document.getElementById('global-signals-table');
   const levels = ['日线', '30分钟', '5分钟'];
@@ -861,26 +876,35 @@ function renderGlobalSignals() {
     return r;
   }
 
-  function makeTable(title, signals, isType3) {
-    let t = '<h4 style="color:#c9d1d9;margin:12px 0 6px;font-size:14px">' + title + '</h4>';
-    t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden;margin-bottom:6px">';
-    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
-    t += '<th style="padding:8px;text-align:left">时间</th>';
-    t += '<th style="padding:8px;text-align:left">标的</th>';
-    t += '<th style="padding:8px;text-align:center">类型</th>';
-    t += '<th style="padding:8px;text-align:center">状态</th>';
-    t += '<th style="padding:8px;text-align:center">置信度</th>';
-    t += '<th style="padding:8px;text-align:center">强弱</th>';
-    t += '<th style="padding:8px;text-align:left">仓位建议</th>';
-    t += '<th style="padding:8px;text-align:center">防狼</th>';
-    if (isType3) t += '<th style="padding:8px;text-align:center">位次</th>';
-    t += '</tr></thead><tbody>';
-    signals.forEach((s, i) => { t += signalRow(s, i, isType3); });
-    const cols = isType3 ? 9 : 8;
-    if (signals.length === 0) {
-      t += '<tr><td colspan="' + cols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+  function makeTable(title, signals, isType3, toggleVar, isOpen) {
+    const cnt = signals.length;
+    const arrow = isOpen ? '▼' : '▶';
+    const cntBadge = cnt > 0 ? ' <span style="font-size:11px;color:#8b949e;font-weight:400">' + cnt + '个</span>' : '';
+    let t = '<div style="margin-bottom:6px">';
+    t += '<h4 onclick="' + toggleVar + '=!' + toggleVar + ';renderGlobalSignals()" style="color:#c9d1d9;margin:12px 0 6px;font-size:14px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px">';
+    t += '<span style="font-size:10px;color:#8b949e;transition:transform 0.2s">' + arrow + '</span> ' + title + cntBadge;
+    t += '</h4>';
+    if (isOpen) {
+      t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
+      t += '<th style="padding:8px;text-align:left">时间</th>';
+      t += '<th style="padding:8px;text-align:left">标的</th>';
+      t += '<th style="padding:8px;text-align:center">类型</th>';
+      t += '<th style="padding:8px;text-align:center">状态</th>';
+      t += '<th style="padding:8px;text-align:center">置信度</th>';
+      t += '<th style="padding:8px;text-align:center">强弱</th>';
+      t += '<th style="padding:8px;text-align:left">仓位建议</th>';
+      t += '<th style="padding:8px;text-align:center">防狼</th>';
+      if (isType3) t += '<th style="padding:8px;text-align:center">位次</th>';
+      t += '</tr></thead><tbody>';
+      signals.forEach((s, i) => { t += signalRow(s, i, isType3); });
+      const cols = isType3 ? 9 : 8;
+      if (signals.length === 0) {
+        t += '<tr><td colspan="' + cols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
+      }
+      t += '</tbody></table>';
     }
-    t += '</tbody></table>';
+    t += '</div>';
     return t;
   }
 
@@ -897,9 +921,9 @@ function renderGlobalSignals() {
   h += '</div>';
 
   const data = GLOBAL_SIGNALS[gsActiveTab] || {};
-  h += makeTable('🔴 第一类买卖点（趋势背驰，最新10个）', data.type1 || [], false);
-  h += makeTable('🟠 第二类买卖点（回调确认，最新5个）', data.type2 || [], false);
-  h += makeTable('🔵 第三类买卖点（中枢突破，最新20个）', data.type3 || [], true);
+  h += makeTable('🔴 第一类买卖点（趋势背驰，最新10个）', data.type1 || [], false, 'gsT1Open', gsT1Open);
+  h += makeTable('🟠 第二类买卖点（回调确认，最新5个）', data.type2 || [], false, 'gsT2Open', gsT2Open);
+  h += makeTable('🔵 第三类买卖点（中枢突破，最新20个）', data.type3 || [], true, 'gsT3Open', gsT3Open);
   h += '</div>'; // close content wrapper
   } // end if gsExpanded
   h += '</div>'; // close outer container
@@ -1422,9 +1446,8 @@ function renderChart(data) {
     'a': '#58a6ff', 'c': '#f85149', 'b': '#8b949e', 'A': '#ffd700', 'B': '#ffa500',
   };
   const bspWithStruct = data.bsp.filter(p => p.structure && p.structure.length > 0);
-  const latestStruct = [...bspWithStruct].sort((a,b) => b.idx - a.idx).slice(0, 1);
-  const visibleBspIdx = new Set(latestStruct.map(p => p.idx));
-  latestStruct.forEach(p => {
+  const visibleBspIdx = new Set(bspWithStruct.map(p => p.idx));
+  bspWithStruct.forEach(p => {
     const tag_prefix = '#' + p.bsp_idx + ' ';
     p.structure.forEach(st => {
       const x0 = data.dates[st.x0], x1 = data.dates[st.x1];
@@ -3017,6 +3040,9 @@ let mWlTab = '30分钟';
 let mWlExpanded = false;
 let mWlPage = 1;
 const mWlPageSize = {{t1: 10, t2: 5, t3: 10}};
+let mWlT1Open = false;
+let mWlT2Open = false;
+let mWlT3Open = true;
 function renderMobileWatchlist() {{
   const el = document.getElementById('mobileWatchlist');
   if (!WATCHLIST_CODES || WATCHLIST_CODES.length === 0) {{ el.innerHTML = ''; return; }}
@@ -3084,24 +3110,31 @@ function renderMobileWatchlist() {{
     return r;
   }}
 
-  function mWlTable(title, signals, isType3) {{
-    let t = '<div style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px">' + title + ' (' + signals.length + ')</div>';
-    t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
-    t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
-    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
-    t += '<th style="padding:4px;text-align:left">时间</th>';
-    t += '<th style="padding:4px;text-align:left">标的</th>';
-    t += '<th style="padding:4px;text-align:center">类型</th>';
-    t += '<th style="padding:4px;text-align:center">强度</th>';
-    t += '<th style="padding:4px;text-align:center">置信</th>';
-    if (isType3) t += '<th style="padding:4px;text-align:center">位次</th>';
-    t += '</tr></thead><tbody>';
-    const cols = isType3 ? 6 : 5;
-    signals.forEach((s, i) => {{ t += mWlRow(s, i, isType3); }});
-    if (signals.length === 0) {{
-      t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;
+  function mWlTable(title, signals, isType3, toggleVar, isOpen) {{
+    const cnt = signals.length;
+    const arrow = isOpen ? '▼' : '▶';
+    let t = '<div style="margin-bottom:4px">';
+    t += '<div onclick="' + toggleVar + '=!' + toggleVar + ';renderMobileWatchlist()" style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px">';
+    t += '<span style="font-size:9px;color:#8b949e">' + arrow + '</span> ' + title + ' (' + cnt + ')</div>';
+    if (isOpen) {{
+      t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+      t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
+      t += '<th style="padding:4px;text-align:left">时间</th>';
+      t += '<th style="padding:4px;text-align:left">标的</th>';
+      t += '<th style="padding:4px;text-align:center">类型</th>';
+      t += '<th style="padding:4px;text-align:center">强度</th>';
+      t += '<th style="padding:4px;text-align:center">置信</th>';
+      if (isType3) t += '<th style="padding:4px;text-align:center">位次</th>';
+      t += '</tr></thead><tbody>';
+      const cols = isType3 ? 6 : 5;
+      signals.forEach((s, i) => {{ t += mWlRow(s, i, isType3); }});
+      if (signals.length === 0) {{
+        t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;
+      }}
+      t += '</tbody></table></div>';
     }}
-    t += '</tbody></table></div>';
+    t += '</div>';
     return t;
   }}
 
@@ -3146,9 +3179,9 @@ function renderMobileWatchlist() {{
   const t1 = allT1.slice(s1, s1 + mWlPageSize.t1);
   const t2 = allT2.slice(s2, s2 + mWlPageSize.t2);
   const t3 = allT3.slice(s3, s3 + mWlPageSize.t3);
-  h += mWlTable('🔴 第一类买卖点', t1, false);
-  h += mWlTable('🟠 第二类买卖点', t2, false);
-  h += mWlTable('🔵 第三类买卖点', t3, true);
+  h += mWlTable('🔴 第一类买卖点', t1, false, 'mWlT1Open', mWlT1Open);
+  h += mWlTable('🟠 第二类买卖点', t2, false, 'mWlT2Open', mWlT2Open);
+  h += mWlTable('🔵 第三类买卖点', t3, true, 'mWlT3Open', mWlT3Open);
   if (totalPages > 1) {{
     h += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:8px 0 4px">';
     for (let pg = 1; pg <= totalPages; pg++) {{
@@ -3171,6 +3204,9 @@ let mgsTab = '30分钟';
 let mgsExpanded = true;
 let mgsPage = 1;
 const mgsPageSize = {{t1: 10, t2: 5, t3: 20}};
+let mgsT1Open = false;
+let mgsT2Open = false;
+let mgsT3Open = true;
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
   const levels = ['日线', '30分钟', '5分钟'];
@@ -3240,24 +3276,31 @@ function renderMobileGlobalSignals() {{
     return r;
   }}
 
-  function mgsTable(title, signals, isType3) {{
-    let t = '<div style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px">' + title + ' (' + signals.length + ')</div>';
-    t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
-    t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
-    t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
-    t += '<th style="padding:4px;text-align:left">时间</th>';
-    t += '<th style="padding:4px;text-align:left">标的</th>';
-    t += '<th style="padding:4px;text-align:center">类型</th>';
-    t += '<th style="padding:4px;text-align:center">强度</th>';
-    t += '<th style="padding:4px;text-align:center">置信</th>';
-    if (isType3) t += '<th style="padding:4px;text-align:center">位次</th>';
-    t += '</tr></thead><tbody>';
-    const cols = isType3 ? 6 : 5;
-    signals.forEach((s, i) => {{ t += mgsRow(s, i, isType3); }});
-    if (signals.length === 0) {{
-      t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;
+  function mgsTable(title, signals, isType3, toggleVar, isOpen) {{
+    const cnt = signals.length;
+    const arrow = isOpen ? '▼' : '▶';
+    let t = '<div style="margin-bottom:4px">';
+    t += '<div onclick="' + toggleVar + '=!' + toggleVar + ';renderMobileGlobalSignals()" style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px">';
+    t += '<span style="font-size:9px;color:#8b949e">' + arrow + '</span> ' + title + ' (' + cnt + ')</div>';
+    if (isOpen) {{
+      t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+      t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
+      t += '<th style="padding:4px;text-align:left">时间</th>';
+      t += '<th style="padding:4px;text-align:left">标的</th>';
+      t += '<th style="padding:4px;text-align:center">类型</th>';
+      t += '<th style="padding:4px;text-align:center">强度</th>';
+      t += '<th style="padding:4px;text-align:center">置信</th>';
+      if (isType3) t += '<th style="padding:4px;text-align:center">位次</th>';
+      t += '</tr></thead><tbody>';
+      const cols = isType3 ? 6 : 5;
+      signals.forEach((s, i) => {{ t += mgsRow(s, i, isType3); }});
+      if (signals.length === 0) {{
+        t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;
+      }}
+      t += '</tbody></table></div>';
     }}
-    t += '</tbody></table></div>';
+    t += '</div>';
     return t;
   }}
 
@@ -3299,9 +3342,9 @@ function renderMobileGlobalSignals() {{
   const gT1 = gAllT1.slice(gs1, gs1 + mgsPageSize.t1);
   const gT2 = gAllT2.slice(gs2, gs2 + mgsPageSize.t2);
   const gT3 = gAllT3.slice(gs3, gs3 + mgsPageSize.t3);
-  h += mgsTable('🔴 第一类买卖点', gT1, false);
-  h += mgsTable('🟠 第二类买卖点', gT2, false);
-  h += mgsTable('🔵 第三类买卖点', gT3, true);
+  h += mgsTable('🔴 第一类买卖点', gT1, false, 'mgsT1Open', mgsT1Open);
+  h += mgsTable('🟠 第二类买卖点', gT2, false, 'mgsT2Open', mgsT2Open);
+  h += mgsTable('🔵 第三类买卖点', gT3, true, 'mgsT3Open', mgsT3Open);
   if (gTotalPages > 1) {{
     h += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:8px 0 4px">';
     for (let pg = 1; pg <= gTotalPages; pg++) {{
