@@ -24,6 +24,11 @@ Thumbs.db
 indices/*/data/*.md
 stocks/*/data/*.md
 
+# Generated reports (should be regenerated, not committed)
+reports/*.html
+reports/_redirects
+reports/index.html
+
 # Regenerated analysis artifacts (run scripts to recreate)
 indices/*/analysis/20*/
 stocks/*/analysis/20*/
