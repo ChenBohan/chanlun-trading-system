@@ -614,7 +614,10 @@ function loadChartData(key) {
   });
 }
 
-let currentIndex = INDEX_LIST[0].etf_code;
+// 确保默认选择有数据文件的指数
+const coreIndices = ["510300", "510050", "510500", "512100", "159915", "588000", "513180", "513100"];
+let defaultIndex = INDEX_LIST.find(x => coreIndices.includes(x.etf_code));
+let currentIndex = defaultIndex ? defaultIndex.etf_code : INDEX_LIST[0].etf_code;
 let currentLevel = '30min';
 let chart = null;
 
