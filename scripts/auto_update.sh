@@ -45,7 +45,7 @@ if [[ "${1:-}" == "--remove" ]]; then
     exit 0
 fi
 
-TIMEOUT_SEC=240  # 4 minutes max (cron interval is 5 min)
+TIMEOUT_SEC=360  # 6 minutes max (to accommodate full deployment)
 
 # ─── Lock to prevent concurrent runs ───────────────────────────────
 if [[ -f "$LOCK_FILE" ]]; then
