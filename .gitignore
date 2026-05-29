@@ -20,14 +20,11 @@ Thumbs.db
 
 # Regenerated data (run scripts to recreate)
 /data/
-!reports/data/
 indices/*/data/*.md
 stocks/*/data/*.md
 
-# Generated reports (should be regenerated, not committed)
-reports/*.html
-reports/_redirects
-reports/index.html
+# Generated reports (should NEVER be committed - deployed directly to Cloudflare)
+reports/
 
 # Regenerated analysis artifacts (run scripts to recreate)
 indices/*/analysis/20*/
