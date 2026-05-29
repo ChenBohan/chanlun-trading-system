@@ -45,3 +45,7 @@ stocks/*/tracking/signals.jsonl
 # Fundamental data
 stocks/*/fundamental/
 .env
+
+# Runtime logs (should not be committed)
+logs/
+*.log
