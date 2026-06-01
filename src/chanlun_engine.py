@@ -4739,6 +4739,30 @@ def format_report(result: AnalysisResult) -> str:
     lines.append(f"- 中枢：{len(result.hubs)}")
     lines.append("")
 
+    # Line segment list (最近10条线段)
+    if result.segments:
+        lines.append(f"## 线段列表（最近10条）")
+        recent_segs = result.segments[-10:]
+        for seg in recent_segs:
+            direction = "上涨" if seg.direction == 1 else "下跌"
+            icon = "↗" if seg.direction == 1 else "↘"
+            display_num = seg.idx + 1  # 1-indexed for display
+            if seg.direction == 1:
+                start_price = seg.strokes[0].start.low
+                end_price = seg.strokes[-1].end.high
+                change_pct = (end_price / start_price - 1) * 100
+            else:
+                start_price = seg.strokes[0].start.high
+                end_price = seg.strokes[-1].end.low
+                change_pct = (end_price / start_price - 1) * 100
+            lines.append(
+                f"- D{display_num}：{icon} {direction}  "
+                f"{start_price:.2f} → {end_price:.2f} "
+                f"({change_pct:+.1f}%)  "
+                f"({seg.start_dt} ~ {seg.end_dt})"
+            )
+        lines.append("")
+
     lines.append(f"## 走势类型")
     lines.append(f"**{result.trend}**")
     tc = result.trend_completion

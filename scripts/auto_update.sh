@@ -4,9 +4,10 @@
 # Schedule: every 5 min during A-share trading hours + post-close, Mon-Fri.
 #
 # Usage:
-#   ./scripts/auto_update.sh           # Run once
-#   ./scripts/auto_update.sh --install # Install cron schedule
-#   ./scripts/auto_update.sh --remove  # Remove cron schedule
+#   ./scripts/auto_update.sh                  # Run once
+#   ./scripts/auto_update.sh --install        # Install schedule (cron, or systemd user timer)
+#   ./scripts/auto_update.sh --install-systemd # Install systemd user timer only
+#   ./scripts/auto_update.sh --remove         # Remove cron + systemd timer
 
 set -euo pipefail
 
@@ -18,30 +19,59 @@ LOCK_FILE="/tmp/chanlun_auto_update.lock"
 mkdir -p "$LOG_DIR"
 
 CRON_TAG="chanlun-auto-update"
+SYSTEMD_UNIT="chanlun-auto-update.timer"
+SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
 
-# ─── Install / Remove cron ─────────────────────────────────────────
+_install_systemd_timer() {
+    mkdir -p "$SYSTEMD_USER_DIR" "$LOG_DIR"
+    local svc="${SYSTEMD_USER_DIR}/chanlun-auto-update.service"
+    local tmr="${SYSTEMD_USER_DIR}/chanlun-auto-update.timer"
+    if [[ ! -f "$svc" || ! -f "$tmr" ]]; then
+        echo "ERROR: Missing ${svc} or ${tmr}. Run from repo with systemd unit files present." >&2
+        return 1
+    fi
+    systemctl --user daemon-reload
+    systemctl --user enable --now "$SYSTEMD_UNIT"
+    echo "Systemd user timer enabled:"
+    systemctl --user list-timers --no-pager | grep -F "$SYSTEMD_UNIT" || true
+}
+
+_remove_systemd_timer() {
+    systemctl --user disable --now "$SYSTEMD_UNIT" 2>/dev/null || true
+    echo "Systemd user timer removed (unit files kept under ${SYSTEMD_USER_DIR})."
+}
+
+# ─── Install / Remove schedule ─────────────────────────────────────
+if [[ "${1:-}" == "--install-systemd" ]]; then
+    _install_systemd_timer
+    exit 0
+fi
+
 if [[ "${1:-}" == "--install" ]]; then
     SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    mkdir -p "$LOG_DIR"
 
     # A-share trading hours only (Mon-Fri):
-    #   Morning  09:31-11:31  (every 5 min)
-    #   Afternoon 13:01-14:56 (every 5 min)
-    #   Post-close 15:06      (final closing data)
+    #   09:01-14:56 every 5 min + post-close 15:06
     CRON_LINES=$(cat <<CRON
 1-56/5 9-14 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
 6 15 * * 1-5 ${SCRIPT_PATH} >> ${LOG_DIR}/cron.log 2>&1 # ${CRON_TAG}
 CRON
 )
-    # Remove old entries then append
-    ( crontab -l 2>/dev/null | grep -v "${CRON_TAG}" || true; echo "$CRON_LINES" ) | crontab -
-    echo "Cron jobs installed. Current schedule:"
-    crontab -l | grep "${CRON_TAG}"
+    if ( crontab -l 2>/dev/null | grep -v "${CRON_TAG}" || true; echo "$CRON_LINES" ) | crontab - 2>/dev/null; then
+        echo "Cron jobs installed. Current schedule:"
+        crontab -l | grep "${CRON_TAG}"
+        exit 0
+    fi
+    echo "WARN: crontab not writable; falling back to systemd user timer." >&2
+    _install_systemd_timer
     exit 0
 fi
 
 if [[ "${1:-}" == "--remove" ]]; then
-    ( crontab -l 2>/dev/null | grep -v "${CRON_TAG}" || true ) | crontab -
-    echo "Cron jobs removed."
+    ( crontab -l 2>/dev/null | grep -v "${CRON_TAG}" || true ) | crontab - 2>/dev/null || true
+    _remove_systemd_timer
+    echo "Cron (if any) and systemd timer removed."
     exit 0
 fi
 
