@@ -283,6 +283,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
     macd_hist = []
     dif_line = []
     dea_line = []
+    closes = []
 
     for b in bars:
         dates.append(b.dt)
@@ -292,6 +293,20 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         macd_hist.append(round(b.macd_hist, 4))
         dif_line.append(round(b.dif, 4))
         dea_line.append(round(b.dea, 4))
+        closes.append(b.close)
+
+    # MA5 / MA10
+    ma5 = []
+    ma10 = []
+    for i in range(len(closes)):
+        if i < 4:
+            ma5.append(None)
+        else:
+            ma5.append(round(sum(closes[i-4:i+1]) / 5, 3))
+        if i < 9:
+            ma10.append(None)
+        else:
+            ma10.append(round(sum(closes[i-9:i+1]) / 10, 3))
 
     dt_index = {b.dt: i for i, b in enumerate(bars)}
     stroke_lines = []
@@ -456,6 +471,8 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         "macd_hist": macd_hist,
         "dif": dif_line,
         "dea": dea_line,
+        "ma5": ma5,
+        "ma10": ma10,
         "strokes": stroke_lines,
         "segments": segment_points,
         "seg_labels": segment_labels,
@@ -1651,6 +1668,28 @@ function renderChart(data) {
           })(),
           label: { show: false },
         },
+      },
+      // MA5
+      {
+        name: 'MA5',
+        type: 'line',
+        data: data.ma5,
+        xAxisIndex: 0, yAxisIndex: 0,
+        symbol: 'none',
+        lineStyle: { color: '#e6a817', width: 1.2 },
+        connectNulls: false,
+        z: 2,
+      },
+      // MA10
+      {
+        name: 'MA10',
+        type: 'line',
+        data: data.ma10,
+        xAxisIndex: 0, yAxisIndex: 0,
+        symbol: 'none',
+        lineStyle: { color: '#58a6ff', width: 1.2 },
+        connectNulls: false,
+        z: 2,
       },
       // Strokes
       {
@@ -2994,6 +3033,8 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
   <div class="legend">
     <div class="legend-item"><div class="legend-color" style="background:#f85149"></div>阳线</div>
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>阴线</div>
+    <div class="legend-item"><div class="legend-color" style="background:#e6a817"></div>MA5</div>
+    <div class="legend-item"><div class="legend-color" style="background:#58a6ff"></div>MA10</div>
     <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div>笔</div>
     <div class="legend-item"><div class="legend-color" style="background:#bc8cff"></div>线段</div>
     <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.4)"></div>上涨枢(↓↑↓)</div>
@@ -3598,6 +3639,23 @@ function renderKline(data) {{
     ctx.fillText('ZG=' + h.zg.toFixed(2), x1 + 2, scaleY(h.zg) + 17);
     ctx.fillText('ZD=' + h.zd.toFixed(2), x1 + 2, scaleY(h.zd) + 10);
   }});
+
+  // MA5 / MA10 lines
+  function drawMA(maArr, color) {{
+    if (!maArr || maArr.length === 0) return;
+    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([]);
+    ctx.beginPath();
+    let started = false;
+    for (let gi = viewStart; gi < viewEnd; gi++) {{
+      if (maArr[gi] === null || maArr[gi] === undefined) {{ started = false; continue; }}
+      const x = scaleX(gi); const y = scaleY(maArr[gi]);
+      if (!started) {{ ctx.moveTo(x, y); started = true; }}
+      else ctx.lineTo(x, y);
+    }}
+    ctx.stroke();
+  }}
+  drawMA(data.ma5, '#e6a817');
+  drawMA(data.ma10, '#58a6ff');
 
   // Candlesticks
   const tentLast = data.tentative > 0 ? kline.length - 1 : -1;
