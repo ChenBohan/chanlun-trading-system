@@ -109,8 +109,12 @@ def ensure_project(headers):
     return False
 
 
-def collect_files(deploy_dir):
-    """Collect files: mobile HTML as index + data/ JS files for chart rendering."""
+def collect_files(deploy_dir, delta_only=False):
+    """Collect files for deployment.
+
+    delta_only=False: full deploy (HTML + all data/*.js)
+    delta_only=True:  delta deploy (HTML + data/live.js only)
+    """
     files = []
     mobile_html = deploy_dir / "dashboard_mobile.html"
     if not mobile_html.exists():
@@ -123,7 +127,19 @@ def collect_files(deploy_dir):
                   "abs_path": mobile_html, "size": size})
 
     data_dir = deploy_dir / "data"
-    if data_dir.is_dir():
+    if not data_dir.is_dir():
+        return files
+
+    if delta_only:
+        live_js = data_dir / "live.js"
+        if live_js.exists():
+            fh = hash_file(live_js)
+            files.append({"path": "/data/live.js", "hash": fh,
+                          "content_type": "application/javascript",
+                          "abs_path": live_js, "size": live_js.stat().st_size})
+        else:
+            print("WARNING: data/live.js not found, delta deploy has no chart data")
+    else:
         for p in sorted(data_dir.iterdir()):
             if p.is_file() and p.suffix == ".js":
                 rel = "/data/" + p.name
@@ -231,33 +247,35 @@ def create_deployment(headers, manifest):
     return None, None
 
 
-def deploy():
-    """Full deployment pipeline."""
+def deploy(delta_only=False, save_baseline=False):
+    """Deployment pipeline.
+
+    delta_only: deploy only HTML + live.js (fast, ~few KB)
+    save_baseline: after full deploy, save baseline for future deltas
+    """
     headers = load_credentials()
 
     if not ensure_project(headers):
         sys.exit(1)
 
-    files = collect_files(DEPLOY_DIR)
+    files = collect_files(DEPLOY_DIR, delta_only=delta_only)
     if not files:
         print("No files to deploy!")
         sys.exit(1)
 
+    mode = "DELTA" if delta_only else "FULL"
     total_size = sum(f["size"] for f in files)
-    print(f"Deploying {len(files)} files ({total_size / 1024:.0f} KB) to {PROJECT_NAME}...")
+    print(f"[{mode}] Deploying {len(files)} files ({total_size / 1024:.0f} KB) to {PROJECT_NAME}...")
 
     t0 = time.time()
 
-    # Step 1: Get upload JWT
     jwt = get_upload_token(headers)
     if not jwt:
         sys.exit(1)
 
-    # Step 2: Upload files
     if not upload_files(jwt, files):
         sys.exit(1)
 
-    # Step 3: Create deployment with manifest
     manifest = {f["path"]: f["hash"] for f in files}
     url, deploy_id = create_deployment(headers, manifest)
     elapsed = time.time() - t0
@@ -271,6 +289,38 @@ def deploy():
     else:
         sys.exit(1)
 
+    if save_baseline and not delta_only:
+        _save_baseline_from_data_dir(DEPLOY_DIR / "data")
+
+
+def _save_baseline_from_data_dir(data_dir: Path):
+    """Read all data/*.js files and save bar counts as baseline."""
+    import re
+    baseline = {"time": time.strftime("%Y-%m-%d %H:%M"), "bars": {}}
+    pattern = re.compile(r'"dates":\[([^\]]*)\]')
+    for p in sorted(data_dir.iterdir()):
+        if not p.is_file() or p.suffix != ".js" or p.name == "live.js":
+            continue
+        key = p.stem
+        content = p.read_text(encoding="utf-8")
+        m = pattern.search(content)
+        if m:
+            dates_str = m.group(1)
+            n_bars = dates_str.count('"') // 2 if dates_str else 0
+            baseline["bars"][key] = n_bars
+
+    out = data_dir / ".baseline.json"
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(baseline, f, ensure_ascii=False)
+    print(f"  Baseline saved: {len(baseline['bars'])} keys")
+
 
 if __name__ == "__main__":
-    deploy()
+    import argparse
+    parser = argparse.ArgumentParser(description="Deploy to Cloudflare Pages")
+    parser.add_argument("--delta", action="store_true",
+                        help="Delta deploy: only HTML + live.js")
+    parser.add_argument("--save-baseline", action="store_true",
+                        help="After full deploy, save baseline for future deltas")
+    args = parser.parse_args()
+    deploy(delta_only=args.delta, save_baseline=args.save_baseline)

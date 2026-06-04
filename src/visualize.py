@@ -67,31 +67,19 @@ def generate_live_js(data_out_dir: str, all_data: dict) -> Optional[str]:
     base_bars = baseline.get("bars", {})
     live_entries = {}
     array_fields = ("dates", "kline", "volumes", "macd_hist", "dif", "dea", "ma5", "ma10")
-    struct_fields = ("strokes", "segments", "seg_labels", "hubs", "bsp", "tentative")
-    scalar_fields = ("trend", "hub_position", "hub_detail", "trend_completion",
-                     "volume_profile", "stats")
 
     for key, data in all_data.items():
         base_n = base_bars.get(key, 0)
         cur_n = len(data.get("dates", []))
-        entry: dict = {"base_len": base_n}
+        if cur_n <= base_n:
+            continue
 
-        # Append-only array fields (new bars since baseline)
+        entry: dict = {"base_len": base_n}
         for field in array_fields:
             arr = data.get(field, [])
             entry[field] = arr[base_n:] if len(arr) > base_n else []
 
-        # Full replacement for structural analysis (always small)
-        for field in struct_fields:
-            if field in data:
-                entry[field] = data[field]
-        for field in scalar_fields:
-            if field in data:
-                entry[field] = data[field]
-
-        # Only include if there are new bars or structure changed
-        if cur_n > base_n or data.get("strokes"):
-            live_entries[key] = entry
+        live_entries[key] = entry
 
     if not live_entries:
         return None
@@ -683,12 +671,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 <script>
 // ─── Data: lazy-loaded per index via script injection ───
 var DATA_CACHE = {};
+var LIVE_DATA = null;
 const DATA_KEYS = __ALL_DATA_JSON__;
 const INDEX_LIST = __INDEX_LIST_JSON__;
 const SYNTHESIS = __SYNTHESIS_JSON__;
 const GLOBAL_SIGNALS = __GLOBAL_SIGNALS_JSON__;
 const WATCHLIST_SIGNALS = __WATCHLIST_SIGNALS_JSON__;
 const WATCHLIST_CODES = __WATCHLIST_CODES_JSON__;
+
+function applyLiveDelta(key, base) {
+  if (!LIVE_DATA || !LIVE_DATA[key]) return base;
+  const live = LIVE_DATA[key];
+  const bn = live.base_len || 0;
+  const merged = Object.assign({}, base);
+  const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10'];
+  for (const f of arrFields) {
+    const bArr = (base[f] || []).slice(0, bn);
+    merged[f] = bArr.concat(live[f] || []);
+  }
+  return merged;
+}
 
 function getChartData(key) { return DATA_CACHE[key] || null; }
 
@@ -697,11 +699,22 @@ function loadChartData(key) {
     if (DATA_CACHE[key]) { resolve(DATA_CACHE[key]); return; }
     const s = document.createElement('script');
     s.src = 'data/' + key + '.js';
-    s.onload = () => resolve(DATA_CACHE[key] || null);
+    s.onload = () => {
+      let d = DATA_CACHE[key] || null;
+      if (d) { d = applyLiveDelta(key, d); DATA_CACHE[key] = d; }
+      resolve(d);
+    };
     s.onerror = () => resolve(null);
     document.head.appendChild(s);
   });
 }
+
+// Load live.js for delta merge
+(function() {
+  const ls = document.createElement('script');
+  ls.src = 'data/live.js';
+  document.head.appendChild(ls);
+})();
 
 // 确保默认选择有数据文件的指数
 const coreIndices = ["510300", "510050", "510500", "512100", "159915", "588000", "513180", "513100"];
@@ -3148,17 +3161,11 @@ function applyLiveDelta(key, base) {{
   if (!LIVE_DATA || !LIVE_DATA[key]) return base;
   const live = LIVE_DATA[key];
   const bn = live.base_len || 0;
-  const merged = {{}};
+  const merged = Object.assign({{}}, base);
   const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10'];
   for (const f of arrFields) {{
     const bArr = (base[f] || []).slice(0, bn);
     merged[f] = bArr.concat(live[f] || []);
-  }}
-  const replFields = ['strokes','segments','seg_labels','hubs','bsp','tentative',
-                      'trend','hub_position','hub_detail','trend_completion',
-                      'volume_profile','stats'];
-  for (const f of replFields) {{
-    merged[f] = (f in live) ? live[f] : base[f];
   }}
   return merged;
 }}

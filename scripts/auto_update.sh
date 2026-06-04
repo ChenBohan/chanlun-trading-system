@@ -124,15 +124,21 @@ cd "$PROJECT_DIR"
         echo "Pushed to remote."
     }
 
-    # Deploy only every 30 min (at :00 and :30) or post-close (15:06)
-    # to avoid uploading 146MB every 5 minutes
+    # Deploy strategy:
+    #   Full deploy (all 724 files): first run of day (09:15) and post-close (15:06)
+    #   Delta deploy (HTML + live.js only): every other run (~few KB, <5s)
     MINUTE=$(date +%M)
     HOUR=$(date +%H)
-    if (( MINUTE < 5 || (MINUTE >= 30 && MINUTE < 35) || (HOUR == 15) )); then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: Deploy to Cloudflare Pages..."
-        timeout 180s python3 scripts/deploy_cloudflare.py 2>&1 || echo "WARNING: Cloudflare deploy failed/timed out (non-fatal)"
+    BASELINE_FILE="reports/data/.baseline.json"
+
+    if [[ ! -f "$BASELINE_FILE" ]] || (( HOUR == 15 && MINUTE >= 6 && MINUTE < 11 )); then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: FULL deploy to Cloudflare Pages..."
+        timeout 300s python3 scripts/deploy_cloudflare.py --save-baseline 2>&1 \
+            || echo "WARNING: Full deploy failed/timed out (non-fatal)"
     else
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: Deploy skipped (next at :00 or :30)"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: Delta deploy (live.js only)..."
+        timeout 30s python3 scripts/deploy_cloudflare.py --delta 2>&1 \
+            || echo "WARNING: Delta deploy failed (non-fatal)"
     fi
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auto-update complete."
