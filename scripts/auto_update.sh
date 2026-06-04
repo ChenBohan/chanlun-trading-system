@@ -137,7 +137,7 @@ cd "$PROJECT_DIR"
             || echo "WARNING: Full deploy failed/timed out (non-fatal)"
     else
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: Delta deploy (live.js only)..."
-        timeout 30s python3 scripts/deploy_cloudflare.py --delta 2>&1 \
+        timeout 90s python3 scripts/deploy_cloudflare.py --delta 2>&1 \
             || echo "WARNING: Delta deploy failed (non-fatal)"
     fi
 
