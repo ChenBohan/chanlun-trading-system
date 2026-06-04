@@ -40,12 +40,18 @@ PROJECT_NAME = "chanlun-dashboard"
 BASE_URL = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/pages/projects"
 ASSETS_API = "https://api.cloudflare.com/client/v4/pages/assets"
 
+TIMEOUT_SHORT = 30   # seconds, for metadata API calls
+TIMEOUT_UPLOAD = 180  # seconds, for file upload (large payload)
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEPLOY_DIR = PROJECT_ROOT / "reports"
 ENV_FILE = PROJECT_ROOT / ".env"
 
-MAX_BUCKET_SIZE = 50 * 1024 * 1024  # 50 MiB per batch
-MAX_BUCKET_FILES = 5000
+# Only deploy these files (mobile-only mode for fast deploy)
+DEPLOY_FILES = ["dashboard_mobile.html", "index.html"]
+
+MAX_BUCKET_SIZE = 20 * 1024 * 1024  # 20 MiB per batch (base64 inflates ~33%)
+MAX_BUCKET_FILES = 150
 
 
 def load_credentials():
@@ -85,7 +91,7 @@ def hash_file(filepath):
 
 def ensure_project(headers):
     """Create project if not exists."""
-    r = requests.get(f"{BASE_URL}/{PROJECT_NAME}", headers=headers)
+    r = requests.get(f"{BASE_URL}/{PROJECT_NAME}", headers=headers, timeout=TIMEOUT_SHORT)
     if r.status_code == 200:
         return True
     if r.status_code == 404:
@@ -93,7 +99,7 @@ def ensure_project(headers):
         r = requests.post(BASE_URL, headers=headers, json={
             "name": PROJECT_NAME,
             "production_branch": "main",
-        })
+        }, timeout=TIMEOUT_SHORT)
         if r.status_code in (200, 201):
             print(f"Project created: {PROJECT_NAME}")
             return True
@@ -104,22 +110,34 @@ def ensure_project(headers):
 
 
 def collect_files(deploy_dir):
-    """Collect files with their hashes and content types."""
+    """Collect files: mobile HTML as index + data/ JS files for chart rendering."""
     files = []
-    for p in sorted(deploy_dir.rglob("*")):
-        if p.is_file():
-            rel = "/" + p.relative_to(deploy_dir).as_posix()
-            h = hash_file(p)
-            ct = mimetypes.guess_type(str(p))[0] or "application/octet-stream"
-            files.append({"path": rel, "hash": h, "content_type": ct, "abs_path": p,
-                          "size": p.stat().st_size})
+    mobile_html = deploy_dir / "dashboard_mobile.html"
+    if not mobile_html.exists():
+        print(f"ERROR: {mobile_html} not found")
+        return files
+
+    h = hash_file(mobile_html)
+    size = mobile_html.stat().st_size
+    files.append({"path": "/index.html", "hash": h, "content_type": "text/html",
+                  "abs_path": mobile_html, "size": size})
+
+    data_dir = deploy_dir / "data"
+    if data_dir.is_dir():
+        for p in sorted(data_dir.iterdir()):
+            if p.is_file() and p.suffix == ".js":
+                rel = "/data/" + p.name
+                fh = hash_file(p)
+                files.append({"path": rel, "hash": fh,
+                              "content_type": "application/javascript",
+                              "abs_path": p, "size": p.stat().st_size})
     return files
 
 
 def get_upload_token(headers):
     """Get JWT token for uploading assets."""
     url = f"{BASE_URL}/{PROJECT_NAME}/upload-token"
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, headers=headers, timeout=TIMEOUT_SHORT)
     if r.status_code == 200:
         data = r.json()
         jwt = data.get("result", {}).get("jwt", "")
@@ -136,7 +154,7 @@ def upload_files(jwt, files):
     # Check which files are missing (already uploaded ones can be skipped)
     check_headers = {"Authorization": "Bearer " + jwt, "Content-Type": "application/json"}
     r = requests.post(f"{ASSETS_API}/check-missing", headers=check_headers,
-                      json={"hashes": all_hashes})
+                      json={"hashes": all_hashes}, timeout=TIMEOUT_SHORT)
     if r.status_code != 200:
         print(f"Warning: check-missing failed ({r.status_code}), uploading all files")
         missing_hashes = set(all_hashes)
@@ -181,7 +199,7 @@ def upload_files(jwt, files):
 
         for attempt in range(3):
             r = requests.post(f"{ASSETS_API}/upload", headers=upload_headers,
-                              json=payload)
+                              json=payload, timeout=TIMEOUT_UPLOAD)
             if r.status_code in (200, 201):
                 break
             if attempt < 2:
@@ -199,7 +217,7 @@ def create_deployment(headers, manifest):
     """Create deployment with the file manifest."""
     deploy_url = f"{BASE_URL}/{PROJECT_NAME}/deployments"
     multipart = [("manifest", (None, json.dumps(manifest), "application/json"))]
-    r = requests.post(deploy_url, headers=headers, files=multipart)
+    r = requests.post(deploy_url, headers=headers, files=multipart, timeout=TIMEOUT_SHORT)
     if r.status_code in (200, 201):
         data = r.json()
         result = data.get("result", {})

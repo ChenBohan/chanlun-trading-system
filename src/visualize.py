@@ -1582,15 +1582,15 @@ function renderChart(data) {
       const zoomStart = total > VISIBLE_BARS ? Math.max(0, 100 - (VISIBLE_BARS / total * 100)) : 0;
       return [
         { type: 'inside', xAxisIndex: [0, 1, 2], start: zoomStart, end: 100 },
-        { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 10, height: 20,
+        { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 8, height: 16,
           borderColor: '#30363d', fillerColor: 'rgba(88,166,255,0.1)',
           textStyle: { color: '#8b949e' } },
       ];
     })(),
     grid: [
-      { left: 60, right: 30, top: 20, bottom: '38%' },
-      { left: 60, right: 30, top: '66%', bottom: '20%' },
-      { left: 60, right: 30, top: '83%', bottom: 50 },
+      { left: 60, right: 30, top: 20, bottom: '24%' },
+      { left: 60, right: 30, top: '78%', bottom: '11%' },
+      { left: 60, right: 30, top: '91%', bottom: 36 },
     ],
     xAxis: [
       { type: 'category', data: data.dates, gridIndex: 0, boundaryGap: true,
@@ -3044,12 +3044,13 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>卖▼</div>
     <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.35);border:1px dashed rgba(248,81,73,0.6)"></div>暂定</div>
   </div>
-  <div class="chart-area"><canvas id="macdCanvas" height="120"></canvas></div>
-  <div class="legend">
-    <div class="legend-item"><div class="legend-color" style="background:#58a6ff"></div>DIF</div>
-    <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div>DEA</div>
+  <div class="chart-area" style="margin-bottom:2px"><canvas id="macdCanvas" height="56"></canvas></div>
+  <div style="display:flex;gap:8px;padding:0 4px;margin-bottom:2px;font-size:10px;color:#8b949e">
+    <span><span style="color:#58a6ff">\u2501</span> DIF</span>
+    <span><span style="color:#f0883e">\u2501</span> DEA</span>
+    <span style="color:#f85149">\u2588</span><span>MACD</span>
   </div>
-  <div class="chart-area"><canvas id="volumeCanvas" height="80"></canvas></div>
+  <div class="chart-area" style="margin-bottom:0"><canvas id="volumeCanvas" height="44"></canvas></div>
   <div id="bspTooltip" style="display:none;position:fixed;z-index:1000;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;max-width:88vw;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-size:12px;line-height:1.6;color:#c9d1d9;pointer-events:auto"></div>
 </div>
 
@@ -3779,7 +3780,7 @@ function renderMACD(data) {{
   const canvas = document.getElementById('macdCanvas');
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  const H = Math.min(rect.height || 120, 120);
+  const H = Math.min(rect.height || 56, 56);
   canvas.width = rect.width * dpr; canvas.height = H * dpr;
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
@@ -3788,7 +3789,7 @@ function renderMACD(data) {{
 
   const n = viewEnd - viewStart;
   if (!n) return;
-  const pad = {{t: 8, b: 16, l: 50, r: 12}};
+  const pad = {{t: 3, b: 8, l: 50, r: 12}};
   const cw = (W - pad.l - pad.r) / n;
   const macds = data.macd_hist.slice(viewStart, viewEnd);
   const difs = data.dif.slice(viewStart, viewEnd);
@@ -3831,7 +3832,7 @@ function renderVolume(data) {{
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  const H = Math.min(rect.height || 80, 80);
+  const H = Math.min(rect.height || 44, 44);
   canvas.width = rect.width * dpr; canvas.height = H * dpr;
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
