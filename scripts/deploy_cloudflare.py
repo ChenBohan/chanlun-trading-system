@@ -247,10 +247,13 @@ def create_deployment(headers, manifest):
     return None, None
 
 
+MANIFEST_CACHE = DEPLOY_DIR / "data" / ".last_manifest.json"
+
+
 def deploy(delta_only=False, save_baseline=False):
     """Deployment pipeline.
 
-    delta_only: deploy only HTML + live.js (fast, ~few KB)
+    delta_only: deploy only HTML + live.js (reuse full manifest for other files)
     save_baseline: after full deploy, save baseline for future deltas
     """
     headers = load_credentials()
@@ -258,14 +261,20 @@ def deploy(delta_only=False, save_baseline=False):
     if not ensure_project(headers):
         sys.exit(1)
 
-    files = collect_files(DEPLOY_DIR, delta_only=delta_only)
-    if not files:
+    if delta_only:
+        files_to_upload, manifest = _prepare_delta_deploy(DEPLOY_DIR)
+    else:
+        files_to_upload = collect_files(DEPLOY_DIR, delta_only=False)
+        manifest = {f["path"]: f["hash"] for f in files_to_upload}
+
+    if not files_to_upload:
         print("No files to deploy!")
         sys.exit(1)
 
     mode = "DELTA" if delta_only else "FULL"
-    total_size = sum(f["size"] for f in files)
-    print(f"[{mode}] Deploying {len(files)} files ({total_size / 1024:.0f} KB) to {PROJECT_NAME}...")
+    total_size = sum(f["size"] for f in files_to_upload)
+    print(f"[{mode}] Deploying: upload {len(files_to_upload)} files ({total_size / 1024:.0f} KB), "
+          f"manifest {len(manifest)} paths")
 
     t0 = time.time()
 
@@ -273,10 +282,9 @@ def deploy(delta_only=False, save_baseline=False):
     if not jwt:
         sys.exit(1)
 
-    if not upload_files(jwt, files):
+    if not upload_files(jwt, files_to_upload):
         sys.exit(1)
 
-    manifest = {f["path"]: f["hash"] for f in files}
     url, deploy_id = create_deployment(headers, manifest)
     elapsed = time.time() - t0
 
@@ -289,8 +297,46 @@ def deploy(delta_only=False, save_baseline=False):
     else:
         sys.exit(1)
 
-    if save_baseline and not delta_only:
-        _save_baseline_from_data_dir(DEPLOY_DIR / "data")
+    if not delta_only:
+        # Save manifest for future delta deploys
+        with open(MANIFEST_CACHE, "w") as f:
+            json.dump(manifest, f)
+        if save_baseline:
+            _save_baseline_from_data_dir(DEPLOY_DIR / "data")
+
+
+def _prepare_delta_deploy(deploy_dir):
+    """Prepare delta deploy: upload only HTML + live.js, merge with cached manifest."""
+    if not MANIFEST_CACHE.exists():
+        print("No cached manifest found, falling back to full deploy")
+        files = collect_files(deploy_dir, delta_only=False)
+        return files, {f["path"]: f["hash"] for f in files}
+
+    with open(MANIFEST_CACHE, "r") as f:
+        old_manifest = json.load(f)
+
+    files_to_upload = []
+    new_manifest = dict(old_manifest)
+
+    # HTML
+    mobile_html = deploy_dir / "dashboard_mobile.html"
+    if mobile_html.exists():
+        h = hash_file(mobile_html)
+        files_to_upload.append({"path": "/index.html", "hash": h,
+                                "content_type": "text/html",
+                                "abs_path": mobile_html, "size": mobile_html.stat().st_size})
+        new_manifest["/index.html"] = h
+
+    # live.js
+    live_js = deploy_dir / "data" / "live.js"
+    if live_js.exists():
+        h = hash_file(live_js)
+        files_to_upload.append({"path": "/data/live.js", "hash": h,
+                                "content_type": "application/javascript",
+                                "abs_path": live_js, "size": live_js.stat().st_size})
+        new_manifest["/data/live.js"] = h
+
+    return files_to_upload, new_manifest
 
 
 def _save_baseline_from_data_dir(data_dir: Path):
