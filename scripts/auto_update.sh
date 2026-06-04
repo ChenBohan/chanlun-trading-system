@@ -124,8 +124,16 @@ cd "$PROJECT_DIR"
         echo "Pushed to remote."
     }
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: Deploy to Cloudflare Pages..."
-    python3 scripts/deploy_cloudflare.py 2>&1 || echo "WARNING: Cloudflare deploy failed (non-fatal)"
+    # Deploy only every 30 min (at :00 and :30) or post-close (15:06)
+    # to avoid uploading 146MB every 5 minutes
+    MINUTE=$(date +%M)
+    HOUR=$(date +%H)
+    if (( MINUTE < 5 || (MINUTE >= 30 && MINUTE < 35) || (HOUR == 15) )); then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: Deploy to Cloudflare Pages..."
+        timeout 180s python3 scripts/deploy_cloudflare.py 2>&1 || echo "WARNING: Cloudflare deploy failed/timed out (non-fatal)"
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: Deploy skipped (next at :00 or :30)"
+    fi
 
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Auto-update complete."
     echo ""
