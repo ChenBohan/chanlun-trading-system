@@ -32,6 +32,78 @@ _TZ_CHINA = timezone(timedelta(hours=8))
 
 _SNAPSHOT_FILE = os.path.join(_PROJECT_ROOT, "data", "signal_snapshots.jsonl")
 _SNAPSHOT_PRUNE_DAYS = 0       # 0 = keep forever
+
+_BASELINE_FILE = ".baseline.json"
+
+
+def save_deploy_baseline(data_out_dir: str, all_data: dict) -> None:
+    """Save bar counts for each key as the full-deploy baseline.
+
+    Called at full deploy time. Delta deploys compare against this to produce live.js.
+    """
+    baseline = {
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "bars": {key: len(d.get("dates", [])) for key, d in all_data.items()},
+    }
+    path = os.path.join(data_out_dir, _BASELINE_FILE)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(baseline, f, ensure_ascii=False)
+
+
+def generate_live_js(data_out_dir: str, all_data: dict) -> Optional[str]:
+    """Generate live.js containing only bars added since the last full deploy.
+
+    Returns the path to live.js, or None if no baseline exists.
+    The file uses the global LIVE_DATA variable which the frontend merges
+    with the static per-symbol .js files.
+    """
+    baseline_path = os.path.join(data_out_dir, _BASELINE_FILE)
+    if not os.path.exists(baseline_path):
+        return None
+
+    with open(baseline_path, "r", encoding="utf-8") as f:
+        baseline = json.load(f)
+
+    base_bars = baseline.get("bars", {})
+    live_entries = {}
+    array_fields = ("dates", "kline", "volumes", "macd_hist", "dif", "dea", "ma5", "ma10")
+    struct_fields = ("strokes", "segments", "seg_labels", "hubs", "bsp", "tentative")
+    scalar_fields = ("trend", "hub_position", "hub_detail", "trend_completion",
+                     "volume_profile", "stats")
+
+    for key, data in all_data.items():
+        base_n = base_bars.get(key, 0)
+        cur_n = len(data.get("dates", []))
+        entry: dict = {"base_len": base_n}
+
+        # Append-only array fields (new bars since baseline)
+        for field in array_fields:
+            arr = data.get(field, [])
+            entry[field] = arr[base_n:] if len(arr) > base_n else []
+
+        # Full replacement for structural analysis (always small)
+        for field in struct_fields:
+            if field in data:
+                entry[field] = data[field]
+        for field in scalar_fields:
+            if field in data:
+                entry[field] = data[field]
+
+        # Only include if there are new bars or structure changed
+        if cur_n > base_n or data.get("strokes"):
+            live_entries[key] = entry
+
+    if not live_entries:
+        return None
+
+    live_js_path = os.path.join(data_out_dir, "live.js")
+    content = json.dumps(live_entries, ensure_ascii=False, separators=(",", ":"))
+    with open(live_js_path, "w", encoding="utf-8") as f:
+        f.write(f"var LIVE_DATA={content};\n")
+
+    size_kb = os.path.getsize(live_js_path) / 1024
+    print(f"  live.js: {size_kb:.0f} KB ({len(live_entries)} keys)")
+    return live_js_path
 _SNAPSHOT_DISPLAY_DAYS = 5     # only show disappeared signals from last N days in dashboard
 
 
@@ -2705,6 +2777,9 @@ def generate_mobile_dashboard(data_dir: str = None,
         with open(fpath, "w", encoding="utf-8") as df:
             df.write(f'DATA_CACHE["{key}"]={json_str};\n')
 
+    # Generate live.js for delta deployment
+    generate_live_js(data_out_dir, all_data)
+
     data_keys_json = json.dumps(sorted(all_data.keys()), ensure_ascii=False)
     index_list_json = json.dumps(index_list, ensure_ascii=False)
     synthesis_json = json.dumps(synthesis_data, ensure_ascii=False)
@@ -3060,6 +3135,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 
 <script>
 var DATA_CACHE = {{}};
+var LIVE_DATA = null;
 const DATA_KEYS = {data_keys_json};
 const INDEX_LIST = {index_list_json};
 const SYNTHESIS = {synthesis_json};
@@ -3067,6 +3143,26 @@ const GLOBAL_SIGNALS = {mobile_global_signals_json};
 const WATCHLIST_SIGNALS = {mobile_watchlist_signals_json};
 const WATCHLIST_CODES = {watchlist_codes_json};
 const MARKET_THERMO = {market_thermo_json};
+
+function applyLiveDelta(key, base) {{
+  if (!LIVE_DATA || !LIVE_DATA[key]) return base;
+  const live = LIVE_DATA[key];
+  const bn = live.base_len || 0;
+  const merged = {{}};
+  const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10'];
+  for (const f of arrFields) {{
+    const bArr = (base[f] || []).slice(0, bn);
+    merged[f] = bArr.concat(live[f] || []);
+  }}
+  const replFields = ['strokes','segments','seg_labels','hubs','bsp','tentative',
+                      'trend','hub_position','hub_detail','trend_completion',
+                      'volume_profile','stats'];
+  for (const f of replFields) {{
+    merged[f] = (f in live) ? live[f] : base[f];
+  }}
+  return merged;
+}}
+
 function getChartData(key) {{ return DATA_CACHE[key] || null; }}
 
 function loadChartData(key) {{
@@ -3074,11 +3170,24 @@ function loadChartData(key) {{
     if (DATA_CACHE[key]) {{ resolve(DATA_CACHE[key]); return; }}
     const s = document.createElement('script');
     s.src = 'data/' + key + '.js';
-    s.onload = () => resolve(DATA_CACHE[key] || null);
+    s.onload = () => {{
+      let d = DATA_CACHE[key] || null;
+      if (d) {{ d = applyLiveDelta(key, d); DATA_CACHE[key] = d; }}
+      resolve(d);
+    }};
     s.onerror = () => resolve(null);
     document.head.appendChild(s);
   }});
 }}
+
+// Load live.js at startup for delta merge
+(function() {{
+  const ls = document.createElement('script');
+  ls.src = 'data/live.js';
+  ls.onload = () => {{ /* LIVE_DATA is now set */ }};
+  ls.onerror = () => {{ /* no live delta available */ }};
+  document.head.appendChild(ls);
+}})();
 
 // ─── Mobile Watchlist Panel (自选股最新买卖点) ───
 let mWlTab = '30分钟';
