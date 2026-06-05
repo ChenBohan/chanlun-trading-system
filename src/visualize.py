@@ -79,13 +79,17 @@ def generate_live_js(data_out_dir: str, all_data: dict) -> Optional[str]:
             arr = data.get(field, [])
             entry[field] = arr[base_n:] if len(arr) > base_n else []
 
-        # Include full analysis results (re-computed each run, not incrementally appendable)
-        replace_fields = ("bsp", "strokes", "segments", "seg_labels", "hubs",
-                          "trend", "hub_position", "hub_detail",
-                          "trend_completion", "volume_profile", "tentative")
-        for field in replace_fields:
-            if field in data:
-                entry[field] = data[field]
+        # Include re-computed analysis results when BSP changed.
+        # Only include bsp if any marker references bars in the live range,
+        # indicating the analysis produced new/updated signals.
+        bsp_list = data.get("bsp", [])
+        bsp_changed = any(p.get("idx", 0) >= base_n for p in bsp_list)
+        if bsp_changed:
+            entry["bsp"] = bsp_list
+            for field in ("trend", "hub_position", "hub_detail",
+                          "trend_completion", "volume_profile", "tentative"):
+                if field in data:
+                    entry[field] = data[field]
 
         live_entries[key] = entry
 
