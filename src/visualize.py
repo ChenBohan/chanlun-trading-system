@@ -101,11 +101,29 @@ def generate_live_js(data_out_dir: str, all_data: dict) -> Optional[str]:
             continue
 
         if window_shifted:
-            # Full replacement: entire data set has shifted
-            entry: dict = {"full_replace": True}
-            for field in array_fields:
-                entry[field] = data.get(field, [])
-            for field in analysis_fields:
+            # Sliding window: bar count unchanged but dates shifted.
+            # Find overlap by locating base_last in current dates, then
+            # send a compact drop_head + append delta instead of full replace.
+            try:
+                bl_idx = cur_dates.index(base_last)
+            except ValueError:
+                bl_idx = -1
+
+            if bl_idx >= 0 and bl_idx < cur_n - 1:
+                drop = cur_n - 1 - bl_idx
+                entry: dict = {"drop_head": drop}
+                for field in array_fields:
+                    arr = data.get(field, [])
+                    entry[field] = arr[bl_idx + 1:] if len(arr) > bl_idx + 1 else []
+            else:
+                # base_last not found or at end → full replace
+                entry = {"full_replace": True}
+                for field in array_fields:
+                    entry[field] = data.get(field, [])
+            # Include bsp + lightweight analysis fields only
+            entry["bsp"] = data.get("bsp", [])
+            for field in ("trend", "hub_position", "hub_detail",
+                          "trend_completion", "volume_profile", "tentative"):
                 if field in data:
                     entry[field] = data[field]
         else:
@@ -727,23 +745,28 @@ const WATCHLIST_CODES = __WATCHLIST_CODES_JSON__;
 function applyLiveDelta(key, base) {
   if (!LIVE_DATA || !LIVE_DATA[key]) return base;
   const live = LIVE_DATA[key];
-  if (live.full_replace) {
-    const merged = {};
-    for (const k of Object.keys(live)) {
-      if (k !== 'full_replace') merged[k] = live[k];
-    }
-    return merged;
-  }
-  const bn = live.base_len || 0;
-  const merged = Object.assign({}, base);
   const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10'];
-  for (const f of arrFields) {
-    const bArr = (base[f] || []).slice(0, bn);
-    merged[f] = bArr.concat(live[f] || []);
-  }
   const replaceFields = ['bsp','strokes','segments','seg_labels','hubs',
                          'trend','hub_position','hub_detail',
                          'trend_completion','volume_profile','tentative'];
+  if (live.full_replace) {
+    const merged = {};
+    for (const f of arrFields) { if (live[f] !== undefined) merged[f] = live[f]; }
+    for (const f of replaceFields) { if (live[f] !== undefined) merged[f] = live[f]; }
+    return merged;
+  }
+  const merged = Object.assign({}, base);
+  if (live.drop_head) {
+    const drop = live.drop_head;
+    for (const f of arrFields) {
+      merged[f] = (base[f] || []).slice(drop).concat(live[f] || []);
+    }
+  } else {
+    const bn = live.base_len || 0;
+    for (const f of arrFields) {
+      merged[f] = (base[f] || []).slice(0, bn).concat(live[f] || []);
+    }
+  }
   for (const f of replaceFields) {
     if (live[f] !== undefined) merged[f] = live[f];
   }
@@ -3223,23 +3246,28 @@ const MARKET_THERMO = {market_thermo_json};
 function applyLiveDelta(key, base) {{
   if (!LIVE_DATA || !LIVE_DATA[key]) return base;
   const live = LIVE_DATA[key];
-  if (live.full_replace) {{
-    const merged = {{}};
-    for (const k of Object.keys(live)) {{
-      if (k !== 'full_replace') merged[k] = live[k];
-    }}
-    return merged;
-  }}
-  const bn = live.base_len || 0;
-  const merged = Object.assign({{}}, base);
   const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10'];
-  for (const f of arrFields) {{
-    const bArr = (base[f] || []).slice(0, bn);
-    merged[f] = bArr.concat(live[f] || []);
-  }}
   const replaceFields = ['bsp','strokes','segments','seg_labels','hubs',
                          'trend','hub_position','hub_detail',
                          'trend_completion','volume_profile','tentative'];
+  if (live.full_replace) {{
+    const merged = {{}};
+    for (const f of arrFields) {{ if (live[f] !== undefined) merged[f] = live[f]; }}
+    for (const f of replaceFields) {{ if (live[f] !== undefined) merged[f] = live[f]; }}
+    return merged;
+  }}
+  const merged = Object.assign({{}}, base);
+  if (live.drop_head) {{
+    const drop = live.drop_head;
+    for (const f of arrFields) {{
+      merged[f] = (base[f] || []).slice(drop).concat(live[f] || []);
+    }}
+  }} else {{
+    const bn = live.base_len || 0;
+    for (const f of arrFields) {{
+      merged[f] = (base[f] || []).slice(0, bn).concat(live[f] || []);
+    }}
+  }}
   for (const f of replaceFields) {{
     if (live[f] !== undefined) merged[f] = live[f];
   }}
