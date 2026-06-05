@@ -1542,53 +1542,58 @@ function renderChart(data) {
   // Show structure areas + MACD areas for the same set of recent signals
   const structAreas = [];
   const structLabels = [];
-  const tagColors = {
-    'a': 'rgba(88,166,255,0.10)', 'c': 'rgba(248,81,73,0.10)',
-    'b': 'rgba(139,148,158,0.06)',
-    'A': 'rgba(255,215,0,0.08)', 'B': 'rgba(255,165,0,0.08)',
-  };
-  const tagBorders = {
-    'a': '#58a6ff', 'c': '#f85149', 'b': '#8b949e', 'A': '#ffd700', 'B': '#ffa500',
-  };
-  const bspWithStruct = data.bsp.filter(p => p.structure && p.structure.length > 0);
+  const hubColorPC = '#ffd700';
+  const hubFillPC = 'rgba(255,215,0,0.08)';
+  const bspWithStruct = data.bsp.filter(p => (p.type === '1B' || p.type === '1S') && p.structure && p.structure.length > 0);
   const visibleBspIdx = new Set(bspWithStruct.map(p => p.idx));
   bspWithStruct.forEach(p => {
     const tag_prefix = '#' + p.bsp_idx + ' ';
-    p.structure.forEach(st => {
+    p.structure.forEach((st, si) => {
       const x0 = data.dates[st.x0], x1 = data.dates[st.x1];
       if (st.zg !== undefined) {
         structAreas.push([
           { xAxis: x0, yAxis: st.zd,
-            itemStyle: { color: tagColors[st.tag] || 'rgba(255,255,255,0.05)',
-                         borderColor: tagBorders[st.tag] || '#666',
+            itemStyle: { color: hubFillPC,
+                         borderColor: hubColorPC,
                          borderWidth: 1, borderType: 'dashed' } },
           { xAxis: x1, yAxis: st.zg },
         ]);
+        const midX = data.dates[Math.round((st.x0 + st.x1) / 2)];
+        const kMid = data.kline[Math.round((st.x0 + st.x1) / 2)];
+        const yVal = kMid ? Math.max(kMid[1], kMid[2], kMid[3], kMid[0]) : 0;
+        structLabels.push({
+          coord: [midX, yVal],
+          symbol: 'circle', symbolSize: 1,
+          itemStyle: { color: 'transparent' },
+          label: { show: true, formatter: tag_prefix + st.tag,
+            fontSize: 14, fontWeight: 'bold', fontStyle: 'italic',
+            color: hubColorPC, position: 'top', distance: 15,
+            textShadowColor: '#000', textShadowBlur: 3 },
+        });
       } else {
+        const isFirst = (si === 0);
+        const isLast = (si === p.structure.length - 1);
+        const bClr = isFirst ? '#58a6ff' : (isLast ? '#f85149' : '#8b949e');
+        const fClr = isFirst ? 'rgba(88,166,255,0.10)' : (isLast ? 'rgba(248,81,73,0.10)' : 'rgba(139,148,158,0.06)');
         structAreas.push([
           { xAxis: x0,
-            itemStyle: { color: tagColors[st.tag] || 'rgba(255,255,255,0.05)',
-                         borderColor: tagBorders[st.tag] || '#666',
+            itemStyle: { color: fClr, borderColor: bClr,
                          borderWidth: 1, borderType: 'dashed' } },
           { xAxis: x1 },
         ]);
+        const midX = data.dates[Math.round((st.x0 + st.x1) / 2)];
+        const kMid = data.kline[Math.round((st.x0 + st.x1) / 2)];
+        const yVal = kMid ? Math.max(kMid[1], kMid[2], kMid[3], kMid[0]) : 0;
+        structLabels.push({
+          coord: [midX, yVal],
+          symbol: 'circle', symbolSize: 1,
+          itemStyle: { color: 'transparent' },
+          label: { show: true, formatter: tag_prefix + st.tag,
+            fontSize: 14, fontWeight: 'bold', fontStyle: 'italic',
+            color: bClr, position: 'top', distance: 15,
+            textShadowColor: '#000', textShadowBlur: 3 },
+        });
       }
-      const midX = data.dates[Math.round((st.x0 + st.x1) / 2)];
-      const kMid = data.kline[Math.round((st.x0 + st.x1) / 2)];
-      const yVal = kMid ? Math.max(kMid[1], kMid[2], kMid[3], kMid[0]) : 0;
-      structLabels.push({
-        coord: [midX, yVal],
-        symbol: 'circle', symbolSize: 1,
-        itemStyle: { color: 'transparent' },
-        label: {
-          show: true,
-          formatter: tag_prefix + st.tag,
-          fontSize: 14, fontWeight: 'bold', fontStyle: 'italic',
-          color: tagBorders[st.tag] || '#fff',
-          position: 'top', distance: 15,
-          textShadowColor: '#000', textShadowBlur: 3,
-        },
-      });
     });
   });
 
@@ -3844,8 +3849,8 @@ function renderKline(data) {{
     const mIsInv = p.status === 'invalidated';
     const mIsPending = p.status === 'pending';
     const mIsT3 = p.type === '3B' || p.type === '3S';
-    const triColor = mIsInv ? '#484f58' : (mIsPending ? '#d29922' : (p.is_buy ? '#f85149' : '#3fb950'));
-    const markerSize = mIsT3 && !mIsInv ? 8 : 6;
+    const triColor = mIsInv ? '#484f58' : (mIsPending ? '#f0883e' : (p.is_buy ? '#f85149' : '#3fb950'));
+    const markerSize = mIsT3 && !mIsInv ? 8 : (mIsPending ? 7 : 6);
     ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
     ctx.beginPath();
     if (mIsT3 && !mIsInv) {{
@@ -3881,6 +3886,54 @@ function renderKline(data) {{
       ctx.font = '7px sans-serif';
       ctx.fillText(r0.label + '↔' + r1.label + ' 背驰 ' + ratio + '%', x, p.is_buy ? y + 36 : y - 12);
     }}
+  }});
+
+  // a+A+b+B+c+C+...+f structure areas and labels (only for 1B/1S trend divergence)
+  const hubColor = '#ffd700';
+  const hubFill = 'rgba(255,215,0,0.10)';
+  data.bsp.filter(p => p.type === '1B' || p.type === '1S').forEach(p => {{
+    if (!p.structure || !p.structure.length) return;
+    p.structure.forEach((st, si) => {{
+      if (st.x1 < viewStart || st.x0 >= viewEnd) return;
+      const sx0 = scaleX(Math.max(st.x0, viewStart));
+      const sx1 = scaleX(Math.min(st.x1, viewEnd - 1));
+      const w = sx1 - sx0;
+      if (w < 2) return;
+      if (st.zg !== undefined) {{
+        // Hub (A/B/C/D/E...): gold rectangle with ZG-ZD bounds
+        const y0 = scaleY(st.zg), y1 = scaleY(st.zd);
+        ctx.fillStyle = hubFill;
+        ctx.fillRect(sx0, y0, w, y1 - y0);
+        ctx.strokeStyle = hubColor;
+        ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+        ctx.strokeRect(sx0, y0, w, y1 - y0);
+        ctx.setLineDash([]);
+        const mx = (sx0 + sx1) / 2;
+        ctx.font = 'bold italic 14px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillStyle = hubColor;
+        ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
+        ctx.fillText(st.tag, mx, y0 - 4);
+        ctx.shadowBlur = 0;
+      }} else {{
+        // Segments: first=blue(a), last=red(divergence comparison), middle=gray
+        const isFirst = (si === 0);
+        const isLast = (si === p.structure.length - 1);
+        const borderClr = isFirst ? '#58a6ff' : (isLast ? '#f85149' : '#8b949e');
+        const fillClr = isFirst ? 'rgba(88,166,255,0.12)' : (isLast ? 'rgba(248,81,73,0.12)' : 'rgba(139,148,158,0.06)');
+        ctx.fillStyle = fillClr;
+        ctx.fillRect(sx0, pad.t, w, H - pad.t - pad.b);
+        ctx.strokeStyle = borderClr;
+        ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+        ctx.strokeRect(sx0, pad.t, w, H - pad.t - pad.b);
+        ctx.setLineDash([]);
+        const mx = (sx0 + sx1) / 2;
+        ctx.font = 'bold italic 14px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillStyle = borderClr;
+        ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
+        ctx.fillText(st.tag, mx, pad.t + 16);
+        ctx.shadowBlur = 0;
+      }}
+    }});
   }});
 
   // X-axis dates

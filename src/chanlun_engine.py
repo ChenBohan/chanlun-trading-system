@@ -1608,24 +1608,31 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
                     div_confidence = "high" if dims == 3 else "medium"
 
                 trigger = seg_c[-1]
+                hub_tags = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                seg_tags = "abcdefghijklmnopqrstuvwxyz"
+                trend_hubs = hubs[i:j + 1]
                 structure = [
-                    {"tag": "a", "start_dt": seg_a[0].start.dt,
+                    {"tag": seg_tags[0], "start_dt": seg_a[0].start.dt,
                      "end_dt": seg_a[-1].end.dt},
-                    {"tag": "A", "start_dt": first_hub.strokes[0].start.dt,
-                     "end_dt": first_hub.strokes[-1].end.dt,
-                     "zg": first_hub.zg, "zd": first_hub.zd},
                 ]
-                if last_hub.idx != first_hub.idx:
-                    b_start = first_hub.strokes[-1].end.dt
-                    b_end = last_hub.strokes[0].start.dt
+                for hi, th in enumerate(trend_hubs):
+                    h_tag = hub_tags[hi] if hi < len(hub_tags) else f"H{hi}"
                     structure.append(
-                        {"tag": "b", "start_dt": b_start, "end_dt": b_end})
-                    structure.append(
-                        {"tag": "B", "start_dt": last_hub.strokes[0].start.dt,
-                         "end_dt": last_hub.strokes[-1].end.dt,
-                         "zg": last_hub.zg, "zd": last_hub.zd})
+                        {"tag": h_tag,
+                         "start_dt": th.strokes[0].start.dt,
+                         "end_dt": th.strokes[-1].end.dt,
+                         "zg": th.zg, "zd": th.zd})
+                    if hi < len(trend_hubs) - 1:
+                        nxt_hub = trend_hubs[hi + 1]
+                        s_tag = seg_tags[hi + 1] if hi + 1 < len(seg_tags) else f"s{hi+1}"
+                        structure.append(
+                            {"tag": s_tag,
+                             "start_dt": th.strokes[-1].end.dt,
+                             "end_dt": nxt_hub.strokes[0].start.dt})
+                final_seg_idx = len(trend_hubs)
+                final_tag = seg_tags[final_seg_idx] if final_seg_idx < len(seg_tags) else f"s{final_seg_idx}"
                 structure.append(
-                    {"tag": "c", "start_dt": seg_c[0].start.dt,
+                    {"tag": final_tag, "start_dt": seg_c[0].start.dt,
                      "end_dt": seg_c[-1].end.dt})
                 divergences.append({
                     "type": "trend",

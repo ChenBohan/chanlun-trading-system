@@ -484,7 +484,9 @@ def _fetch_realtime_bar(sina_sym: str) -> Optional[KlineBar]:
         cur_price = float(parts[3])
         high = float(parts[4])
         low = float(parts[5])
-        volume = int(float(parts[8]))
+        # Sina real-time returns volume in shares; convert to lots (手=100股)
+        # to match Tencent historical K-line unit.
+        volume = int(float(parts[8]) / 100)
         amount = float(parts[9])
         date_str = parts[30]  # YYYY-MM-DD
     except (ValueError, IndexError):
