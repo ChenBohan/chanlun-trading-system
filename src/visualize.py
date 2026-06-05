@@ -2935,9 +2935,8 @@ def generate_mobile_dashboard(data_dir: str = None,
         latest_data_time = pipe["latest_data_time"]
         indices = pipe["indices"]
 
-    if cache is None:
-        _reclassify_dep_pb(all_data)
-        _inject_snapshot_bsp(all_data)
+    _reclassify_dep_pb(all_data)
+    _inject_snapshot_bsp(all_data)
 
     gen_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     data_time = latest_data_time or "-"
