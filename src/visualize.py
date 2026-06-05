@@ -37,13 +37,23 @@ _BASELINE_FILE = ".baseline.json"
 
 
 def save_deploy_baseline(data_out_dir: str, all_data: dict) -> None:
-    """Save bar counts for each key as the full-deploy baseline.
+    """Save bar counts and last dates for each key as the full-deploy baseline.
 
     Called at full deploy time. Delta deploys compare against this to produce live.js.
     """
+    bars_info = {}
+    for key, d in all_data.items():
+        dates = d.get("dates", [])
+        bars_info[key] = len(dates)
+    last_dates = {}
+    for key, d in all_data.items():
+        dates = d.get("dates", [])
+        if dates:
+            last_dates[key] = dates[-1]
     baseline = {
         "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "bars": {key: len(d.get("dates", [])) for key, d in all_data.items()},
+        "bars": bars_info,
+        "last_dates": last_dates,
     }
     path = os.path.join(data_out_dir, _BASELINE_FILE)
     with open(path, "w", encoding="utf-8") as f:
@@ -65,31 +75,54 @@ def generate_live_js(data_out_dir: str, all_data: dict) -> Optional[str]:
         baseline = json.load(f)
 
     base_bars = baseline.get("bars", {})
+    base_last_dates = baseline.get("last_dates", {})
+    base_time_str = baseline.get("time", "")[:10]  # e.g. "2026-06-04"
     live_entries = {}
     array_fields = ("dates", "kline", "volumes", "macd_hist", "dif", "dea", "ma5", "ma10")
+    analysis_fields = ("bsp", "strokes", "segments", "seg_labels", "hubs",
+                       "trend", "hub_position", "hub_detail",
+                       "trend_completion", "volume_profile", "tentative")
 
     for key, data in all_data.items():
         base_n = base_bars.get(key, 0)
-        cur_n = len(data.get("dates", []))
-        if cur_n <= base_n:
+        cur_dates = data.get("dates", [])
+        cur_n = len(cur_dates)
+        cur_last = cur_dates[-1] if cur_dates else ""
+        base_last = base_last_dates.get(key, "")
+        # Legacy baseline without last_dates: infer from baseline creation date
+        if not base_last and "_daily" in key and base_time_str:
+            base_last = base_time_str
+
+        has_new_bars = cur_n > base_n
+        # Sliding window: bar count unchanged but content shifted (e.g. daily max_bars)
+        window_shifted = (cur_n == base_n > 0 and base_last and cur_last != base_last)
+
+        if not has_new_bars and not window_shifted:
             continue
 
-        entry: dict = {"base_len": base_n}
-        for field in array_fields:
-            arr = data.get(field, [])
-            entry[field] = arr[base_n:] if len(arr) > base_n else []
-
-        # Include re-computed analysis results when BSP changed.
-        # Only include bsp if any marker references bars in the live range,
-        # indicating the analysis produced new/updated signals.
-        bsp_list = data.get("bsp", [])
-        bsp_changed = any(p.get("idx", 0) >= base_n for p in bsp_list)
-        if bsp_changed:
-            entry["bsp"] = bsp_list
-            for field in ("trend", "hub_position", "hub_detail",
-                          "trend_completion", "volume_profile", "tentative"):
+        if window_shifted:
+            # Full replacement: entire data set has shifted
+            entry: dict = {"full_replace": True}
+            for field in array_fields:
+                entry[field] = data.get(field, [])
+            for field in analysis_fields:
                 if field in data:
                     entry[field] = data[field]
+        else:
+            # Incremental: append new bars
+            entry = {"base_len": base_n}
+            for field in array_fields:
+                arr = data.get(field, [])
+                entry[field] = arr[base_n:] if len(arr) > base_n else []
+            # Include BSP when signals exist in the new range
+            bsp_list = data.get("bsp", [])
+            bsp_changed = any(p.get("idx", 0) >= base_n for p in bsp_list)
+            if bsp_changed:
+                entry["bsp"] = bsp_list
+                for field in ("trend", "hub_position", "hub_detail",
+                              "trend_completion", "volume_profile", "tentative"):
+                    if field in data:
+                        entry[field] = data[field]
 
         live_entries[key] = entry
 
@@ -694,6 +727,13 @@ const WATCHLIST_CODES = __WATCHLIST_CODES_JSON__;
 function applyLiveDelta(key, base) {
   if (!LIVE_DATA || !LIVE_DATA[key]) return base;
   const live = LIVE_DATA[key];
+  if (live.full_replace) {
+    const merged = {};
+    for (const k of Object.keys(live)) {
+      if (k !== 'full_replace') merged[k] = live[k];
+    }
+    return merged;
+  }
   const bn = live.base_len || 0;
   const merged = Object.assign({}, base);
   const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10'];
@@ -3183,6 +3223,13 @@ const MARKET_THERMO = {market_thermo_json};
 function applyLiveDelta(key, base) {{
   if (!LIVE_DATA || !LIVE_DATA[key]) return base;
   const live = LIVE_DATA[key];
+  if (live.full_replace) {{
+    const merged = {{}};
+    for (const k of Object.keys(live)) {{
+      if (k !== 'full_replace') merged[k] = live[k];
+    }}
+    return merged;
+  }}
   const bn = live.base_len || 0;
   const merged = Object.assign({{}}, base);
   const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10'];
