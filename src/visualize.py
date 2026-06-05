@@ -251,6 +251,76 @@ def update_signal_snapshots(live_signals: list[dict]) -> list[dict]:
     return merged
 
 
+def _inject_snapshot_bsp(all_data: dict) -> int:
+    """Inject recent snapshot signals into chart bsp arrays so charts match monitoring.
+
+    Only injects signals from the last _SNAPSHOT_DISPLAY_DAYS days, and only
+    types that appear in the monitoring panel (1B/1S/2B/2S/3B/3S).
+    Returns the number of snapshot markers injected.
+    """
+    snapshots = _load_snapshots()
+    if not snapshots:
+        return 0
+
+    cutoff = (datetime.now(_TZ_CHINA) - timedelta(days=_SNAPSHOT_DISPLAY_DAYS)).strftime("%Y-%m-%d")
+    valid_types = {"1B", "1S", "2B", "2S", "3B", "3S"}
+
+    by_key: dict[str, list[dict]] = {}
+    for sig in snapshots.values():
+        if sig.get("dt", "")[:10] < cutoff:
+            continue
+        if sig.get("type") not in valid_types:
+            continue
+        chart_key = f"{sig['etf_code']}_{sig['level_key']}"
+        by_key.setdefault(chart_key, []).append(sig)
+
+    injected = 0
+    for chart_key, sigs in by_key.items():
+        data = all_data.get(chart_key)
+        if not data:
+            continue
+        dates = data.get("dates", [])
+        if not dates:
+            continue
+        dt_index = {d: i for i, d in enumerate(dates)}
+        existing_idx_type = {(p["idx"], p["type"]) for p in data.get("bsp", [])}
+
+        for sig in sigs:
+            dt = sig.get("dt", "")
+            idx = dt_index.get(dt)
+            if idx is None:
+                continue
+            if (idx, sig["type"]) in existing_idx_type:
+                continue
+            is_buy = sig["type"] in ("1B", "2B", "3B")
+            marker = {
+                "idx": idx, "bsp_idx": -1,
+                "price": sig["price"], "type": sig["type"],
+                "label": sig["label"],
+                "desc": f"[快照] {sig.get('area_cmp', '')}",
+                "conf": sig.get("conf", "low"),
+                "is_buy": is_buy,
+                "stroke_idx": -1, "seg_idx": -1,
+                "wolf": "", "zone": "",
+                "strength": sig.get("strength", ""),
+                "str_score": sig.get("str_score", 0),
+                "str_details": [],
+                "conf_score": sig.get("conf_score", 0),
+                "conf_details": [],
+                "pos_advice": "",
+                "status": sig.get("status", "active"),
+                "inv_reason": sig.get("inv_reason", ""),
+                "hub_rank": sig.get("hub_rank", -1),
+                "hub_idx": -1, "inv_price": 0,
+                "source": "snapshot",
+                "dt": dt,
+            }
+            data["bsp"].append(marker)
+            injected += 1
+
+    return injected
+
+
 def backfill_signal_snapshots(data_dir: str = None, max_workers: int = 8) -> int:
     """Replay historical K-line data to recover all buy/sell points that ever existed.
 
@@ -2698,6 +2768,9 @@ def generate_dashboard(data_dir: str = None,
         indices = pipe["indices"]
 
     _reclassify_dep_pb(all_data)
+    snap_count = _inject_snapshot_bsp(all_data)
+    if snap_count:
+        print(f"  Injected {snap_count} snapshot BSP markers into chart data")
 
     # Collect global signals (1B/1S/2B/2S/3B/3S) across all indices
     level_labels = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
@@ -2864,6 +2937,7 @@ def generate_mobile_dashboard(data_dir: str = None,
 
     if cache is None:
         _reclassify_dep_pb(all_data)
+        _inject_snapshot_bsp(all_data)
 
     gen_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     data_time = latest_data_time or "-"
