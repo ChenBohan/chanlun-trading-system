@@ -78,6 +78,7 @@ class Stroke:
     avg_volume: float = 0.0    # average volume of bars within stroke
     total_volume: int = 0      # total volume of bars within stroke
     volume_trend: str = ""     # "shrink" / "expand" / "flat"
+    divergence: bool = False   # True if weaker than previous same-direction stroke
 
 
 @dataclass
@@ -660,6 +661,25 @@ def compute_stroke_macd(strokes: list[Stroke], bars: list[RawBar],
                     s.volume_trend = "flat"
             else:
                 s.volume_trend = "flat"
+
+
+def mark_stroke_divergence(strokes: list['Stroke']):
+    """Compare each stroke with previous same-direction stroke by macd_area.
+
+    If current stroke's macd_area < previous same-direction stroke's macd_area,
+    mark it as divergence (力度背驰).
+    """
+    last_up: 'Stroke | None' = None
+    last_down: 'Stroke | None' = None
+    for s in strokes:
+        if s.direction == 1:
+            if last_up is not None and s.macd_area < last_up.macd_area * 0.95:
+                s.divergence = True
+            last_up = s
+        else:
+            if last_down is not None and s.macd_area < last_down.macd_area * 0.95:
+                s.divergence = True
+            last_down = s
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -4551,6 +4571,7 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
 
     # [5] Stroke MACD areas
     compute_stroke_macd(strokes, bars, merged)
+    mark_stroke_divergence(strokes)
 
     # [6] Segment construction
     segments = find_segments(strokes)

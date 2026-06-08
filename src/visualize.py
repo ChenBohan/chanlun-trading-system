@@ -514,6 +514,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "dir": s.direction,
                 "idx": s.idx,
                 "vol_trend": s.volume_trend,
+                "div": s.divergence,
             })
 
     # Segments as connected polyline turning points (首尾相接) with labels
@@ -852,7 +853,11 @@ function loadChartData(key) {
     s.src = 'data/' + key + '.js';
     s.onload = () => {
       let d = DATA_CACHE[key] || null;
-      if (d) { d = applyLiveDelta(key, d); DATA_CACHE[key] = d; }
+      if (d) {
+        DATA_CACHE['_base_' + key] = d;
+        d = applyLiveDelta(key, d);
+        DATA_CACHE[key] = d;
+      }
       resolve(d);
     };
     s.onerror = () => resolve(null);
@@ -861,9 +866,20 @@ function loadChartData(key) {
 }
 
 // Load live.js for delta merge
+let _liveReady = false;
 (function() {
   const ls = document.createElement('script');
   ls.src = 'data/live.js';
+  ls.onload = () => {
+    _liveReady = true;
+    if (typeof LIVE_DATA !== 'undefined') {
+      for (const key of Object.keys(DATA_CACHE)) {
+        if (LIVE_DATA[key]) {
+          DATA_CACHE[key] = applyLiveDelta(key, DATA_CACHE['_base_' + key] || DATA_CACHE[key]);
+        }
+      }
+    }
+  };
   document.head.appendChild(ls);
 })();
 
@@ -1412,14 +1428,16 @@ function renderChart(data) {
     0:  { fill: 'rgba(88,166,255,0.05)', border: 'rgba(88,166,255,0.35)' },
   };
 
-  // Stroke lines as markLine data with index labels + volume trend
+  // Stroke lines as markLine data with index labels + volume trend + divergence color
   const strokeVolIcons = {'shrink': '↓', 'expand': '↑'};
   const strokeMarkData = data.strokes.map(s => {
     const volSuffix = strokeVolIcons[s.vol_trend] || '';
+    const strokeColor = s.div ? (s.dir === 1 ? '#79c0ff' : '#d2a8ff') : '#f0883e';
     return [
       { coord: [data.dates[s.coords[0][0]], s.coords[0][1]] },
       { coord: [data.dates[s.coords[1][0]], s.coords[1][1]],
-        label: { show: true, formatter: 'S' + (s.idx + 1) + volSuffix, fontSize: 12, fontWeight: 'bold', color: '#d29922',
+        lineStyle: { color: strokeColor, width: s.div ? 2.2 : 1.5 },
+        label: { show: true, formatter: 'S' + (s.idx + 1) + volSuffix, fontSize: 12, fontWeight: 'bold', color: strokeColor,
                  position: 'middle', distance: -14 } },
     ];
   });
@@ -1917,7 +1935,7 @@ function renderChart(data) {
         data: data.ma5,
         xAxisIndex: 0, yAxisIndex: 0,
         symbol: 'none',
-        lineStyle: { color: '#e6a817', width: 1.2 },
+        lineStyle: { color: '#ffd700', width: 1.2 },
         connectNulls: false,
         z: 2,
       },
@@ -3280,9 +3298,11 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
   <div class="legend">
     <div class="legend-item"><div class="legend-color" style="background:#f85149"></div>阳线</div>
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>阴线</div>
-    <div class="legend-item"><div class="legend-color" style="background:#e6a817"></div>MA5</div>
+    <div class="legend-item"><div class="legend-color" style="background:#ffd700"></div>MA5</div>
     <div class="legend-item"><div class="legend-color" style="background:#58a6ff"></div>MA10</div>
     <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div>笔</div>
+    <div class="legend-item"><div class="legend-color" style="background:#79c0ff"></div>上涨背驰笔</div>
+    <div class="legend-item"><div class="legend-color" style="background:#d2a8ff"></div>下跌背驰笔</div>
     <div class="legend-item"><div class="legend-color" style="background:#bc8cff"></div>线段</div>
     <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.4)"></div>上涨枢(↓↑↓)</div>
     <div class="legend-item"><div class="legend-color" style="background:rgba(63,185,80,0.4)"></div>下跌枢(↑↓↑)</div>
@@ -3356,7 +3376,11 @@ function loadChartData(key) {{
     s.src = 'data/' + key + '.js';
     s.onload = () => {{
       let d = DATA_CACHE[key] || null;
-      if (d) {{ d = applyLiveDelta(key, d); DATA_CACHE[key] = d; }}
+      if (d) {{
+        DATA_CACHE['_base_' + key] = d;
+        d = applyLiveDelta(key, d);
+        DATA_CACHE[key] = d;
+      }}
       resolve(d);
     }};
     s.onerror = () => resolve(null);
@@ -3365,11 +3389,22 @@ function loadChartData(key) {{
 }}
 
 // Load live.js at startup for delta merge
+let _liveReady = false;
 (function() {{
   const ls = document.createElement('script');
   ls.src = 'data/live.js';
-  ls.onload = () => {{ /* LIVE_DATA is now set */ }};
-  ls.onerror = () => {{ /* no live delta available */ }};
+  ls.onload = () => {{
+    _liveReady = true;
+    // Re-apply delta to any chart data that loaded before live.js
+    if (typeof LIVE_DATA !== 'undefined') {{
+      for (const key of Object.keys(DATA_CACHE)) {{
+        if (LIVE_DATA[key]) {{
+          DATA_CACHE[key] = applyLiveDelta(key, DATA_CACHE['_base_' + key] || DATA_CACHE[key]);
+        }}
+      }}
+    }}
+  }};
+  ls.onerror = () => {{ _liveReady = true; }};
   document.head.appendChild(ls);
 }})();
 
@@ -3948,7 +3983,7 @@ function renderKline(data) {{
     }}
     ctx.stroke();
   }}
-  drawMA(data.ma5, '#e6a817');
+  drawMA(data.ma5, '#ffd700');
   drawMA(data.ma10, '#58a6ff');
 
   // Candlesticks
@@ -3997,16 +4032,18 @@ function renderKline(data) {{
     ctx.fillText('D' + (lb.idx + 1), scaleX(lb.x), scaleY(lb.y) - 8);
   }});
 
-  // Strokes with volume trend markers
+  // Strokes with volume trend markers + divergence color
   const sVolIcons = {{'shrink': '↓', 'expand': '↑'}};
-  ctx.strokeStyle = '#f0883e'; ctx.lineWidth = 1.5;
   data.strokes.forEach(s => {{
     const si = s.coords[0][0], ei = s.coords[1][0];
     if (ei < viewStart || si >= viewEnd) return;
+    const sColor = s.div ? (s.dir === 1 ? '#79c0ff' : '#d2a8ff') : '#f0883e';
+    ctx.strokeStyle = sColor; ctx.lineWidth = s.div ? 2.2 : 1.5;
     const x1 = scaleX(Math.max(si, viewStart));
     const x2 = scaleX(Math.min(ei, viewEnd - 1));
     ctx.beginPath(); ctx.moveTo(x1, scaleY(s.coords[0][1])); ctx.lineTo(x2, scaleY(s.coords[1][1])); ctx.stroke();
-    ctx.fillStyle = '#d29922'; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
+    const labelColor = sColor;
+    ctx.fillStyle = labelColor; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mx = (x1 + x2) / 2;
     const volSuf = sVolIcons[s.vol_trend] || '';
     ctx.fillText('S' + (s.idx + 1) + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
