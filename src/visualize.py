@@ -120,10 +120,8 @@ def generate_live_js(data_out_dir: str, all_data: dict) -> Optional[str]:
                 entry = {"full_replace": True}
                 for field in array_fields:
                     entry[field] = data.get(field, [])
-            # Include bsp + lightweight analysis fields only
-            entry["bsp"] = data.get("bsp", [])
-            for field in ("trend", "hub_position", "hub_detail",
-                          "trend_completion", "volume_profile", "tentative"):
+            # Include all analysis fields (bsp, strokes, hubs, etc.)
+            for field in analysis_fields:
                 if field in data:
                     entry[field] = data[field]
         else:
@@ -132,13 +130,16 @@ def generate_live_js(data_out_dir: str, all_data: dict) -> Optional[str]:
             for field in array_fields:
                 arr = data.get(field, [])
                 entry[field] = arr[base_n:] if len(arr) > base_n else []
-            # Include BSP when signals exist in the new range
+            # Include analysis fields when data in new range exists
             bsp_list = data.get("bsp", [])
+            strokes_list = data.get("strokes", [])
             bsp_changed = any(p.get("idx", 0) >= base_n for p in bsp_list)
-            if bsp_changed:
-                entry["bsp"] = bsp_list
-                for field in ("trend", "hub_position", "hub_detail",
-                              "trend_completion", "volume_profile", "tentative"):
+            strokes_changed = any(
+                s.get("coords", [[0]])[1][0] >= base_n
+                for s in strokes_list if len(s.get("coords", [])) >= 2
+            )
+            if bsp_changed or strokes_changed:
+                for field in analysis_fields:
                     if field in data:
                         entry[field] = data[field]
 
