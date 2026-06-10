@@ -780,9 +780,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   <span class="gen-time">数据：__DATA_TIME__ | 生成：__GEN_TIME__</span>
 </div>
 
-<div id="global-signals-table" style="margin:0 32px 16px"></div>
-
-<div id="watchlist-panel" style="margin:8px 32px 16px;overflow-x:auto"></div>
+<div id="signals-panel" style="margin:0 32px 16px"></div>
 
 <div style="display:flex;align-items:center;margin:24px 32px 0;gap:12px">
   <h2 style="color:#c9d1d9;font-size:17px;margin:0">📈 技术分析详情</h2>
@@ -810,7 +808,7 @@ var LIVE_DATA = null;
 const DATA_KEYS = __ALL_DATA_JSON__;
 const INDEX_LIST = __INDEX_LIST_JSON__;
 const SYNTHESIS = __SYNTHESIS_JSON__;
-const GLOBAL_SIGNALS = __GLOBAL_SIGNALS_JSON__;
+const SIGNAL_DATA = __GLOBAL_SIGNALS_JSON__;
 const WATCHLIST_SIGNALS = __WATCHLIST_SIGNALS_JSON__;
 const WATCHLIST_CODES = __WATCHLIST_CODES_JSON__;
 
@@ -2841,12 +2839,20 @@ def generate_dashboard(data_dir: str = None,
     global_signals = update_signal_snapshots(global_signals)
     type_limits = {"type1": 10, "type2": 5, "type3": 20}
     levels = ["日线", "30分钟", "5分钟"]
-    global_signals_by_level_type: dict[str, dict[str, list]] = {
+
+    # Build type map: etf_code -> "stock" / "broad" / "sector"
+    idx_type_map = {i.etf_code: i.type for i in indices}
+
+    # Split into stock signals vs ETF signals (broad+sector)
+    stock_signals_by_level: dict[str, dict[str, list]] = {
+        lv: {"type1": [], "type2": [], "type3": []} for lv in levels
+    }
+    etf_signals_by_level: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": []} for lv in levels
     }
     for s in global_signals:
         lv = s["level"]
-        if lv not in global_signals_by_level_type:
+        if lv not in stock_signals_by_level:
             continue
         if s["type"] in ("1B", "1S"):
             bucket = "type1"
@@ -2854,9 +2860,13 @@ def generate_dashboard(data_dir: str = None,
             bucket = "type2"
         else:
             bucket = "type3"
-        if len(global_signals_by_level_type[lv][bucket]) < type_limits[bucket]:
-            global_signals_by_level_type[lv][bucket].append(s)
-    global_signals_top = global_signals_by_level_type
+        item_type = idx_type_map.get(s["etf_code"], "stock")
+        if item_type == "stock":
+            target = stock_signals_by_level
+        else:
+            target = etf_signals_by_level
+        if len(target[lv][bucket]) < type_limits[bucket]:
+            target[lv][bucket].append(s)
 
     # Build watchlist-specific signals (pre-filtered, generous limits)
     _wl_path_early = os.path.join(_PROJECT_ROOT, "config", "watchlist.json")
@@ -2906,7 +2916,7 @@ def generate_dashboard(data_dir: str = None,
                          json.dumps(sorted(all_data.keys()), ensure_ascii=False))
     html = html.replace("__INDEX_LIST_JSON__", json.dumps(index_list, ensure_ascii=False))
     html = html.replace("__SYNTHESIS_JSON__", json.dumps(synthesis_data, ensure_ascii=False))
-    html = html.replace("__GLOBAL_SIGNALS_JSON__", json.dumps(global_signals_top, ensure_ascii=False))
+    html = html.replace("__GLOBAL_SIGNALS_JSON__", json.dumps({"stock": stock_signals_by_level, "etf": etf_signals_by_level}, ensure_ascii=False))
     html = html.replace("__WATCHLIST_SIGNALS_JSON__", json.dumps(watchlist_signals_by_level, ensure_ascii=False))
 
     # Watchlist codes injection

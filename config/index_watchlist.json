@@ -1508,6 +1508,39 @@
       "notes": "中证旅游主题，消费复苏核心赛道"
     },
     {
+      "index_code": "CSIH30533",
+      "index_name": "中概互联网",
+      "etf_code": "513050",
+      "etf_name": "中概互联网ETF",
+      "market": "SH",
+      "category": "跨市场互联网",
+      "type": "sector",
+      "weight": 0.6,
+      "notes": "中证海外中国互联网50指数，腾讯/阿里/美团/京东等，规模397亿"
+    },
+    {
+      "index_code": "H30217",
+      "index_name": "医疗器械",
+      "etf_code": "159883",
+      "etf_name": "医疗器械ETF",
+      "market": "SZ",
+      "category": "医药健康",
+      "type": "sector",
+      "weight": 0.6,
+      "notes": "中证全指医疗器械指数，迈瑞/联影等，规模115亿"
+    },
+    {
+      "index_code": "399439",
+      "index_name": "石油天然气",
+      "etf_code": "159199",
+      "etf_name": "石油ETF",
+      "market": "SZ",
+      "category": "石油能源",
+      "type": "sector",
+      "weight": 0.6,
+      "notes": "国证石油天然气指数，中石油/中石化/中海油等，2026年3月新上市"
+    },
+    {
       "index_code": "002179",
       "index_name": "中航光电",
       "etf_code": "002179",
