@@ -67,6 +67,17 @@
       "notes": "硬科技，半导体为主"
     },
     {
+      "index_code": "000001",
+      "index_name": "上证综指",
+      "etf_code": "510760",
+      "etf_name": "上证综指ETF国泰",
+      "market": "SH",
+      "category": "大盘综合",
+      "type": "broad",
+      "weight": 0.8,
+      "notes": "跟踪上证综合指数，费率0.20%（最低档），规模29亿"
+    },
+    {
       "index_code": "HSTECH",
       "index_name": "恒生科技",
       "etf_code": "513180",
@@ -80,13 +91,13 @@
     {
       "index_code": "NDX100",
       "index_name": "纳斯达克100",
-      "etf_code": "513100",
-      "etf_name": "纳指100ETF",
-      "market": "SH",
+      "etf_code": "159501",
+      "etf_name": "纳指100ETF嘉实",
+      "market": "SZ",
       "category": "跨市场成长",
       "type": "broad",
       "weight": 0.8,
-      "notes": "美股科技成长（苹果、微软、英伟达等），全球资产配置"
+      "notes": "美股科技成长，费率0.60%（同类最低档），规模102亿"
     },
     {
       "index_code": "399975",
