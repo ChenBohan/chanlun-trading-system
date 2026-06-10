@@ -4,14 +4,6 @@
     {"etf_code": "159901", "name": "深证100", "group": "宽基指数", "notes": "深市核心蓝筹指数"},
     {"etf_code": "159915", "name": "创业板指", "group": "宽基指数", "notes": "创业板核心指数"},
     {"etf_code": "588000", "name": "科创50", "group": "宽基指数", "notes": "科创板核心指数"},
-    {"etf_code": "600036", "name": "招商银行", "group": "个股", "notes": "零售银行龙头"},
-    {"etf_code": "601689", "name": "拓普集团", "group": "个股", "notes": "汽车零部件龙头"},
-    {"etf_code": "002050", "name": "三花智控", "group": "个股", "notes": "热管理龙头"},
-    {"etf_code": "600031", "name": "三一重工", "group": "个股", "notes": "工程机械龙头"},
-    {"etf_code": "515030", "name": "新能源车ETF", "group": "行业ETF", "notes": "新能源汽车行业"},
-    {"etf_code": "688322", "name": "奥比中光", "group": "个股", "notes": "3D视觉传感器龙头，人形机器人"},
-    {"etf_code": "603290", "name": "斯达半导", "group": "个股", "notes": "IGBT功率半导体龙头，新能源车/光伏"},
-    {"etf_code": "603019", "name": "中科曙光", "group": "个股", "notes": "高端计算机服务器龙头"},
     {"etf_code": "002709", "name": "天赐材料", "group": "个股", "notes": "电解液龙头，锂电材料"},
     {"etf_code": "600150", "name": "中国船舶", "group": "个股", "notes": "船舶制造龙头，军工+民船"}
   ]
