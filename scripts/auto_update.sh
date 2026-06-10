@@ -125,14 +125,30 @@ cd "$PROJECT_DIR"
     }
 
     # Deploy strategy:
-    #   Full deploy (all 724 files): first run of day (09:15) and post-close (15:06)
-    #   Delta deploy (HTML + live.js only): every other run (~few KB, <5s)
-    MINUTE=$(date +%M)
-    HOUR=$(date +%H)
+    #   Full deploy (with --save-baseline): no baseline / post-close 15:06 / live.js > 20 MB
+    #   Delta deploy (HTML + live.js only): every other run
+    # Use %-H/%-M to strip leading zeros (avoids bash octal interpretation of 08/09)
+    HOUR=$(date +%-H)
+    MINUTE=$(date +%-M)
     BASELINE_FILE="reports/data/.baseline.json"
+    LIVE_JS="reports/data/live.js"
+    LIVE_JS_LIMIT=$((20 * 1024 * 1024))
 
-    if [[ ! -f "$BASELINE_FILE" ]] || (( HOUR == 15 && MINUTE >= 6 && MINUTE < 11 )); then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: FULL deploy to Cloudflare Pages..."
+    need_full=false
+    full_reason=""
+    if [[ ! -f "$BASELINE_FILE" ]]; then
+        need_full=true; full_reason="no baseline"
+    elif (( HOUR == 15 && MINUTE >= 6 && MINUTE < 11 )); then
+        need_full=true; full_reason="post-close"
+    elif [[ -f "$LIVE_JS" ]]; then
+        live_size=$(stat -c %s "$LIVE_JS" 2>/dev/null || echo 0)
+        if (( live_size > LIVE_JS_LIMIT )); then
+            need_full=true; full_reason="live.js $(( live_size / 1024 / 1024 ))MB exceeds 20MB"
+        fi
+    fi
+
+    if $need_full; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: FULL deploy ($full_reason)..."
         timeout 300s python3 scripts/deploy_cloudflare.py --save-baseline 2>&1 \
             || echo "WARNING: Full deploy failed/timed out (non-fatal)"
     else

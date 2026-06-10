@@ -881,6 +881,7 @@ let _liveReady = false;
       }
     }
   };
+  ls.onerror = () => { _liveReady = true; };
   document.head.appendChild(ls);
 })();
 

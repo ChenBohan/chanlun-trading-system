@@ -141,7 +141,7 @@ def collect_files(deploy_dir, delta_only=False):
             print("WARNING: data/live.js not found, delta deploy has no chart data")
     else:
         for p in sorted(data_dir.iterdir()):
-            if p.is_file() and p.suffix == ".js":
+            if p.is_file() and p.suffix == ".js" and p.name != "live.js":
                 rel = "/data/" + p.name
                 fh = hash_file(p)
                 files.append({"path": rel, "hash": fh,
