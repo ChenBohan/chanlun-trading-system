@@ -119,10 +119,11 @@ class Hub:
     evolution_type: str = ""   # "延伸"/"新生（上）"/"新生（下）"/"扩展"/""
     avg_volume: float = 0.0    # average volume across all strokes in hub
     volume_trend: str = ""     # "shrink"=蓄势 / "expand"=分歧加剧 / "flat"
-    # P2: Hub level annotation
-    hub_level: str = ""        # "笔中枢"/"合并中枢" (assigned during construction)
+    hub_level: str = ""        # level name, e.g. "30分钟级别中枢" (assigned by classify_hub_evolution)
     duration_bars: int = 0     # number of K-bars the hub spans
     is_merged: bool = False    # True if this hub resulted from expansion merge
+    direction: str = ""        # "上" / "下" / "" (position vs prev hub in same trend)
+    trend_seq: int = -1        # sequence number within same-direction chain (0-indexed)
 
     @property
     def start_dt(self) -> str:
@@ -184,6 +185,7 @@ class BuySellPoint:
     idx: int = -1  # sequential index, assigned in analyze()
     invalidation_price: float = 0.0  # price that invalidates this signal
     status: str = "active"  # "active" / "invalidated"
+    signal_level: str = ""  # Chanlun theoretical level, e.g. "30分钟级别三买"
     invalidation_reason: str = ""  # reason for invalidation
     trend_hub_rank: int = -1  # for 3B/3S: hub position in trend (0=end-of-opposite, 1=1st, ...); -1=N/A
 
@@ -198,6 +200,9 @@ class SegHub:
     dd: float
     segments: list[Segment] = field(default_factory=list)
     evolution_type: str = ""
+    direction: str = ""       # "上" / "下" / "" (determined by position vs prev hub)
+    trend_seq: int = -1       # sequence number within same-direction trend (0-indexed)
+    hub_level: str = ""        # level name, e.g. "日线级别中枢" (assigned by classify_seg_hub_evolution)
 
     @property
     def start_dt(self) -> str:
@@ -222,8 +227,10 @@ class AnalysisResult:
     strokes: list[Stroke] = field(default_factory=list)
     segments: list[Segment] = field(default_factory=list)
     hubs: list[Hub] = field(default_factory=list)
+    seg_hubs: list[SegHub] = field(default_factory=list)
     trend: str = ""
     merged_hubs: list[Hub] = field(default_factory=list)
+    merged_seg_hubs: list[SegHub] = field(default_factory=list)
     divergences: list[dict] = field(default_factory=list)
     buy_sell_points: list[BuySellPoint] = field(default_factory=list)
     position_vs_hub: str = ""
@@ -1061,8 +1068,11 @@ def _segment_range(seg: Segment) -> tuple[float, float]:
 def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
     """Build hubs from segment sequence (线段中枢).
 
-    Same overlap logic as stroke hubs, but one level up:
-    3 consecutive segments with price overlap form a segment-level hub.
+    Same overlap logic as stroke hubs, but building blocks are segments.
+    3 consecutive segments with price overlap form a hub; subsequent
+    segments that still overlap with [ZD, ZG] extend the hub.
+
+    Theory: 缠论解析 场景B - "三段次级别线段的重叠区间为中枢"
     """
     if len(segments) < 3:
         return []
@@ -1117,13 +1127,82 @@ def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
 # ════════════════════════════════════════════════════════════════════
 
 _EXTENSION_THRESHOLD = 5  # strokes needed to classify as "延伸"
+_UPGRADE_EXTENSION_THRESHOLD = 9  # 延伸达9段 → 升级为更高级别
+
+# Hub level hierarchy (中枢级别体系)
+#
+# Theory (108课 §1.4):
+#   "三个1分钟走势重叠 ≈ 5分钟中枢；三个5分钟走势重叠 ≈ 30分钟中枢"
+#
+# When analysing a given K-line period, strokes are sub-level movements
+# and segments are current-level movements.  So:
+#   stroke hub  → level = one below the K-line period
+#   segment hub → level = same as the K-line period
+#
+# Upgrade paths:
+#   延伸9段 → hub level +1  (3 sub-hubs within one extended hub)
+#   扩张     → hub level +1  (2 same-direction hubs, GG/DD overlap)
+
+# Standard Chanlun level sequence (缠论新课程 §一):
+#   1分钟 → 5分钟 → 30分钟 → 日线 → 周线 → 月线 → 季线
+_LEVEL_ORDER = [
+    "1分钟", "5分钟", "30分钟", "日线", "周线", "月线", "季线",
+]
+
+# Stroke hub: building blocks are strokes → sub-level movements
+_STROKE_HUB_LEVEL = {
+    "5min":  "1分钟",
+    "15min": "5分钟",
+    "30min": "5分钟",
+    "60min": "30分钟",
+    "daily": "30分钟",
+    "weekly": "日线",
+}
+
+# Segment hub: building blocks are segments → current-level movements
+_SEGMENT_HUB_LEVEL = {
+    "5min":  "5分钟",
+    "15min": "30分钟",
+    "30min": "30分钟",
+    "60min": "日线",
+    "daily": "日线",
+    "weekly": "周线",
+}
 
 
-def classify_hub_evolution(hubs: list[Hub]):
-    """Classify each hub's evolution type in-place.
+def _level_up(level_name: str) -> str:
+    """Return the next higher level name, or the input if already at top."""
+    try:
+        idx = _LEVEL_ORDER.index(level_name)
+        if idx + 1 < len(_LEVEL_ORDER):
+            return _LEVEL_ORDER[idx + 1]
+    except ValueError:
+        pass
+    return level_name
+
+
+def get_hub_level_name(analysis_level: str, hub_type: str) -> str:
+    """Return the theoretical level name for a hub.
+
+    Args:
+        analysis_level: K-line period ("daily", "30min", "5min", etc.)
+        hub_type: "stroke" or "segment"
+    """
+    if hub_type == "stroke":
+        return _STROKE_HUB_LEVEL.get(analysis_level, "30分钟")
+    else:
+        return _SEGMENT_HUB_LEVEL.get(analysis_level, "日线")
+
+
+def classify_hub_evolution(hubs: list[Hub], analysis_level: str = "daily"):
+    """Classify each hub's evolution type and level in-place.
 
     For a single hub: extended oscillation if strokes > threshold.
     For adjacent pairs: new birth vs expansion based on range overlap.
+
+    Level upgrades (108课 §1.4 / 缠论新课程 / 缠论动力学十一讲):
+      - 延伸9段: 3 sub-hubs overlap within one extended hub → level +1
+      - 扩张: 2 same-direction hubs with GG/DD overlap → level +1
 
     Uses CORE range [ZD, ZG] for overlap detection. Chan Theory defines
     a trend as two hubs whose cores don't overlap. DD/GG would misclassify
@@ -1132,9 +1211,16 @@ def classify_hub_evolution(hubs: list[Hub]):
     if not hubs:
         return
 
+    base_level = get_hub_level_name(analysis_level, "stroke")
+
     for h in hubs:
+        h.hub_level = base_level + "级别中枢"
         if len(h.strokes) >= _EXTENSION_THRESHOLD:
             h.evolution_type = "延伸"
+        if len(h.strokes) >= _UPGRADE_EXTENSION_THRESHOLD:
+            upgraded = _level_up(base_level)
+            h.hub_level = upgraded + "级别中枢"
+            h.evolution_type = "延伸升级"
 
     for i in range(1, len(hubs)):
         prev, curr = hubs[i - 1], hubs[i]
@@ -1144,20 +1230,45 @@ def classify_hub_evolution(hubs: list[Hub]):
         if core_overlap:
             curr.evolution_type = "扩展"
         else:
-            if curr.zd > prev.zg:
+            gg_dd_overlap = (curr.dd <= prev.gg and curr.gg >= prev.dd)
+            same_direction = _hubs_same_direction(prev, curr)
+            if gg_dd_overlap and same_direction:
+                upgraded = _level_up(base_level)
+                curr.evolution_type = "扩张"
+                prev.hub_level = upgraded + "级别中枢"
+                curr.hub_level = upgraded + "级别中枢"
+            elif curr.zd > prev.zg:
                 curr.evolution_type = "新生（上）"
             else:
                 curr.evolution_type = "新生（下）"
 
 
-def classify_seg_hub_evolution(seg_hubs: list[SegHub]):
+def _hubs_same_direction(a, b) -> bool:
+    """Check if two hubs trend in the same direction based on context."""
+    a_dir = getattr(a, 'context_direction', 0)
+    b_dir = getattr(b, 'context_direction', 0)
+    if a_dir != 0 and b_dir != 0:
+        return a_dir == b_dir
+    a_mid = (a.zg + a.zd) / 2
+    b_mid = (b.zg + b.zd) / 2
+    return (b_mid > a_mid) or (b_mid < a_mid)
+
+
+def classify_seg_hub_evolution(seg_hubs: list[SegHub], analysis_level: str = "daily"):
     """Same logic for segment-level hubs."""
     if not seg_hubs:
         return
 
+    base_level = get_hub_level_name(analysis_level, "segment")
+
     for h in seg_hubs:
+        h.hub_level = base_level + "级别中枢"
         if len(h.segments) >= _EXTENSION_THRESHOLD:
             h.evolution_type = "延伸"
+        if len(h.segments) >= _UPGRADE_EXTENSION_THRESHOLD:
+            upgraded = _level_up(base_level)
+            h.hub_level = upgraded + "级别中枢"
+            h.evolution_type = "延伸升级"
 
     for i in range(1, len(seg_hubs)):
         prev, curr = seg_hubs[i - 1], seg_hubs[i]
@@ -1165,10 +1276,86 @@ def classify_seg_hub_evolution(seg_hubs: list[SegHub]):
 
         if core_overlap:
             curr.evolution_type = "扩展"
-        elif curr.zg > prev.zg:
-            curr.evolution_type = "新生（上）"
         else:
-            curr.evolution_type = "新生（下）"
+            gg_dd_overlap = (curr.dd <= prev.gg and curr.gg >= prev.dd)
+            prev_mid = (prev.zg + prev.zd) / 2
+            curr_mid = (curr.zg + curr.zd) / 2
+            same_direction = (curr_mid > prev_mid) or (curr_mid < prev_mid)
+            if gg_dd_overlap and same_direction:
+                upgraded = _level_up(base_level)
+                curr.evolution_type = "扩张"
+                prev.hub_level = upgraded + "级别中枢"
+                curr.hub_level = upgraded + "级别中枢"
+            elif curr.zg > prev.zg:
+                curr.evolution_type = "新生（上）"
+            else:
+                curr.evolution_type = "新生（下）"
+
+
+def assign_hub_direction_and_sequence(hubs: list[Hub]):
+    """Assign direction ('上'/'下') and trend_seq to each hub.
+
+    Direction: determined by the midpoint movement between consecutive hubs.
+    Sequence: consecutive same-direction hubs form a chain numbered from 0.
+
+    Theory (108课 §1.5):
+      - 上涨趋势 = ≥2 consecutive hubs moving up (ZD[n] > ZG[n-1])
+      - 下跌趋势 = ≥2 consecutive hubs moving down (ZG[n] < ZD[n-1])
+    """
+    if not hubs:
+        return
+
+    hubs[0].direction = ""
+    hubs[0].trend_seq = 0
+
+    seq = 0
+    prev_dir = ""
+    for i in range(1, len(hubs)):
+        prev_mid = (hubs[i - 1].zg + hubs[i - 1].zd) / 2
+        curr_mid = (hubs[i].zg + hubs[i].zd) / 2
+        if curr_mid > prev_mid:
+            d = "上"
+        elif curr_mid < prev_mid:
+            d = "下"
+        else:
+            d = prev_dir if prev_dir else ""
+
+        hubs[i].direction = d
+        if d == prev_dir and d != "":
+            seq += 1
+        else:
+            seq = 0
+        hubs[i].trend_seq = seq
+        prev_dir = d
+
+
+def assign_seg_hub_direction_and_sequence(seg_hubs: list[SegHub]):
+    """Same direction/sequence logic for segment-level hubs."""
+    if not seg_hubs:
+        return
+
+    seg_hubs[0].direction = ""
+    seg_hubs[0].trend_seq = 0
+
+    seq = 0
+    prev_dir = ""
+    for i in range(1, len(seg_hubs)):
+        prev_mid = (seg_hubs[i - 1].zg + seg_hubs[i - 1].zd) / 2
+        curr_mid = (seg_hubs[i].zg + seg_hubs[i].zd) / 2
+        if curr_mid > prev_mid:
+            d = "上"
+        elif curr_mid < prev_mid:
+            d = "下"
+        else:
+            d = prev_dir if prev_dir else ""
+
+        seg_hubs[i].direction = d
+        if d == prev_dir and d != "":
+            seq += 1
+        else:
+            seq = 0
+        seg_hubs[i].trend_seq = seq
+        prev_dir = d
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1179,7 +1366,7 @@ def classify_seg_hub_evolution(seg_hubs: list[SegHub]):
 # (108课 §1.4 / 图解缠论2 §2.4 / 缠论解析 场景B)
 # ════════════════════════════════════════════════════════════════════
 
-def merge_expanded_hubs(hubs: list[Hub]) -> list[Hub]:
+def merge_expanded_hubs(hubs: list[Hub], analysis_level: str = "daily") -> list[Hub]:
     """Merge adjacent hubs where the later one is classified as expansion.
 
     Returns a new list where expanded hubs are combined into larger hubs.
@@ -1188,14 +1375,14 @@ def merge_expanded_hubs(hubs: list[Hub]) -> list[Hub]:
     if len(hubs) <= 1:
         return list(hubs)
 
+    base_level = get_hub_level_name(analysis_level, "stroke")
+    merged_level = _level_up(base_level) + "级别中枢"
+
     merged: list[Hub] = []
     for h in hubs:
         if merged and h.evolution_type == "扩展":
             prev = merged[-1]
             all_strokes = prev.strokes + h.strokes
-            # Expansion merge: ZG/ZD = intersection of two hubs' core ranges.
-            # Theory (图解缠论2 §2.4): "两个同级别中枢的震荡区间重叠 → 更大级别中枢"
-            # The merged hub's core is the shared overlap region.
             new_zg = min(prev.zg, h.zg)
             new_zd = max(prev.zd, h.zd)
             merged[-1] = Hub(
@@ -1205,9 +1392,23 @@ def merge_expanded_hubs(hubs: list[Hub]) -> list[Hub]:
                 gg=max(prev.gg, h.gg),
                 dd=min(prev.dd, h.dd),
                 strokes=all_strokes,
-                evolution_type="延伸",
+                evolution_type="扩展合并",
                 is_merged=True,
-                hub_level="合并中枢",
+                hub_level=merged_level,
+            )
+        elif merged and h.evolution_type == "扩张":
+            prev = merged[-1]
+            all_strokes = prev.strokes + h.strokes
+            merged[-1] = Hub(
+                idx=prev.idx,
+                zg=min(prev.zg, h.zg),
+                zd=max(prev.zd, h.zd),
+                gg=max(prev.gg, h.gg),
+                dd=min(prev.dd, h.dd),
+                strokes=all_strokes,
+                evolution_type="扩张合并",
+                is_merged=True,
+                hub_level=merged_level,
             )
         else:
             merged.append(Hub(
@@ -1215,7 +1416,7 @@ def merge_expanded_hubs(hubs: list[Hub]) -> list[Hub]:
                 zg=h.zg, zd=h.zd, gg=h.gg, dd=h.dd,
                 strokes=list(h.strokes),
                 evolution_type=h.evolution_type,
-                hub_level="笔中枢",
+                hub_level=h.hub_level,
             ))
 
     for i, h in enumerate(merged):
@@ -1223,14 +1424,17 @@ def merge_expanded_hubs(hubs: list[Hub]) -> list[Hub]:
     return merged
 
 
-def merge_expanded_seg_hubs(seg_hubs: list[SegHub]) -> list[SegHub]:
+def merge_expanded_seg_hubs(seg_hubs: list[SegHub], analysis_level: str = "daily") -> list[SegHub]:
     """Same merge logic for segment-level hubs."""
     if len(seg_hubs) <= 1:
         return list(seg_hubs)
 
+    base_level = get_hub_level_name(analysis_level, "segment")
+    merged_level = _level_up(base_level) + "级别中枢"
+
     merged: list[SegHub] = []
     for h in seg_hubs:
-        if merged and h.evolution_type == "扩展":
+        if merged and h.evolution_type in ("扩展", "扩张"):
             prev = merged[-1]
             all_segs = prev.segments + h.segments
             merged[-1] = SegHub(
@@ -1240,7 +1444,8 @@ def merge_expanded_seg_hubs(seg_hubs: list[SegHub]) -> list[SegHub]:
                 gg=max(prev.gg, h.gg),
                 dd=min(prev.dd, h.dd),
                 segments=all_segs,
-                evolution_type="延伸",
+                evolution_type=h.evolution_type + "合并",
+                hub_level=merged_level,
             )
         else:
             merged.append(SegHub(
@@ -1248,6 +1453,7 @@ def merge_expanded_seg_hubs(seg_hubs: list[SegHub]) -> list[SegHub]:
                 zg=h.zg, zd=h.zd, gg=h.gg, dd=h.dd,
                 segments=list(h.segments),
                 evolution_type=h.evolution_type,
+                hub_level=h.hub_level,
             ))
 
     for i, h in enumerate(merged):
@@ -2787,7 +2993,55 @@ def find_buy_sell_points(
                            and p.hub_idx < last_h_idx
                            and p.price >= last_h.zg)]
 
+    # ── Assign signal_level based on the hub that generated the signal ──
+    _assign_signal_levels(points, hubs, t3_hubs, level)
+
     return points
+
+
+_TYPE_ZH = {
+    "1B": "一买", "1S": "一卖",
+    "2B": "二买", "2S": "二卖",
+    "3B": "三买", "3S": "三卖",
+    "PB": "盘买", "PS": "盘卖",
+}
+
+
+def _assign_signal_levels(
+    points: list[BuySellPoint],
+    merged_hubs: list[Hub],
+    raw_hubs: list[Hub],
+    analysis_level: str,
+):
+    """Assign ``signal_level`` to each BuySellPoint.
+
+    Signal level = hub level of the hub that generated the signal.
+    Theory (缠论新课程 §二): "买卖点必须搭配级别描述（如'30分钟三买'）"
+
+    For Type 1/2: uses merged_hubs (trend divergence detected on merged).
+    For Type 3/PB/PS: uses raw_hubs (individual hub breakout/pullback).
+    """
+    merged_by_idx = {h.idx: h for h in merged_hubs}
+    raw_by_idx = {h.idx: h for h in raw_hubs}
+
+    base_stroke_level = get_hub_level_name(analysis_level, "stroke")
+
+    for p in points:
+        hub = None
+        if p.type in ("3B", "3S", "PB", "PS"):
+            hub = raw_by_idx.get(p.hub_idx)
+        if hub is None:
+            hub = merged_by_idx.get(p.hub_idx)
+        if hub is None and p.hub_idx >= 0:
+            hub = raw_by_idx.get(p.hub_idx)
+
+        if hub and hub.hub_level:
+            level_name = hub.hub_level.replace("级别中枢", "")
+        else:
+            level_name = base_stroke_level
+
+        type_zh = _TYPE_ZH.get(p.type, p.type)
+        p.signal_level = f"{level_name}级别{type_zh}"
 
 
 _CONF_RANK = {"high": 0, "medium": 1, "low": 2}
@@ -4581,12 +4835,11 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
     hubs = find_hubs(strokes)
     result.hubs = hubs
 
-    # [7b] Hub evolution classification
-    classify_hub_evolution(hubs)
+    # [7b] Hub evolution classification (includes level assignment)
+    classify_hub_evolution(hubs, analysis_level=level)
 
-    # [7b1] Hub level and duration annotation (P2)
+    # [7b1] Hub duration annotation (P2)
     for h in hubs:
-        h.hub_level = "笔中枢"
         if h.strokes:
             start_dt = h.strokes[0].start.dt
             end_dt = h.strokes[-1].end.dt
@@ -4617,8 +4870,21 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
                 else:
                     h.volume_trend = "flat"
 
-    # [7c] Merge expanded hubs for trend determination
-    result.merged_hubs = merge_expanded_hubs(hubs)
+    # [7c] Merge expanded/expanded hubs for trend determination
+    result.merged_hubs = merge_expanded_hubs(hubs, analysis_level=level)
+
+    # [7d] Hub direction and sequence assignment
+    assign_hub_direction_and_sequence(hubs)
+    assign_hub_direction_and_sequence(result.merged_hubs)
+
+    # [7e] Segment-level hubs (线段中枢)
+    seg_hubs = find_seg_hubs(segments)
+    classify_seg_hub_evolution(seg_hubs, analysis_level=level)
+    assign_seg_hub_direction_and_sequence(seg_hubs)
+    result.seg_hubs = seg_hubs
+
+    # [7f] Merge expanded/expanded segment hubs
+    result.merged_seg_hubs = merge_expanded_seg_hubs(seg_hubs, analysis_level=level)
 
     # [8] Trend determination (uses merged hubs to avoid
     #     "扩展" being misclassified as "趋势")

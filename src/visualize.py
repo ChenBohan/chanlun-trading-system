@@ -569,6 +569,25 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "is_merged": h.is_merged,
                 "duration_bars": h.duration_bars,
                 "dir": hub_dir,
+                "direction": h.direction,
+                "trend_seq": h.trend_seq,
+            })
+
+    # Segment-level hubs as rectangles (larger level)
+    seg_hub_rects = []
+    for i, sh in enumerate(result.seg_hubs):
+        si = dt_index.get(sh.start_dt)
+        ei = dt_index.get(sh.end_dt)
+        if si is not None and ei is not None:
+            seg_hub_rects.append({
+                "x0": si, "x1": ei,
+                "zg": sh.zg, "zd": sh.zd,
+                "gg": sh.gg, "dd": sh.dd,
+                "idx": sh.idx,
+                "evo": sh.evolution_type,
+                "hub_level": sh.hub_level,
+                "direction": sh.direction,
+                "trend_seq": sh.trend_seq,
             })
 
     # Build fractal merge map: fractal_dt → list of raw bar indices (if merged)
@@ -622,6 +641,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "hub_rank": p.trend_hub_rank,
                 "hub_idx": p.hub_idx,
                 "inv_price": p.invalidation_price,
+                "signal_level": p.signal_level,
             }
             if p.type in ("3B", "3S") and p.hub_idx >= 0:
                 hub_obj = all_hubs[p.hub_idx] if p.hub_idx < len(all_hubs) else None
@@ -672,6 +692,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         "segments": segment_points,
         "seg_labels": segment_labels,
         "hubs": hub_rects,
+        "seg_hubs": seg_hub_rects,
         "bsp": bsp_markers,
         "trend": result.trend,
         "hub_position": result.position_vs_hub,
@@ -686,6 +707,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
             "strokes": len(result.strokes),
             "segments": len(result.segments),
             "hubs": len(result.hubs),
+            "seg_hubs": len(result.seg_hubs),
             "bsp": len(result.buy_sell_points),
             "latest_dif": bars[-1].dif if bars else 0,
         },
@@ -958,6 +980,7 @@ function renderSignalsPanel() {
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
     r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="日线:' + trend + '">' + s.etf_name + '</a></td>';
     r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + snapBadge + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#e3b341;' + strike + '">' + (s.signal_level || '-') + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + (isSnapshot ? '<span style="color:#d29922" title="走势延续后结构变化">📸历史</span>' : statusHtml) + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
     r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
@@ -992,6 +1015,7 @@ function renderSignalsPanel() {
       t += '<th style="padding:8px;text-align:left">时间</th>';
       t += '<th style="padding:8px;text-align:left">标的</th>';
       t += '<th style="padding:8px;text-align:center">类型</th>';
+      t += '<th style="padding:8px;text-align:center">级别</th>';
       t += '<th style="padding:8px;text-align:center">状态</th>';
       t += '<th style="padding:8px;text-align:center">置信度</th>';
       t += '<th style="padding:8px;text-align:center">强弱</th>';
@@ -1000,7 +1024,7 @@ function renderSignalsPanel() {
       if (isType3) t += '<th style="padding:8px;text-align:center">位次</th>';
       t += '</tr></thead><tbody>';
       signals.forEach((s, i) => { t += sigRow(s, i, isType3); });
-      const cols = isType3 ? 9 : 8;
+      const cols = isType3 ? 10 : 9;
       if (signals.length === 0) {
         t += '<tr><td colspan="' + cols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
       }
@@ -1271,7 +1295,7 @@ function updateStructBar(data) {
   bar.innerHTML = `
     <span>K线 ${s.bars}</span><span>合并 ${s.merged}</span>
     <span>分型 ${s.fractals}</span><span>笔 ${s.strokes}</span>
-    <span>线段 ${s.segments}</span><span>笔中枢 ${s.hubs}</span>
+    <span>线段 ${s.segments}</span><span>笔中枢 ${s.hubs}</span><span>段中枢 ${s.seg_hubs || 0}</span>
     <span>信号 ${s.bsp}</span>${tentTag}${vpStr ? '<span>│</span>' + vpStr : ''}
   `;
 }
@@ -1344,17 +1368,22 @@ function renderChart(data) {
              distance: 0 },
   }));
 
-  // Hub labels (stroke-level) with evolution type + volume trend + level
+  // Hub labels (stroke-level) with evolution type + volume trend + level + direction + sequence
   const evoColors = {'延伸': '#8b949e', '新生（上）': '#f85149', '新生（下）': '#3fb950', '扩展': '#d29922'};
   const volTrendIcons = {'shrink': '📉缩', 'expand': '📈放', 'flat': ''};
+  const dirIcons = {'上': '↑', '下': '↓'};
+  const evoColorsExt = Object.assign({}, evoColors, {'延伸升级': '#e3b341', '扩张': '#e3b341', '扩展合并': '#d29922', '扩张合并': '#d29922'});
   const hubLabelPts = data.hubs.map(h => {
     const midX = Math.round((h.x0 + Math.min(h.x1, data.dates.length - 1)) / 2);
     const evoTag = h.evo ? ' ' + h.evo : '';
     const volTag = volTrendIcons[h.vol_trend] || '';
     const mergedTag = h.is_merged ? '⬆合并' : '';
     const durTag = h.duration_bars > 0 ? h.duration_bars + 'K' : '';
-    const label = '中枢' + (h.idx + 1) + evoTag + (mergedTag ? ' ' + mergedTag : '') + (volTag ? ' ' + volTag : '') + (durTag ? ' ' + durTag : '');
-    const evoClr = h.is_merged ? '#d29922' : (evoColors[h.evo] || '#58a6ff');
+    const dirTag = dirIcons[h.direction] || '';
+    const seqTag = h.trend_seq >= 0 ? '#' + (h.trend_seq + 1) : '';
+    const lvlTag = h.hub_level || '';
+    const label = lvlTag + (h.idx + 1) + dirTag + seqTag + evoTag + (mergedTag ? ' ' + mergedTag : '') + (volTag ? ' ' + volTag : '') + (durTag ? ' ' + durTag : '');
+    const evoClr = h.is_merged ? '#d29922' : (evoColorsExt[h.evo] || '#58a6ff');
     return {
       coord: [data.dates[midX], h.zg],
       symbol: 'circle', symbolSize: 1, itemStyle: { color: 'transparent' },
@@ -1362,6 +1391,25 @@ function renderChart(data) {
                fontSize: 10, color: evoClr,
                backgroundColor: 'rgba(13,17,23,0.7)',
                padding: [1, 4], borderRadius: 2, position: 'top', distance: 5 },
+    };
+  });
+
+  // Segment-level hub labels
+  const segHubLabelPts = (data.seg_hubs || []).map(sh => {
+    const midX = Math.round((sh.x0 + Math.min(sh.x1, data.dates.length - 1)) / 2);
+    const evoTag = sh.evo ? ' ' + sh.evo : '';
+    const dirTag = dirIcons[sh.direction] || '';
+    const seqTag = sh.trend_seq >= 0 ? '#' + (sh.trend_seq + 1) : '';
+    const lvlTag = sh.hub_level || '线段中枢';
+    const label = lvlTag + (sh.idx + 1) + dirTag + seqTag + evoTag;
+    const evoClr = evoColorsExt[sh.evo] || '#ffd700';
+    return {
+      coord: [data.dates[midX], sh.zg],
+      symbol: 'circle', symbolSize: 1, itemStyle: { color: 'transparent' },
+      label: { show: true, formatter: label,
+               fontSize: 11, color: evoClr, fontWeight: 'bold',
+               backgroundColor: 'rgba(13,17,23,0.85)',
+               padding: [2, 5], borderRadius: 3, position: 'top', distance: 18 },
     };
   });
 
@@ -1382,7 +1430,7 @@ function renderChart(data) {
     const effTier = (isT3 && p.status !== 'invalidated' && tier > 1) ? Math.max(tier - 1, 1) : tier;
     const prefix = isT3 ? '◆' : '#';
     if (effTier === 3) return prefix + p.bsp_idx;
-    let text = prefix + p.bsp_idx + ' ' + p.label;
+    let text = prefix + p.bsp_idx + ' ' + (p.signal_level || p.label);
     if (effTier === 1) {
       if (p.conf) text += ' [' + (confIcons[p.conf] || p.conf) + ']';
       if (p.ranges && p.ranges.length >= 2) {
@@ -1768,7 +1816,7 @@ function renderChart(data) {
           borderColor: upColor, borderColor0: downColor,
         },
         markPoint: {
-          data: [...buyPoints, ...sellPoints, ...hubLabelPts, ...structLabels],
+          data: [...buyPoints, ...sellPoints, ...hubLabelPts, ...segHubLabelPts, ...structLabels],
           animation: false,
           tooltip: {
             show: true,
@@ -1800,7 +1848,19 @@ function renderChart(data) {
                 { xAxis: data.dates[Math.min(h.x1, data.dates.length - 1)], yAxis: h.zg },
               ];
             });
-            return [...hubAreas, ...structAreas];
+            const segHubAreas = (data.seg_hubs || []).map(sh => {
+              return [
+                { xAxis: data.dates[sh.x0], yAxis: sh.zd,
+                  itemStyle: {
+                    color: 'rgba(255,215,0,0.06)',
+                    borderColor: 'rgba(255,215,0,0.5)',
+                    borderWidth: 2,
+                    borderType: 'solid',
+                  } },
+                { xAxis: data.dates[Math.min(sh.x1, data.dates.length - 1)], yAxis: sh.zg },
+              ];
+            });
+            return [...segHubAreas, ...hubAreas, ...structAreas];
           })(),
           label: { show: false },
         },
@@ -2704,6 +2764,7 @@ def generate_dashboard(data_dir: str = None,
                 "status": p.get("status", "active"),
                 "inv_reason": p.get("inv_reason", ""),
                 "hub_rank": p.get("hub_rank", -1),
+                "signal_level": p.get("signal_level", ""),
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
@@ -2903,6 +2964,7 @@ def generate_mobile_dashboard(data_dir: str = None,
                 "status": p.get("status", "active"),
                 "inv_reason": p.get("inv_reason", ""),
                 "hub_rank": p.get("hub_rank", -1),
+                "signal_level": p.get("signal_level", ""),
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
@@ -3382,6 +3444,7 @@ function renderMobileGlobalSignals() {{
     r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-size:9px;color:#e3b341;${{strike}}">${{s.signal_level || '-'}}</td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{strStr}}</td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{confStr}}</td>`;
     if (isType3) {{
@@ -3412,11 +3475,12 @@ function renderMobileGlobalSignals() {{
       t += '<th style="padding:4px;text-align:left">时间</th>';
       t += '<th style="padding:4px;text-align:left">标的</th>';
       t += '<th style="padding:4px;text-align:center">类型</th>';
+      t += '<th style="padding:4px;text-align:center">级别</th>';
       t += '<th style="padding:4px;text-align:center">强度</th>';
       t += '<th style="padding:4px;text-align:center">置信</th>';
       if (isType3) t += '<th style="padding:4px;text-align:center">位次</th>';
       t += '</tr></thead><tbody>';
-      const cols = isType3 ? 6 : 5;
+      const cols = isType3 ? 7 : 6;
       signals.forEach((s, i) => {{ t += mgsRow(s, i, isType3); }});
       if (signals.length === 0) {{
         t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;
@@ -3714,7 +3778,7 @@ function renderKline(data) {{
     ctx.fillText(p.toFixed(2), pad.l - 4, y + 3);
   }}
 
-  const evoColors = {{'延伸': '#8b949e', '新生（上）': '#f85149', '新生（下）': '#3fb950', '扩展': '#d29922'}};
+  const evoColors = {{'延伸': '#8b949e', '新生（上）': '#f85149', '新生（下）': '#3fb950', '扩展': '#d29922', '延伸升级': '#e3b341', '扩张': '#e3b341', '扩展合并': '#d29922', '扩张合并': '#d29922'}};
   const mHubDirClr = {{1: {{f:'rgba(248,81,73,0.10)', s:'rgba(248,81,73,0.50)'}}, '-1': {{f:'rgba(63,185,80,0.10)', s:'rgba(63,185,80,0.50)'}}, 0: {{f:'rgba(88,166,255,0.08)', s:'rgba(88,166,255,0.4)'}}}};
   // Stroke-level hubs (笔中枢, drawn behind candlesticks)
   data.hubs.forEach(h => {{
@@ -3732,11 +3796,31 @@ function renderKline(data) {{
     const evoClr = evoColors[h.evo] || '#58a6ff';
     const mVolIcons = {{'shrink': '📉', 'expand': '📈'}};
     const volMark = mVolIcons[h.vol_trend] || '';
+    const dirIcon = h.direction === '上' ? '↑' : (h.direction === '下' ? '↓' : '');
+    const seqLabel = h.trend_seq >= 0 ? '#' + (h.trend_seq + 1) : '';
+    const lvlTag = h.hub_level || '';
     ctx.fillStyle = evoClr; ctx.font = '8px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText('枢' + (h.idx + 1) + (h.evo ? ' ' + h.evo : '') + volMark, x1 + 2, scaleY(h.zg) + 8);
+    ctx.fillText(lvlTag + (h.idx + 1) + dirIcon + seqLabel + (h.evo ? ' ' + h.evo : '') + volMark, x1 + 2, scaleY(h.zg) + 8);
     ctx.fillStyle = '#58a6ff';
     ctx.fillText('ZG=' + h.zg.toFixed(2), x1 + 2, scaleY(h.zg) + 17);
     ctx.fillText('ZD=' + h.zd.toFixed(2), x1 + 2, scaleY(h.zd) + 10);
+  }});
+
+  // Segment-level hubs (线段中枢, gold outline, drawn behind stroke hubs)
+  (data.seg_hubs || []).forEach(sh => {{
+    if (sh.x1 < viewStart || sh.x0 >= viewEnd) return;
+    const x0 = scaleX(Math.max(sh.x0, viewStart)) - cw / 2;
+    const x1 = scaleX(Math.min(sh.x1, viewEnd - 1)) + cw / 2;
+    ctx.fillStyle = 'rgba(255,215,0,0.04)';
+    ctx.fillRect(x0, scaleY(sh.zg), x1 - x0, scaleY(sh.zd) - scaleY(sh.zg));
+    ctx.strokeStyle = 'rgba(255,215,0,0.5)'; ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.strokeRect(x0, scaleY(sh.zg), x1 - x0, scaleY(sh.zd) - scaleY(sh.zg));
+    const dirIcon = sh.direction === '上' ? '↑' : (sh.direction === '下' ? '↓' : '');
+    const seqLabel = sh.trend_seq >= 0 ? '#' + (sh.trend_seq + 1) : '';
+    const lvlTag = sh.hub_level || '线段中枢';
+    ctx.fillStyle = '#ffd700'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(lvlTag + (sh.idx + 1) + dirIcon + seqLabel + (sh.evo ? ' ' + sh.evo : ''), x0 + 2, scaleY(sh.zg) - 3);
   }});
 
   // MA5 / MA10 lines
