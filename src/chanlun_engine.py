@@ -119,7 +119,7 @@ class Hub:
     evolution_type: str = ""   # "延伸"/"新生（上）"/"新生（下）"/"扩展"/""
     avg_volume: float = 0.0    # average volume across all strokes in hub
     volume_trend: str = ""     # "shrink"=蓄势 / "expand"=分歧加剧 / "flat"
-    hub_level: str = ""        # level name, e.g. "30分钟级别中枢" (assigned by classify_hub_evolution)
+    hub_level: str = ""        # level name, e.g. "30分钟中枢" (assigned by classify_hub_evolution)
     duration_bars: int = 0     # number of K-bars the hub spans
     is_merged: bool = False    # True if this hub resulted from expansion merge
     direction: str = ""        # "上" / "下" / "" (position vs prev hub in same trend)
@@ -202,7 +202,7 @@ class SegHub:
     evolution_type: str = ""
     direction: str = ""       # "上" / "下" / "" (determined by position vs prev hub)
     trend_seq: int = -1       # sequence number within same-direction trend (0-indexed)
-    hub_level: str = ""        # level name, e.g. "日线级别中枢" (assigned by classify_seg_hub_evolution)
+    hub_level: str = ""        # level name, e.g. "日线中枢" (assigned by classify_seg_hub_evolution)
 
     @property
     def start_dt(self) -> str:
@@ -1144,29 +1144,29 @@ _UPGRADE_EXTENSION_THRESHOLD = 9  # 延伸达9段 → 升级为更高级别
 #   扩张     → hub level +1  (2 same-direction hubs, GG/DD overlap)
 
 # Standard Chanlun level sequence (缠论新课程 §一):
-#   1分钟 → 5分钟 → 30分钟 → 日线 → 周线 → 月线 → 季线
+#   1F → 5F → 30F → DF → WF → MF → QF
 _LEVEL_ORDER = [
-    "1分钟", "5分钟", "30分钟", "日线", "周线", "月线", "季线",
+    "1F", "5F", "30F", "DF", "WF", "MF", "QF",
 ]
 
 # Stroke hub: building blocks are strokes → sub-level movements
 _STROKE_HUB_LEVEL = {
-    "5min":  "1分钟",
-    "15min": "5分钟",
-    "30min": "5分钟",
-    "60min": "30分钟",
-    "daily": "30分钟",
-    "weekly": "日线",
+    "5min":  "1F",
+    "15min": "5F",
+    "30min": "5F",
+    "60min": "30F",
+    "daily": "30F",
+    "weekly": "DF",
 }
 
 # Segment hub: building blocks are segments → current-level movements
 _SEGMENT_HUB_LEVEL = {
-    "5min":  "5分钟",
-    "15min": "30分钟",
-    "30min": "30分钟",
-    "60min": "日线",
-    "daily": "日线",
-    "weekly": "周线",
+    "5min":  "5F",
+    "15min": "30F",
+    "30min": "30F",
+    "60min": "DF",
+    "daily": "DF",
+    "weekly": "WF",
 }
 
 
@@ -1189,9 +1189,9 @@ def get_hub_level_name(analysis_level: str, hub_type: str) -> str:
         hub_type: "stroke" or "segment"
     """
     if hub_type == "stroke":
-        return _STROKE_HUB_LEVEL.get(analysis_level, "30分钟")
+        return _STROKE_HUB_LEVEL.get(analysis_level, "30F")
     else:
-        return _SEGMENT_HUB_LEVEL.get(analysis_level, "日线")
+        return _SEGMENT_HUB_LEVEL.get(analysis_level, "DF")
 
 
 def classify_hub_evolution(hubs: list[Hub], analysis_level: str = "daily"):
@@ -1214,12 +1214,12 @@ def classify_hub_evolution(hubs: list[Hub], analysis_level: str = "daily"):
     base_level = get_hub_level_name(analysis_level, "stroke")
 
     for h in hubs:
-        h.hub_level = base_level + "级别中枢"
+        h.hub_level = base_level + "中枢"
         if len(h.strokes) >= _EXTENSION_THRESHOLD:
             h.evolution_type = "延伸"
         if len(h.strokes) >= _UPGRADE_EXTENSION_THRESHOLD:
             upgraded = _level_up(base_level)
-            h.hub_level = upgraded + "级别中枢"
+            h.hub_level = upgraded + "中枢"
             h.evolution_type = "延伸升级"
 
     for i in range(1, len(hubs)):
@@ -1235,8 +1235,8 @@ def classify_hub_evolution(hubs: list[Hub], analysis_level: str = "daily"):
             if gg_dd_overlap and same_direction:
                 upgraded = _level_up(base_level)
                 curr.evolution_type = "扩张"
-                prev.hub_level = upgraded + "级别中枢"
-                curr.hub_level = upgraded + "级别中枢"
+                prev.hub_level = upgraded + "中枢"
+                curr.hub_level = upgraded + "中枢"
             elif curr.zd > prev.zg:
                 curr.evolution_type = "新生（上）"
             else:
@@ -1262,12 +1262,12 @@ def classify_seg_hub_evolution(seg_hubs: list[SegHub], analysis_level: str = "da
     base_level = get_hub_level_name(analysis_level, "segment")
 
     for h in seg_hubs:
-        h.hub_level = base_level + "级别中枢"
+        h.hub_level = base_level + "中枢"
         if len(h.segments) >= _EXTENSION_THRESHOLD:
             h.evolution_type = "延伸"
         if len(h.segments) >= _UPGRADE_EXTENSION_THRESHOLD:
             upgraded = _level_up(base_level)
-            h.hub_level = upgraded + "级别中枢"
+            h.hub_level = upgraded + "中枢"
             h.evolution_type = "延伸升级"
 
     for i in range(1, len(seg_hubs)):
@@ -1284,8 +1284,8 @@ def classify_seg_hub_evolution(seg_hubs: list[SegHub], analysis_level: str = "da
             if gg_dd_overlap and same_direction:
                 upgraded = _level_up(base_level)
                 curr.evolution_type = "扩张"
-                prev.hub_level = upgraded + "级别中枢"
-                curr.hub_level = upgraded + "级别中枢"
+                prev.hub_level = upgraded + "中枢"
+                curr.hub_level = upgraded + "中枢"
             elif curr.zg > prev.zg:
                 curr.evolution_type = "新生（上）"
             else:
@@ -1376,7 +1376,7 @@ def merge_expanded_hubs(hubs: list[Hub], analysis_level: str = "daily") -> list[
         return list(hubs)
 
     base_level = get_hub_level_name(analysis_level, "stroke")
-    merged_level = _level_up(base_level) + "级别中枢"
+    merged_level = _level_up(base_level) + "中枢"
 
     merged: list[Hub] = []
     for h in hubs:
@@ -1430,7 +1430,7 @@ def merge_expanded_seg_hubs(seg_hubs: list[SegHub], analysis_level: str = "daily
         return list(seg_hubs)
 
     base_level = get_hub_level_name(analysis_level, "segment")
-    merged_level = _level_up(base_level) + "级别中枢"
+    merged_level = _level_up(base_level) + "中枢"
 
     merged: list[SegHub] = []
     for h in seg_hubs:
@@ -3036,12 +3036,12 @@ def _assign_signal_levels(
             hub = raw_by_idx.get(p.hub_idx)
 
         if hub and hub.hub_level:
-            level_name = hub.hub_level.replace("级别中枢", "")
+            level_name = hub.hub_level.replace("中枢", "")
         else:
             level_name = base_stroke_level
 
         type_zh = _TYPE_ZH.get(p.type, p.type)
-        p.signal_level = f"{level_name}级别{type_zh}"
+        p.signal_level = f"{level_name}{type_zh}"
 
 
 _CONF_RANK = {"high": 0, "medium": 1, "low": 2}
@@ -3523,7 +3523,7 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
         # === STRENGTH (operational value) ===
         # S1: trend context — scoring per 108课详解 L79:
         #   "尽量只介入第一个中枢的第三类买点。因为第二个中枢以后,
-        #    形成大级别中枢的概率将急促加大"
+        #    形成大中枢的概率将急促加大"
         # rank=0: last downtrend hub breakout (not necessarily 二三买合一)
         # rank=1: first up-hub 3B (recommended by original text)
         # rank=2: second up-hub 3B (generally avoid per 扫地僧)
@@ -4378,28 +4378,28 @@ def _enrich_small_level_signals(
 
         if is_buy:
             if daily_dir == 1 and "上方" in daily_hub_pos:
-                note_parts.append("日线多头+中枢上方，买入环境良好")
+                note_parts.append("DF多头+中枢上方，买入环境良好")
                 if adjusted_conf == "low":
                     adjusted_conf = "medium"
                 elif adjusted_conf == "medium":
                     adjusted_conf = "high"
             elif daily_dir == 1 and "震荡" in daily_hub_pos:
-                note_parts.append("日线多头+中枢区间，买入有支撑")
+                note_parts.append("DF多头+中枢区间，买入有支撑")
             elif daily_dir == -1 or "下方" in daily_hub_pos:
-                note_parts.append("日线偏空/中枢下方，逆大级别买入需谨慎")
+                note_parts.append("DF偏空/中枢下方，逆势买入需谨慎")
                 if adjusted_conf == "high":
                     adjusted_conf = "medium"
                 elif adjusted_conf == "medium":
                     adjusted_conf = "low"
         else:
             if daily_dir == -1 and "下方" in daily_hub_pos:
-                note_parts.append("日线空头+中枢下方，卖出/做空环境良好")
+                note_parts.append("DF空头+中枢下方，卖出/做空环境良好")
                 if adjusted_conf == "low":
                     adjusted_conf = "medium"
                 elif adjusted_conf == "medium":
                     adjusted_conf = "high"
             elif daily_dir == 1 and "上方" in daily_hub_pos:
-                note_parts.append("日线多头+中枢上方，逆大级别卖出，可能仅短差")
+                note_parts.append("DF多头+中枢上方，逆势卖出，可能仅短差")
                 if adjusted_conf == "high":
                     adjusted_conf = "medium"
                 elif adjusted_conf == "medium":
@@ -4407,17 +4407,17 @@ def _enrich_small_level_signals(
 
         if daily_stage == "末段":
             if is_buy and daily_dir == -1:
-                note_parts.append("日线下跌末段，小级别背驰可能引发大反转")
+                note_parts.append("DF下跌末段，小级别背驰可能引发大反转")
             elif not is_buy and daily_dir == 1:
-                note_parts.append("日线上涨末段，小级别背驰可能引发大跳水")
+                note_parts.append("DF上涨末段，小级别背驰可能引发大跳水")
         elif daily_stage == "初中段":
             if is_buy and daily_dir == 1:
-                note_parts.append("日线上涨初中段，回调有限，买入安全边际高")
+                note_parts.append("DF上涨初中段，回调有限，买入安全边际高")
             elif not is_buy and daily_dir == -1:
-                note_parts.append("日线下跌初中段，反弹有限")
+                note_parts.append("DF下跌初中段，反弹有限")
 
         ctx["adjusted_confidence"] = adjusted_conf
-        ctx["context_note"] = "；".join(note_parts) if note_parts else "无特殊大级别环境"
+        ctx["context_note"] = "；".join(note_parts) if note_parts else "无特殊DF环境"
         ctx["confidence_changed"] = adjusted_conf != p.confidence
         enriched.append(ctx)
 
@@ -4487,18 +4487,18 @@ def _determine_overall_bias(summaries: list[dict], alignment: str) -> tuple[str,
 
     if daily_dir == 1:
         if "上方" in daily_hub:
-            return "偏多", "日线多头+中枢上方，回调是买入机会"
+            return "偏多", "DF多头+中枢上方，回调是买入机会"
         elif "震荡" in daily_hub:
-            return "中性偏多", "日线多头+中枢区间震荡，可高抛低吸"
+            return "中性偏多", "DF多头+中枢区间震荡，可高抛低吸"
         else:
-            return "中性", "日线上涨趋势但在中枢下方，等待企稳信号"
+            return "中性", "DF上涨趋势但在中枢下方，等待企稳信号"
     elif daily_dir == -1:
         if "下方" in daily_hub:
-            return "偏空", "日线空头+中枢下方，反弹是减仓机会"
+            return "偏空", "DF空头+中枢下方，反弹是减仓机会"
         elif "震荡" in daily_hub:
-            return "中性偏空", "日线空头+中枢区间震荡，轻仓博弈"
+            return "中性偏空", "DF空头+中枢区间震荡，轻仓博弈"
         else:
-            return "中性", "日线下跌趋势但在中枢上方，关注是否三卖"
+            return "中性", "DF下跌趋势但在中枢上方，关注是否三卖"
     return "中性震荡", "方向不明，观望为主"
 
 
@@ -5102,7 +5102,7 @@ def format_report(result: AnalysisResult) -> str:
             "延伸": "→ 高抛低吸做差价",
             "新生（上）": "→ 趋势上行，持仓",
             "新生（下）": "→ 趋势下行，回避",
-            "扩展": "→ 升级为更大级别中枢，按盘整处理",
+            "扩展": "→ 升级为更大中枢，按盘整处理",
         }
         for h in result.hubs:
             evo = f" 【{h.evolution_type}】" if h.evolution_type else ""
@@ -5115,7 +5115,7 @@ def format_report(result: AnalysisResult) -> str:
         if has_expansion and result.merged_hubs and len(result.merged_hubs) < len(result.hubs):
             lines.append("")
             lines.append(f"### 合并后中枢（扩展合并视角）")
-            lines.append(f"> 扩展中枢已合并为更大级别中枢，走势判定基于此视角")
+            lines.append(f"> 扩展中枢已合并为更大中枢，走势判定基于此视角")
             for mh in result.merged_hubs:
                 lines.append(
                     f"- 合并中枢{mh.idx + 1}：ZG={mh.zg:.3f} ZD={mh.zd:.3f} "
