@@ -37,7 +37,7 @@ def cmd_fetch(args):
 
     print("=" * 60)
     print("缠论交易系统 v2 — 数据拉取")
-    print(f"级别：日线（方向）→ 30分钟（买卖点）→ 5分钟（择时）")
+    print(f"级别：DF（方向）→ 30F（买卖点）→ 5F（择时）")
     print(f"起始日期：{args.beg}  |  数据源：{_df.DATA_SOURCE_PRIMARY}")
     print("=" * 60)
 
@@ -107,9 +107,9 @@ def cmd_batch(args):
     os.makedirs(os.path.dirname(output), exist_ok=True)
 
     levels = [
-        ("daily", "daily.csv", "日线"),
-        ("30min", "30min.csv", "30分钟"),
-        ("5min", "5min.csv", "5分钟"),
+        ("daily", "daily.csv", "DF"),
+        ("30min", "30min.csv", "30F"),
+        ("5min", "5min.csv", "5F"),
     ]
 
     lines = []
