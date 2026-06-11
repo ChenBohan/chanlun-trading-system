@@ -819,6 +819,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 <div id="conclusion-bar"></div>
 <div class="struct-bar" id="struct-bar"></div>
+<div style="display:flex;gap:14px;padding:4px 32px;font-size:11px;color:#8b949e;flex-wrap:wrap;align-items:center">
+  <span style="color:#f0883e">━ 笔</span>
+  <span style="color:#00d4aa">━ 背驰笔↑</span>
+  <span style="color:#ff6b9d">━ 背驰笔↓</span>
+  <span style="color:#bc8cff;font-weight:bold">━ 线段</span>
+  <span style="color:#ffd700">━ MA5</span>
+  <span style="color:#58a6ff">━ MA10</span>
+  <span>█<span style="color:rgba(248,81,73,0.6)">中枢↑</span></span>
+  <span>█<span style="color:rgba(63,185,80,0.6)">中枢↓</span></span>
+  <span>█<span style="color:rgba(255,215,0,0.7)">段中枢</span></span>
+</div>
 
 <div id="chart-container"></div>
 
@@ -1333,11 +1344,11 @@ function renderChart(data) {
   const strokeVolIcons = {'shrink': '↓', 'expand': '↑'};
   const strokeMarkData = data.strokes.map(s => {
     const volSuffix = strokeVolIcons[s.vol_trend] || '';
-    const strokeColor = s.div ? (s.dir === 1 ? '#79c0ff' : '#d2a8ff') : '#f0883e';
+    const strokeColor = s.div ? (s.dir === 1 ? '#00d4aa' : '#ff6b9d') : '#f0883e';
     return [
       { coord: [data.dates[s.coords[0][0]], s.coords[0][1]] },
       { coord: [data.dates[s.coords[1][0]], s.coords[1][1]],
-        lineStyle: { color: strokeColor, width: s.div ? 2.2 : 1.5 },
+        lineStyle: { color: strokeColor, width: s.div ? 2.5 : 1.5 },
         label: { show: true, formatter: 'S' + (s.idx + 1) + volSuffix, fontSize: 12, fontWeight: 'bold', color: strokeColor,
                  position: 'middle', distance: -14 } },
     ];
@@ -1895,8 +1906,8 @@ function renderChart(data) {
         xAxisIndex: 0, yAxisIndex: 0,
         markLine: {
           symbol: ['circle', 'circle'],
-          symbolSize: is5F ? 5 : 4,
-          lineStyle: { color: '#d29922', width: strokeW, type: 'solid' },
+          symbolSize: 4,
+          lineStyle: { color: '#d29922', width: 1.5, type: 'solid' },
           label: { show: false },
           data: strokeMarkData,
           animation: false,
@@ -3606,9 +3617,8 @@ function resetView() {{
   if (!d) return;
   const total = d.dates.length;
   const hubs = d.hubs || [];
-  const minBars = currentLevel === '5min' ? 60 : (currentLevel === '30min' ? 90 : 120);
-  const need2Hub = hubs.length >= 2 ? (total - hubs[hubs.length - 2].x0 + 10) : minBars;
-  const VISIBLE_BARS = Math.max(minBars, need2Hub);
+  const need2Hub = hubs.length >= 2 ? (total - hubs[hubs.length - 2].x0 + 10) : 120;
+  const VISIBLE_BARS = Math.max(120, need2Hub);
   viewEnd = total;
   viewStart = Math.max(0, total - VISIBLE_BARS);
   if (viewEnd - viewStart < MIN_VIEW) viewStart = Math.max(0, viewEnd - MIN_VIEW);
@@ -3889,20 +3899,16 @@ function renderKline(data) {{
 
   // Strokes with volume trend markers + divergence color
   const sVolIcons = {{'shrink': '↓', 'expand': '↑'}};
-  const m5F = currentLevel === '5min';
-  const mStrokeW = m5F ? 2.0 : 1.5;
-  const mStrokeDivW = m5F ? 2.8 : 2.2;
-  const mStrokeFs = m5F ? 7 : 8;
   data.strokes.forEach(s => {{
     const si = s.coords[0][0], ei = s.coords[1][0];
     if (ei < viewStart || si >= viewEnd) return;
-    const sColor = s.div ? (s.dir === 1 ? '#79c0ff' : '#d2a8ff') : '#f0883e';
-    ctx.strokeStyle = sColor; ctx.lineWidth = s.div ? mStrokeDivW : mStrokeW;
+    const sColor = s.div ? (s.dir === 1 ? '#00d4aa' : '#ff6b9d') : '#f0883e';
+    ctx.strokeStyle = sColor; ctx.lineWidth = s.div ? 2.5 : 1.5;
     const x1 = scaleX(Math.max(si, viewStart));
     const x2 = scaleX(Math.min(ei, viewEnd - 1));
     ctx.beginPath(); ctx.moveTo(x1, scaleY(s.coords[0][1])); ctx.lineTo(x2, scaleY(s.coords[1][1])); ctx.stroke();
     const labelColor = sColor;
-    ctx.fillStyle = labelColor; ctx.font = 'bold ' + mStrokeFs + 'px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = labelColor; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mx = (x1 + x2) / 2;
     const volSuf = sVolIcons[s.vol_trend] || '';
     ctx.fillText('S' + (s.idx + 1) + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
