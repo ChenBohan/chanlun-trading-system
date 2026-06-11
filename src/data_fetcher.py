@@ -1029,7 +1029,7 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
     csv_names = {"daily": "daily.csv", "30min": "30min.csv", "5min": "5min.csv"}
     idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}") if data_dir else ""
 
-    for period, label in [("daily", "日线"), ("30min", "30分钟"), ("5min", "5分钟")]:
+    for period, label in [("daily", "DF"), ("30min", "30F"), ("5min", "5F")]:
         csv_path = os.path.join(idx_dir, csv_names[period]) if idx_dir else ""
 
         strategy = _FULL if force else _fetch_strategy(csv_path, period)
@@ -1342,9 +1342,9 @@ def save_fetch_results(results: list[FetchResult],
 
         idx_paths = {}
         for period, bars, label in [
-            ("daily", res.daily, "日线"),
-            ("30min", res.min30, "30分钟"),
-            ("5min", res.min5, "5分钟"),
+            ("daily", res.daily, "DF"),
+            ("30min", res.min30, "30F"),
+            ("5min", res.min5, "5F"),
         ]:
             if not bars:
                 continue
@@ -1376,7 +1376,7 @@ def print_fetch_summary(results: list[FetchResult]):
     print("\n" + "=" * 72)
     print("数据拉取汇总")
     print("=" * 72)
-    print(f"{'指数':<10} {'ETF':<12} {'日线':>6} {'30分钟':>8} {'5分钟':>7} {'状态':<6}")
+    print(f"{'指数':<10} {'ETF':<12} {'DF':>6} {'30F':>8} {'5F':>7} {'状态':<6}")
     print("-" * 72)
 
     for res in results:
@@ -1416,7 +1416,7 @@ def main():
 
     print("=" * 72)
     print("缠论交易系统 v2 — 数据拉取")
-    print(f"级别：日线（方向）→ 30分钟（买卖点）→ 5分钟（择时）")
+    print(f"级别：DF（方向）→ 30F（买卖点）→ 5F（择时）")
     print(f"起始日期：{args.beg}")
     print(f"输出格式：{args.format}")
     print("=" * 72)

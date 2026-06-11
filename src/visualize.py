@@ -336,7 +336,7 @@ def backfill_signal_snapshots(data_dir: str = None, max_workers: int = 8) -> int
         data_dir = os.path.join(_PROJECT_ROOT, "data")
 
     indices = load_index_watchlist()
-    level_labels = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
+    level_labels = {"daily": "DF", "30min": "30F", "5min": "5F"}
     step_sizes = {"daily": 20, "30min": 8, "5min": 48}
     min_bars = 200
 
@@ -352,7 +352,7 @@ def backfill_signal_snapshots(data_dir: str = None, max_workers: int = 8) -> int
                               step_sizes[level_key], min_bars))
 
     print(f"Backfill: {len(tasks)} tasks ({len(indices)} symbols × 3 levels)")
-    print(f"Step sizes: 日线={step_sizes['daily']}, 30分钟={step_sizes['30min']}, 5分钟={step_sizes['5min']}")
+    print(f"Step sizes: DF={step_sizes['daily']}, 30F={step_sizes['30min']}, 5F={step_sizes['5min']}")
 
     all_discovered: dict[str, dict] = {}
     done = 0
@@ -392,7 +392,7 @@ def _backfill_one(etf_code: str, etf_name: str, level_key: str,
     if len(bars) < min_bars:
         return []
 
-    level_cn = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}.get(level_key, level_key)
+    level_cn = {"daily": "DF", "30min": "30F", "5min": "5F"}.get(level_key, level_key)
     all_seen: dict[str, dict] = {}
 
     for end_idx in range(min_bars, len(bars) + 1, step):
@@ -798,7 +798,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 <div class="header">
   <h1>缠论交易系统 v2</h1>
-  <span>日线（方向）→ 30分钟（买卖点）→ 5分钟（择时）</span>
+  <span>DF（方向）→ 30F（买卖点）→ 5F（择时）</span>
   <span class="gen-time">数据：__DATA_TIME__ | 生成：__GEN_TIME__</span>
 </div>
 
@@ -812,9 +812,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 <div class="nav" id="index-nav" style="display:none"></div>
 
 <div class="level-tabs" id="level-tabs">
-  <button class="level-btn" data-level="daily">日线</button>
-  <button class="level-btn active" data-level="30min">30分钟</button>
-  <button class="level-btn" data-level="5min">5分钟</button>
+  <button class="level-btn" data-level="daily">DF</button>
+  <button class="level-btn active" data-level="30min">30F</button>
+  <button class="level-btn" data-level="5min">5F</button>
 </div>
 
 <div id="conclusion-bar"></div>
@@ -912,9 +912,9 @@ let currentIndex = defaultIndex ? defaultIndex.etf_code : INDEX_LIST[0].etf_code
 let currentLevel = '30min';
 let chart = null;
 
-// ─── Unified Signals Panel (个股/ETF/自选股 × 日线/30min/5min) ───
+// ─── Unified Signals Panel (个股/ETF/自选股 × DF/30F/5F) ───
 let spCategory = 'stock';
-let spLevel = '30分钟';
+let spLevel = '30F';
 let spExpanded = true;
 let spT1Open = false;
 let spT2Open = false;
@@ -928,7 +928,7 @@ function getSignalSource(cat) {
 
 function renderSignalsPanel() {
   const el = document.getElementById('signals-panel');
-  const levels = ['日线', '30分钟', '5分钟'];
+  const levels = ['DF', '30F', '5F'];
   const categories = [
     {id:'stock', label:'📊 个股', icon:'📊'},
     {id:'etf', label:'📈 ETF', icon:'📈'},
@@ -968,17 +968,17 @@ function renderSignalsPanel() {
     const _isPanUp = !_isBroken && !_isUp && !_isDown && trend.includes('盘整偏多');
     const _isPanDn = !_isBroken && !_isUp && !_isDown && trend.includes('盘整偏空');
     const _isPan = !_isBroken && !_isUp && !_isDown && !_isPanUp && !_isPanDn && trend.includes('盘整');
-    const trendIcon = _isBroken ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
-      : _isUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
-      : _isDown ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
-      : _isPanUp ? '<span style="color:#f0883e" title="日线盘整偏多">◆↑</span>'
-      : _isPanDn ? '<span style="color:#7ee787" title="日线盘整偏空">◆↓</span>'
-      : _isPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
-      : '<span style="color:#8b949e" title="日线方向不明">—</span>';
+    const trendIcon = _isBroken ? '<span style="color:#e3b341" title="DF趋势破坏">⚠</span>'
+      : _isUp ? '<span style="color:#f85149" title="DF上涨趋势">▲</span>'
+      : _isDown ? '<span style="color:#3fb950" title="DF下跌趋势">▼</span>'
+      : _isPanUp ? '<span style="color:#f0883e" title="DF盘整偏多">◆↑</span>'
+      : _isPanDn ? '<span style="color:#7ee787" title="DF盘整偏空">◆↓</span>'
+      : _isPan ? '<span style="color:#d29922" title="DF盘整">◆</span>'
+      : '<span style="color:#8b949e" title="DF方向不明">—</span>';
     const snapBadge = isSnapshot ? ' <span title="历史快照：曾于' + (s.first_seen||'') + '发现" style="font-size:10px;color:#d29922;cursor:help">📸</span>' : '';
     let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
-    r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="日线:' + trend + '">' + s.etf_name + '</a></td>';
+    r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="DF:' + trend + '">' + s.etf_name + '</a></td>';
     r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + snapBadge + '</td>';
     r += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#e3b341;' + strike + '">' + (s.signal_level || '-') + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + (isSnapshot ? '<span style="color:#d29922" title="走势延续后结构变化">📸历史</span>' : statusHtml) + '</td>';
@@ -1078,7 +1078,7 @@ function renderSignalsPanel() {
     });
     h += '</div>';
 
-    // Level 2 tabs: 日线 / 30分钟 / 5分钟
+    // Level 2 tabs: DF / 30F / 5F
     const currentSrc = getSignalSource(spCategory);
     h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
     levels.forEach(lv => {
@@ -1123,15 +1123,15 @@ async function init() {
     const isPanUp = !isBroken && !isUp && !isDown && (idx.trend||'').includes('盘整偏多');
     const isPanDn = !isBroken && !isUp && !isDown && (idx.trend||'').includes('盘整偏空');
     const isPan = !isBroken && !isUp && !isDown && !isPanUp && !isPanDn && (idx.trend||'').includes('盘整');
-    const trendIcon = isBroken ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
-      : isUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
-      : isDown ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
-      : isPanUp ? '<span style="color:#f0883e" title="日线盘整偏多">◆↑</span>'
-      : isPanDn ? '<span style="color:#7ee787" title="日线盘整偏空">◆↓</span>'
-      : isPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
-      : '<span style="color:#8b949e" title="日线方向不明">—</span>';
+    const trendIcon = isBroken ? '<span style="color:#e3b341" title="DF趋势破坏">⚠</span>'
+      : isUp ? '<span style="color:#f85149" title="DF上涨趋势">▲</span>'
+      : isDown ? '<span style="color:#3fb950" title="DF下跌趋势">▼</span>'
+      : isPanUp ? '<span style="color:#f0883e" title="DF盘整偏多">◆↑</span>'
+      : isPanDn ? '<span style="color:#7ee787" title="DF盘整偏空">◆↓</span>'
+      : isPan ? '<span style="color:#d29922" title="DF盘整">◆</span>'
+      : '<span style="color:#8b949e" title="DF方向不明">—</span>';
     btn.innerHTML = trendIcon + ' ' + idx.index_name;
-    btn.title = '日线:' + (idx.trend||'-') + ' | ' + (idx.summary || '') + ' | 评分:' + idx.score;
+    btn.title = 'DF:' + (idx.trend||'-') + ' | ' + (idx.summary || '') + ' | 评分:' + idx.score;
     btn.dataset.code = idx.etf_code;
     btn.onclick = () => selectIndex(idx.etf_code);
     nav.appendChild(btn);
@@ -1259,7 +1259,7 @@ function updateConclusionBar(data) {
       ${notesLabel}
     </div>
     <div class="concl-group" title="${envFactors}\n${envAdvice}">
-      <span class="concl-label">日线环境</span>
+      <span class="concl-label">DF环境</span>
       <span style="background:rgba(0,0,0,0.3);color:${envColor};padding:4px 12px;border-radius:6px;font-weight:700;font-size:14px;border:1px solid ${envColor}">${envIcon} ${envLabel}</span>
       <span style="font-size:12px;color:${envColor}">${envAdvice}</span>
     </div>
@@ -2065,22 +2065,22 @@ def _build_index_overview(daily_data: dict, m30_data: dict, syn: dict) -> dict:
     resonance_bear = "共振" in alignment and "空" in alignment
 
     if is_up and above:
-        bullets.append("日线多头+中枢上方，趋势最强格局")
+        bullets.append("DF多头+中枢上方，趋势最强格局")
         bullets.append("回调到中枢顶是加仓机会")
     elif is_up and inside:
-        bullets.append("日线多头+中枢震荡，等待方向选择")
+        bullets.append("DF多头+中枢震荡，等待方向选择")
         bullets.append("中枢上沿附近减仓，下沿回补")
     elif is_up and below:
-        bullets.append("日线多头但中枢下方，需确认支撑")
+        bullets.append("DF多头但中枢下方，需确认支撑")
         bullets.append("等价格重新站上中枢再考虑")
     elif is_down and below:
-        bullets.append("日线空头+中枢下方，趋势最弱格局")
+        bullets.append("DF空头+中枢下方，趋势最弱格局")
         bullets.append("反弹到中枢底是减仓/出逃机会")
     elif is_down and inside:
-        bullets.append("日线空头+中枢震荡，方向未明")
+        bullets.append("DF空头+中枢震荡，方向未明")
         bullets.append("反弹可减仓，不宜重仓")
     elif is_down and above:
-        bullets.append("日线空头但中枢上方，关注是否破位")
+        bullets.append("DF空头但中枢上方，关注是否破位")
         bullets.append("不破中枢上沿可观望，破则减仓")
     else:
         bullets.append("方向不明，暂时观望")
@@ -2130,7 +2130,7 @@ def _build_index_overview(daily_data: dict, m30_data: dict, syn: dict) -> dict:
     d_tc = daily_data.get("trend_completion", {})
     d_status = d_tc.get("status", "")
     if "疑似" in d_status:
-        bullets.append("⚠ 日线背驰出现，趋势可能反转")
+        bullets.append("⚠ DF背驰出现，趋势可能反转")
     m30_tc = m30_data.get("trend_completion", {})
     m30_tc_status = m30_tc.get("status", "")
     if "疑似" in m30_tc_status:
@@ -2150,15 +2150,15 @@ def _build_index_overview(daily_data: dict, m30_data: dict, syn: dict) -> dict:
 
     if is_up:
         env_score += 2
-        env_factors.append("日线上涨趋势")
+        env_factors.append("DF上涨趋势")
     elif is_down:
         env_score -= 2
-        env_factors.append("日线下跌趋势")
+        env_factors.append("DF下跌趋势")
     elif "破坏" in trend:
         env_score -= 1
-        env_factors.append("日线趋势破坏")
+        env_factors.append("DF趋势破坏")
     else:
-        env_factors.append("日线盘整")
+        env_factors.append("DF盘整")
 
     if dif_above:
         env_score += 1
@@ -2200,7 +2200,7 @@ def _build_index_overview(daily_data: dict, m30_data: dict, syn: dict) -> dict:
         env_label = "强空头环境"
         env_color = "#3fb950"
         m30_3b_ok = False
-        env_advice = "30分三买回避，等待日线转势"
+        env_advice = "30F三买回避，等待DF转势"
 
     daily_env = {
         "label": env_label,
@@ -2254,13 +2254,13 @@ def _actionability_score(daily_data: dict, m30_data: dict, syn: dict) -> tuple[i
 
     if is_up:
         score += 15
-        parts.append("日线↑")
+        parts.append("DF↑")
     elif is_down:
         score += 8
-        parts.append("日线↓")
+        parts.append("DF↓")
     else:
         score += 3
-        parts.append("日线盘整")
+        parts.append("DF盘整")
 
     hub_pos = daily_data.get("hub_position", "")
     above = "上方" in hub_pos
@@ -2437,9 +2437,9 @@ def run_analysis_pipeline(data_dir: str = None,
         data_dir = os.path.join(_PROJECT_ROOT, "data")
 
     indices = load_index_watchlist()
-    levels_cfg = [("daily", "daily.csv", "日线"),
-                  ("30min", "30min.csv", "30分钟"),
-                  ("5min", "5min.csv", "5分钟")]
+    levels_cfg = [("daily", "daily.csv", "DF"),
+                  ("30min", "30min.csv", "30F"),
+                  ("5min", "5min.csv", "5F")]
 
     total = len(indices) * len(levels_cfg)
     t0 = time.perf_counter()
@@ -2728,7 +2728,7 @@ def generate_dashboard(data_dir: str = None,
         print(f"  Injected {snap_count} snapshot BSP markers into chart data")
 
     # Collect global signals (1B/1S/2B/2S/3B/3S) across all indices
-    level_labels = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
+    level_labels = {"daily": "DF", "30min": "30F", "5min": "5F"}
     idx_name_map = {i.etf_code: i.etf_name for i in indices}
     global_signals: list[dict] = []
     valid_types = {"1B", "1S", "2B", "2S", "3B", "3S"}
@@ -2776,7 +2776,7 @@ def generate_dashboard(data_dir: str = None,
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
     global_signals = update_signal_snapshots(global_signals)
     type_limits = {"type1": 10, "type2": 5, "type3": 20}
-    levels = ["日线", "30分钟", "5分钟"]
+    levels = ["DF", "30F", "5F"]
 
     # Build type map: etf_code -> "stock" / "broad" / "sector"
     idx_type_map = {i.etf_code: i.type for i in indices}
@@ -2935,7 +2935,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     _wl_codes_set_m = set(watchlist_codes_m)
 
     # Collect global signals for mobile (same logic as desktop)
-    level_labels_m = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
+    level_labels_m = {"daily": "DF", "30min": "30F", "5min": "5F"}
     idx_name_map_m = {i.etf_code: i.etf_name for i in indices}
     idx_type_map_m = {i.etf_code: i.type for i in indices}
     mobile_global_signals: list[dict] = []
@@ -2976,7 +2976,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
     mobile_global_signals = update_signal_snapshots(mobile_global_signals)
     mobile_type_limits = {"type1": 30, "type2": 15, "type3": 60}
-    mobile_levels = ["日线", "30分钟", "5分钟"]
+    mobile_levels = ["DF", "30F", "5F"]
 
     # Split mobile signals into stock vs ETF
     mobile_stock_by_level: dict[str, dict[str, list]] = {
@@ -3027,7 +3027,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     mobile_watchlist_signals_json = json.dumps(mobile_wl_signals, ensure_ascii=False)
 
     # ── Market Thermometer data ──
-    thermo_levels = {"daily": "日线", "30min": "30分钟", "5min": "5分钟"}
+    thermo_levels = {"daily": "DF", "30min": "30F", "5min": "5F"}
     thermo = {}
     total_stocks = len(indices)
     for lk, lv_label in thermo_levels.items():
@@ -3066,10 +3066,10 @@ def generate_mobile_dashboard(data_dir: str = None,
             "sig": {"3B": sig_3b, "PB": sig_pb, "1B": sig_1b, "PS": sig_ps, "3S": sig_3s, "other": sig_other},
         }
 
-    above_30 = thermo.get("30分钟", {}).get("hub", {}).get("above", 0)
-    below_30 = thermo.get("30分钟", {}).get("hub", {}).get("below", 0)
-    buy3_30 = thermo.get("30分钟", {}).get("sig", {}).get("3B", 0)
-    sell3_30 = thermo.get("30分钟", {}).get("sig", {}).get("3S", 0)
+    above_30 = thermo.get("30F", {}).get("hub", {}).get("above", 0)
+    below_30 = thermo.get("30F", {}).get("hub", {}).get("below", 0)
+    buy3_30 = thermo.get("30F", {}).get("sig", {}).get("3B", 0)
+    sell3_30 = thermo.get("30F", {}).get("sig", {}).get("3S", 0)
     above_pct = above_30 / total_stocks * 100 if total_stocks else 0
     below_pct = below_30 / total_stocks * 100 if total_stocks else 0
 
@@ -3143,13 +3143,13 @@ def generate_mobile_dashboard(data_dir: str = None,
         trend_pan_up = not _broken and not trend_up and not trend_dn and '盘整偏多' in _t
         trend_pan_dn = not _broken and not trend_up and not trend_dn and '盘整偏空' in _t
         trend_pan = not _broken and not trend_up and not trend_dn and not trend_pan_up and not trend_pan_dn and '盘整' in _t
-        trend_icon = ('<span style="color:#e3b341" title="日线趋势破坏">⚠</span>' if _broken
-                      else '<span style="color:#f85149" title="日线上涨趋势">▲</span>' if trend_up
-                      else '<span style="color:#3fb950" title="日线下跌趋势">▼</span>' if trend_dn
-                      else '<span style="color:#f0883e" title="日线盘整偏多">◆↑</span>' if trend_pan_up
-                      else '<span style="color:#7ee787" title="日线盘整偏空">◆↓</span>' if trend_pan_dn
-                      else '<span style="color:#d29922" title="日线盘整">◆</span>' if trend_pan
-                      else '<span style="color:#8b949e" title="日线方向不明">—</span>')
+        trend_icon = ('<span style="color:#e3b341" title="DF趋势破坏">⚠</span>' if _broken
+                      else '<span style="color:#f85149" title="DF上涨趋势">▲</span>' if trend_up
+                      else '<span style="color:#3fb950" title="DF下跌趋势">▼</span>' if trend_dn
+                      else '<span style="color:#f0883e" title="DF盘整偏多">◆↑</span>' if trend_pan_up
+                      else '<span style="color:#7ee787" title="DF盘整偏空">◆↓</span>' if trend_pan_dn
+                      else '<span style="color:#d29922" title="DF盘整">◆</span>' if trend_pan
+                      else '<span style="color:#8b949e" title="DF方向不明">—</span>')
         search_text = f'{il["index_name"]} {il.get("etf_code", "")}'.lower()
         tab_parts.append(
             f'<div class="idx-tab{active}" data-search="{search_text}" '
@@ -3225,7 +3225,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 <body>
 <div class="container">
 <h1>缠论交易系统 v2</h1>
-<div class="subtitle">移动版 · 数据 {data_time} · 生成 {gen_time} · 日线→30分→5分</div>
+<div class="subtitle">移动版 · 数据 {data_time} · 生成 {gen_time} · DF→30F→5F</div>
 
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 
@@ -3248,9 +3248,9 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     </div>
   </div>
   <div class="level-tabs" id="levelTabs">
-    <div class="level-tab" onclick="switchLevel('daily')">日线</div>
-    <div class="level-tab active" onclick="switchLevel('30min')">30分钟</div>
-    <div class="level-tab" onclick="switchLevel('5min')">5分钟</div>
+    <div class="level-tab" onclick="switchLevel('daily')">DF</div>
+    <div class="level-tab active" onclick="switchLevel('30min')">30F</div>
+    <div class="level-tab" onclick="switchLevel('5min')">5F</div>
   </div>
   <div class="info-bar" id="infoBar"></div>
   <div id="loadingOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(13,17,23,0.7);z-index:999;align-items:center;justify-content:center"><span style="color:#58a6ff;font-size:15px">加载数据中...</span></div>
@@ -3370,7 +3370,7 @@ let _liveReady = false;
 
 // ─── Mobile Watchlist Panel (自选股最新买卖点) ───
 
-let mgsTab = '30分钟';
+let mgsTab = '30F';
 let mgsExpanded = true;
 let mgsPage = 1;
 const mgsPageSize = {{t1: 10, t2: 5, t3: 20}};
@@ -3380,7 +3380,7 @@ let mgsT3Open = true;
 let mgsCat = 'stock';
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
-  const levels = ['日线', '30分钟', '5分钟'];
+  const levels = ['DF', '30F', '5F'];
   const categories = [
     {{id:'stock', label:'📊 个股'}},
     {{id:'etf', label:'📈 ETF'}},
@@ -3433,13 +3433,13 @@ function renderMobileGlobalSignals() {{
     const _mPanUp = !_mBk && !_mUp && !_mDn && mTrend.includes('盘整偏多');
     const _mPanDn = !_mBk && !_mUp && !_mDn && mTrend.includes('盘整偏空');
     const _mPan = !_mBk && !_mUp && !_mDn && !_mPanUp && !_mPanDn && mTrend.includes('盘整');
-    const mTrendIcon = _mBk ? '<span style="color:#e3b341" title="日线趋势破坏">⚠</span>'
-      : _mUp ? '<span style="color:#f85149" title="日线上涨趋势">▲</span>'
-      : _mDn ? '<span style="color:#3fb950" title="日线下跌趋势">▼</span>'
-      : _mPanUp ? '<span style="color:#f0883e" title="日线盘整偏多">◆↑</span>'
-      : _mPanDn ? '<span style="color:#7ee787" title="日线盘整偏空">◆↓</span>'
-      : _mPan ? '<span style="color:#d29922" title="日线盘整">◆</span>'
-      : '<span style="color:#8b949e" title="日线方向不明">—</span>';
+    const mTrendIcon = _mBk ? '<span style="color:#e3b341" title="DF趋势破坏">⚠</span>'
+      : _mUp ? '<span style="color:#f85149" title="DF上涨趋势">▲</span>'
+      : _mDn ? '<span style="color:#3fb950" title="DF下跌趋势">▼</span>'
+      : _mPanUp ? '<span style="color:#f0883e" title="DF盘整偏多">◆↑</span>'
+      : _mPanDn ? '<span style="color:#7ee787" title="DF盘整偏空">◆↓</span>'
+      : _mPan ? '<span style="color:#d29922" title="DF盘整">◆</span>'
+      : '<span style="color:#8b949e" title="DF方向不明">—</span>';
     let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
     r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
@@ -4285,13 +4285,13 @@ function setupInteraction() {{
 }}
 
 // ─── Market Thermometer ───
-let thermoTab = '30分钟';
+let thermoTab = '30F';
 let thermoExpanded = true;
 function renderThermo() {{
   const el = document.getElementById('marketThermo');
   if (!MARKET_THERMO || !MARKET_THERMO.levels) {{ el.innerHTML = ''; return; }}
   const T = MARKET_THERMO;
-  const levels = ['日线', '30分钟', '5分钟'];
+  const levels = ['DF', '30F', '5F'];
 
   let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden">';
   h += '<div onclick="thermoExpanded=!thermoExpanded;renderThermo()" style="display:flex;align-items:center;padding:8px 10px;cursor:pointer;user-select:none">';

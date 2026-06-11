@@ -119,7 +119,7 @@ class Hub:
     evolution_type: str = ""   # "延伸"/"新生（上）"/"新生（下）"/"扩展"/""
     avg_volume: float = 0.0    # average volume across all strokes in hub
     volume_trend: str = ""     # "shrink"=蓄势 / "expand"=分歧加剧 / "flat"
-    hub_level: str = ""        # level name, e.g. "30分钟中枢" (assigned by classify_hub_evolution)
+    hub_level: str = ""        # level name, e.g. "30F中枢" (assigned by classify_hub_evolution)
     duration_bars: int = 0     # number of K-bars the hub spans
     is_merged: bool = False    # True if this hub resulted from expansion merge
     direction: str = ""        # "上" / "下" / "" (position vs prev hub in same trend)
@@ -185,7 +185,7 @@ class BuySellPoint:
     idx: int = -1  # sequential index, assigned in analyze()
     invalidation_price: float = 0.0  # price that invalidates this signal
     status: str = "active"  # "active" / "invalidated"
-    signal_level: str = ""  # Chanlun theoretical level, e.g. "30分钟级别三买"
+    signal_level: str = ""  # Chanlun theoretical level, e.g. "30F三买"
     invalidation_reason: str = ""  # reason for invalidation
     trend_hub_rank: int = -1  # for 3B/3S: hub position in trend (0=end-of-opposite, 1=1st, ...); -1=N/A
 
@@ -202,7 +202,7 @@ class SegHub:
     evolution_type: str = ""
     direction: str = ""       # "上" / "下" / "" (determined by position vs prev hub)
     trend_seq: int = -1       # sequence number within same-direction trend (0-indexed)
-    hub_level: str = ""        # level name, e.g. "日线中枢" (assigned by classify_seg_hub_evolution)
+    hub_level: str = ""        # level name, e.g. "DF中枢" (assigned by classify_seg_hub_evolution)
 
     @property
     def start_dt(self) -> str:
@@ -4589,33 +4589,33 @@ def cross_level_filter(
         if p.type == "3B":
             if higher_is_up:
                 adjustment = 2
-                label_parts.append("大级别上涨顺势")
+                label_parts.append("上级别上涨顺势")
             elif higher_is_down:
                 adjustment = -3
-                label_parts.append("大级别下跌逆势⚠")
+                label_parts.append("上级别下跌逆势⚠")
             elif higher_is_consolidation:
                 adjustment = -1
-                label_parts.append("大级别盘整")
+                label_parts.append("上级别盘整")
 
         elif p.type == "3S":
             if higher_is_down:
                 adjustment = 2
-                label_parts.append("大级别下跌顺势")
+                label_parts.append("上级别下跌顺势")
             elif higher_is_up:
                 adjustment = -3
-                label_parts.append("大级别上涨逆势⚠")
+                label_parts.append("上级别上涨逆势⚠")
             elif higher_is_consolidation:
                 adjustment = -1
-                label_parts.append("大级别盘整")
+                label_parts.append("上级别盘整")
 
         if higher_has_expansion:
             adjustment -= 1
-            label_parts.append("大级别有扩展")
+            label_parts.append("上级别有扩展")
 
         if adjustment != 0:
             p.strength_score += adjustment
             p.strength_details.append({
-                "dim": "大级别环境",
+                "dim": "上级别环境",
                 "label": "，".join(label_parts),
                 "score": adjustment,
             })
@@ -4728,7 +4728,7 @@ def find_interval_nests(
             f" → {'→'.join(filter(None, [nest.mid_level, nest.small_level]))}"
             f" 精确定位"
             if nest.depth > 1 else
-            f"{nest.big_level}{type_label}{direction_label}（未找到更小级别确认）"
+            f"{nest.big_level}{type_label}{direction_label}（未找到下级别确认）"
         )
         nests.append(nest)
 
@@ -5102,7 +5102,7 @@ def format_report(result: AnalysisResult) -> str:
             "延伸": "→ 高抛低吸做差价",
             "新生（上）": "→ 趋势上行，持仓",
             "新生（下）": "→ 趋势下行，回避",
-            "扩展": "→ 升级为更大中枢，按盘整处理",
+            "扩展": "→ 升级为上级别中枢，按盘整处理",
         }
         for h in result.hubs:
             evo = f" 【{h.evolution_type}】" if h.evolution_type else ""
@@ -5115,7 +5115,7 @@ def format_report(result: AnalysisResult) -> str:
         if has_expansion and result.merged_hubs and len(result.merged_hubs) < len(result.hubs):
             lines.append("")
             lines.append(f"### 合并后中枢（扩展合并视角）")
-            lines.append(f"> 扩展中枢已合并为更大中枢，走势判定基于此视角")
+            lines.append(f"> 扩展中枢已合并为上级别中枢，走势判定基于此视角")
             for mh in result.merged_hubs:
                 lines.append(
                     f"- 合并中枢{mh.idx + 1}：ZG={mh.zg:.3f} ZD={mh.zd:.3f} "
@@ -5178,7 +5178,7 @@ def format_synthesis_report(syn: MultiLevelSynthesis) -> str:
     lines.append("")
 
     lines.append("## 各级别概况")
-    lines.append("| 级别 | 走势类型 | 中枢位置 | DIF区域 | 中枢数 | 信号数 | 最新信号 |")
+    lines.append("| 级别 | 走势 | 中枢位置 | DIF | 中枢数 | 信号数 | 最新信号 |")
     lines.append("|------|---------|---------|---------|--------|--------|---------|")
     for s in syn.level_summary:
         sig_str = s["latest_signal"]["label"] if s["latest_signal"] else "-"
@@ -5194,7 +5194,7 @@ def format_synthesis_report(syn: MultiLevelSynthesis) -> str:
     lines.append("")
 
     if syn.resonance_signals:
-        lines.append(f"## 跨级别共振信号（{len(syn.resonance_signals)} 个）")
+        lines.append(f"## 跨级别共振（{len(syn.resonance_signals)} 个）")
         for r in syn.resonance_signals:
             sigs = " + ".join(
                 f"{s['level']}-{s['label']}({s['confidence']})"
@@ -5205,7 +5205,7 @@ def format_synthesis_report(syn: MultiLevelSynthesis) -> str:
         lines.append("")
 
     if syn.enriched_signals:
-        lines.append(f"## 大级别增强信号（{len(syn.enriched_signals)} 个）")
+        lines.append(f"## 上级别增强信号（{len(syn.enriched_signals)} 个）")
         changed = [s for s in syn.enriched_signals if s["confidence_changed"]]
         if changed:
             lines.append("")
