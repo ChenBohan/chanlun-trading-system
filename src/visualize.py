@@ -1431,6 +1431,7 @@ function renderChart(data) {
   const TIER1_THRESHOLD = maxBspIdx - 1;  // latest 2: full detail
   const TIER2_THRESHOLD = maxBspIdx - 5;  // next 4: compact #N type
   function bspTier(p) {
+    if (p.source === 'snapshot' && p.bsp_idx < 0) return 1;
     if (p.bsp_idx >= TIER1_THRESHOLD) return 1;
     if (p.bsp_idx >= TIER2_THRESHOLD) return 2;
     return 3;
@@ -1439,9 +1440,10 @@ function renderChart(data) {
     const tier = bspTier(p);
     const isT3 = p.type === '3B' || p.type === '3S';
     const effTier = (isT3 && p.status !== 'invalidated' && tier > 1) ? Math.max(tier - 1, 1) : tier;
-    const prefix = isT3 ? '◆' : '#';
-    if (effTier === 3) return prefix + p.bsp_idx;
-    let text = prefix + p.bsp_idx + ' ' + (p.signal_level || p.label);
+    const prefix = isT3 ? '◆' : (p.source === 'snapshot' ? '📌' : '#');
+    const idxStr = p.bsp_idx >= 0 ? p.bsp_idx : '';
+    if (effTier === 3) return prefix + idxStr;
+    let text = prefix + idxStr + ' ' + (p.signal_level || p.label);
     if (effTier === 1) {
       if (p.conf) text += ' [' + (confIcons[p.conf] || p.conf) + ']';
       if (p.ranges && p.ranges.length >= 2) {
@@ -1473,7 +1475,7 @@ function renderChart(data) {
     const isT3 = p.type === '3B' || p.type === '3S';
     let h = '<div style="max-width:420px;font-size:13px;line-height:1.6">';
     const typeColor = p.is_buy ? '#f85149' : '#3fb950';
-    h += '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">#' + p.bsp_idx + ' ' + p.label + '</div>';
+    h += '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">' + (p.source === 'snapshot' ? '📌' : '#' + p.bsp_idx) + ' ' + p.label + '</div>';
     h += '<div style="color:#8b949e;margin:2px 0">日期: ' + (data.dates[p.idx] || '') + ' | 价格: ' + p.price.toFixed(3) + '</div>';
 
     // --- Type-3 buy/sell: hub context panel ---
@@ -3947,8 +3949,9 @@ function renderKline(data) {{
     ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
     ctx.font = mIsT3 ? 'bold 9px sans-serif' : 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mConfIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
-    const mPrefix = mIsT3 ? '◆' : '#';
-    let bspText = mPrefix + p.bsp_idx + ' ' + p.label.substring(0, 2);
+    const mPrefix = mIsT3 ? '◆' : (p.source === 'snapshot' ? '📌' : '#');
+    const mIdxStr = p.bsp_idx >= 0 ? p.bsp_idx : '';
+    let bspText = mPrefix + mIdxStr + ' ' + p.label.substring(0, 2);
     if (p.conf) bspText += (mConfIcons[p.conf] || '');
     if (mIsInv) bspText += '✗';
     else if (mIsPending) bspText += '⏳';
@@ -4118,7 +4121,7 @@ function showBspTooltip(bp, screenX, screenY) {{
   const d = getData();
   const dateStr = d && d.dates && d.dates[bp.idx] ? d.dates[bp.idx] : '';
   const typeColor = bp.is_buy ? '#f85149' : '#3fb950';
-  let h = '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">#' + bp.bsp_idx + ' ' + bp.label;
+  let h = '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">' + (bp.source === 'snapshot' ? '📌' : '#' + bp.bsp_idx) + ' ' + bp.label;
   h += ' <span style="float:right;cursor:pointer;color:#8b949e;font-size:16px" onclick="hideBspTooltip()">✕</span></div>';
   h += '<div style="color:#8b949e;margin:2px 0">日期: ' + dateStr + ' | 价格: ' + bp.price.toFixed(3) + '</div>';
   h += '<table style="width:100%;border-collapse:collapse;margin:4px 0">';

@@ -109,13 +109,18 @@ class Segment:
 
 @dataclass
 class Hub:
-    """A hub/pivot (中枢)."""
+    """A hub/pivot (中枢).
+
+    Per 缠论动力学十一讲 P06: in a structure A+B+C+D+E, the hub is BCD;
+    A (entry stroke) does NOT belong to the hub range.
+    """
     idx: int
     zg: float             # upper bound (min of highs)
     zd: float             # lower bound (max of lows)
     gg: float             # highest price in hub range
     dd: float             # lowest price in hub range
     strokes: list[Stroke] = field(default_factory=list)
+    entry_stroke: Stroke | None = None  # A segment: enters the hub zone, not part of [ZD,ZG]
     evolution_type: str = ""   # "延伸"/"新生（上）"/"新生（下）"/"扩展"/""
     avg_volume: float = 0.0    # average volume across all strokes in hub
     volume_trend: str = ""     # "shrink"=蓄势 / "expand"=分歧加剧 / "flat"
@@ -135,22 +140,22 @@ class Hub:
 
     @property
     def context_direction(self) -> int:
-        """Hub context direction inferred from the first stroke.
+        """Hub context direction inferred from the entry stroke.
 
-        Theory (缠论解析 场景B):
-          - 上涨趋势中的中枢: first stroke is DOWN (下-上-下)
-          - 下跌趋势中的中枢: first stroke is UP (上-下-上)
+        Theory (缠论解析 场景B / 缠论动力学十一讲 P06):
+          - 上涨趋势中的中枢: entry stroke is UP, hub is 下-上-下
+          - 下跌趋势中的中枢: entry stroke is DOWN, hub is 上-下-上
 
         Returns:
-            1  = hub formed in uptrend context (first stroke is down)
-           -1  = hub formed in downtrend context (first stroke is up)
-            0  = unknown (no strokes)
+            1  = hub formed in uptrend context (entry goes up)
+           -1  = hub formed in downtrend context (entry goes down)
+            0  = unknown
         """
+        if self.entry_stroke:
+            return self.entry_stroke.direction
         if not self.strokes:
             return 0
         first_dir = self.strokes[0].direction
-        # First stroke DOWN (-1) → uptrend context → return 1
-        # First stroke UP (1) → downtrend context → return -1
         return -first_dir
 
 
@@ -192,13 +197,17 @@ class BuySellPoint:
 
 @dataclass
 class SegHub:
-    """A hub built from segments (线段中枢), one level above stroke hubs."""
+    """A hub built from segments (线段中枢), one level above stroke hubs.
+
+    Same entry-segment convention as Hub: entry segment is stored separately.
+    """
     idx: int
     zg: float
     zd: float
     gg: float
     dd: float
     segments: list[Segment] = field(default_factory=list)
+    entry_segment: Segment | None = None
     evolution_type: str = ""
     direction: str = ""       # "上" / "下" / "" (determined by position vs prev hub)
     trend_seq: int = -1       # sequence number within same-direction trend (0-indexed)
@@ -998,12 +1007,17 @@ def find_segments(strokes: list[Stroke]) -> list[Segment]:
 # ════════════════════════════════════════════════════════════════════
 # 9. Hub Construction (中枢构建)
 #
-# Rules (108课 §1.4, 图解缠论 §一):
-#   - Hub = price overlap zone of at least 3 consecutive strokes
-#   - ZG = min(highs of 3 strokes), ZD = max(lows of 3 strokes)
-#   - Valid when ZD < ZG
-#   - Extension: subsequent strokes crossing ZD~ZG extend the hub
-#   - GG = highest price, DD = lowest price in hub range
+# Per 缠论动力学十一讲 P06:
+#   Structure: A + B + C + D + E
+#     A = entry stroke (进入段, NOT part of hub)
+#     B, C, D = three overlapping strokes → hub range [ZD, ZG]
+#     E = exit stroke (离开段)
+#   "中枢前面的上涨和下跌是否属于中枢区间，答案是否定的"
+#
+#   ZG = min(highs of B,C,D), ZD = max(lows of B,C,D)
+#   Valid when ZD < ZG
+#   Extension: subsequent strokes crossing ZD~ZG extend the hub
+#   GG = highest price, DD = lowest price in hub strokes
 # ════════════════════════════════════════════════════════════════════
 
 def _stroke_range(s: Stroke) -> tuple[float, float]:
@@ -1015,15 +1029,25 @@ _HUB_MIN_WIDTH_RATIO = 0.005  # 0.5% — skip degenerate hubs with negligible ov
 
 
 def find_hubs(strokes: list[Stroke]) -> list[Hub]:
-    """Build hubs from stroke sequence."""
-    if len(strokes) < 3:
+    """Build hubs from stroke sequence.
+
+    Structure per 缠论动力学十一讲 P06: A + B + C + D + E
+      A = entry stroke (enters the hub zone, NOT part of [ZD, ZG])
+      B, C, D = hub core (three overlapping strokes define the range)
+      E = exit stroke (first stroke leaving the hub zone)
+
+    After E exits, the next scan starts at E+1 (not E), so the exit
+    of one hub is NOT reused as the entry of the next hub.
+    """
+    if len(strokes) < 4:
         return []
 
     hubs = []
     i = 0
 
-    while i < len(strokes) - 2:
-        ranges = [_stroke_range(strokes[k]) for k in range(i, i + 3)]
+    while i < len(strokes) - 3:
+        # strokes[i] = entry (A), strokes[i+1..i+3] = hub (B, C, D)
+        ranges = [_stroke_range(strokes[k]) for k in range(i + 1, i + 4)]
         zg = min(r[0] for r in ranges)
         zd = max(r[1] for r in ranges)
 
@@ -1035,8 +1059,9 @@ def find_hubs(strokes: list[Stroke]) -> list[Hub]:
             i += 1
             continue
 
-        hub_strokes = list(strokes[i:i + 3])
-        j = i + 3
+        entry = strokes[i]
+        hub_strokes = list(strokes[i + 1:i + 4])
+        j = i + 4
 
         while j < len(strokes):
             sj_h, sj_l = _stroke_range(strokes[j])
@@ -1052,8 +1077,11 @@ def find_hubs(strokes: list[Stroke]) -> list[Hub]:
         hubs.append(Hub(
             idx=len(hubs), zg=zg, zd=zd, gg=gg, dd=dd,
             strokes=hub_strokes,
+            entry_stroke=entry,
         ))
-        i = j
+        # j = exit stroke (E); next scan starts at j+1 so E is not
+        # reused as entry of the next hub.
+        i = j + 1
 
     return hubs
 
@@ -1068,20 +1096,17 @@ def _segment_range(seg: Segment) -> tuple[float, float]:
 def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
     """Build hubs from segment sequence (线段中枢).
 
-    Same overlap logic as stroke hubs, but building blocks are segments.
-    3 consecutive segments with price overlap form a hub; subsequent
-    segments that still overlap with [ZD, ZG] extend the hub.
-
-    Theory: 缠论解析 场景B - "三段次级别线段的重叠区间为中枢"
+    Same convention as stroke hubs: A(entry) + B,C,D(core) + E(exit).
+    After E exits, next scan starts at E+1.
     """
-    if len(segments) < 3:
+    if len(segments) < 4:
         return []
 
     hubs = []
     i = 0
 
-    while i < len(segments) - 2:
-        ranges = [_segment_range(segments[k]) for k in range(i, i + 3)]
+    while i < len(segments) - 3:
+        ranges = [_segment_range(segments[k]) for k in range(i + 1, i + 4)]
         zg = min(r[0] for r in ranges)
         zd = max(r[1] for r in ranges)
 
@@ -1089,8 +1114,9 @@ def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
             i += 1
             continue
 
-        hub_segs = list(segments[i:i + 3])
-        j = i + 3
+        entry = segments[i]
+        hub_segs = list(segments[i + 1:i + 4])
+        j = i + 4
 
         while j < len(segments):
             sj_h, sj_l = _segment_range(segments[j])
@@ -1106,8 +1132,10 @@ def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
         hubs.append(SegHub(
             idx=len(hubs), zg=zg, zd=zd, gg=gg, dd=dd,
             segments=hub_segs,
+            entry_segment=entry,
         ))
-        i = j
+        # Exit segment at j; next scan starts at j+1
+        i = j + 1
 
     return hubs
 
@@ -1392,6 +1420,7 @@ def merge_expanded_hubs(hubs: list[Hub], analysis_level: str = "daily") -> list[
                 gg=max(prev.gg, h.gg),
                 dd=min(prev.dd, h.dd),
                 strokes=all_strokes,
+                entry_stroke=prev.entry_stroke,
                 evolution_type="扩展合并",
                 is_merged=True,
                 hub_level=merged_level,
@@ -1406,6 +1435,7 @@ def merge_expanded_hubs(hubs: list[Hub], analysis_level: str = "daily") -> list[
                 gg=max(prev.gg, h.gg),
                 dd=min(prev.dd, h.dd),
                 strokes=all_strokes,
+                entry_stroke=prev.entry_stroke,
                 evolution_type="扩张合并",
                 is_merged=True,
                 hub_level=merged_level,
@@ -1415,6 +1445,7 @@ def merge_expanded_hubs(hubs: list[Hub], analysis_level: str = "daily") -> list[
                 idx=len(merged),
                 zg=h.zg, zd=h.zd, gg=h.gg, dd=h.dd,
                 strokes=list(h.strokes),
+                entry_stroke=h.entry_stroke,
                 evolution_type=h.evolution_type,
                 hub_level=h.hub_level,
             ))
@@ -1444,6 +1475,7 @@ def merge_expanded_seg_hubs(seg_hubs: list[SegHub], analysis_level: str = "daily
                 gg=max(prev.gg, h.gg),
                 dd=min(prev.dd, h.dd),
                 segments=all_segs,
+                entry_segment=prev.entry_segment,
                 evolution_type=h.evolution_type + "合并",
                 hub_level=merged_level,
             )
@@ -1452,6 +1484,7 @@ def merge_expanded_seg_hubs(seg_hubs: list[SegHub], analysis_level: str = "daily
                 idx=len(merged),
                 zg=h.zg, zd=h.zd, gg=h.gg, dd=h.dd,
                 segments=list(h.segments),
+                entry_segment=h.entry_segment,
                 evolution_type=h.evolution_type,
                 hub_level=h.hub_level,
             ))
@@ -1696,15 +1729,44 @@ def assess_trend_completion(
 #   Consolidation divergence: same hub, consecutive exits weaken
 # ════════════════════════════════════════════════════════════════════
 
-def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]:
+def _macd_hist_area(bars: list, start_dt: str, end_dt: str,
+                    direction: int, dt_idx: dict) -> float:
+    """Sum MACD histogram area in a bar range for a given trend direction.
+
+    For downtrend (direction=-1): sum abs(histogram) where histogram < 0
+    For uptrend  (direction= 1): sum histogram where histogram > 0
+    """
+    si = dt_idx.get(start_dt)
+    ei = dt_idx.get(end_dt)
+    if si is None or ei is None or si >= ei:
+        return 0.0
+    area = 0.0
+    for k in range(si, ei + 1):
+        h = bars[k].macd_hist
+        if direction == -1 and h < 0:
+            area += abs(h)
+        elif direction == 1 and h > 0:
+            area += h
+    return area
+
+
+def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub],
+                           bars: list = None) -> list[dict]:
     """Detect trend divergence (趋势背驰).
 
     Groups consecutive same-direction hub shifts, then compares the
     segment before the first hub (a) with segment after the last hub (c).
+
+    MACD area is computed from raw bar histogram over the full interval
+    between hub exit and next hub entry (not just same-direction strokes).
     """
     divergences = []
     if len(hubs) < 2:
         return divergences
+
+    dt_idx: dict = {}
+    if bars:
+        dt_idx = {b.dt: i for i, b in enumerate(bars)}
 
     i = 0
     while i < len(hubs) - 1:
@@ -1730,16 +1792,22 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
         first_hub = hubs[i]
         last_hub = hubs[j]
 
-        # Limit a-segment to strokes between the previous hub and the
-        # first hub of this trend group (not ALL historical strokes).
+        # a-segment: from exit of previous hub to entry of first hub.
+        # Bar range: previous hub's last stroke end → first hub's first
+        # core stroke start.
+        a_start_dt = (hubs[i - 1].strokes[-1].end.dt if i > 0
+                      else bars[0].dt if bars else None)
+        a_end_dt = first_hub.strokes[0].start.dt
+
+        # c-segment: from exit of last hub to entry of next hub (or data end).
+        c_start_dt = last_hub.strokes[-1].end.dt
+        c_end_dt = (hubs[j + 1].strokes[0].start.dt if j + 1 < len(hubs)
+                    else bars[-1].dt if bars else None)
+
+        # Keep stroke-based seg_a/seg_c for DIF, volume, structure, etc.
         a_start_idx = hubs[i - 1].strokes[-1].idx if i > 0 else 0
         first_hub_start = first_hub.strokes[0].idx
 
-        # Trim a-segment past any hidden hubs (3+ consecutive strokes
-        # with overlap that were filtered by the minimum-width threshold).
-        # Per 缠中说禅走势中枢定理一, the connecting segment between two
-        # same-level hubs must be sub-level and cannot contain a same-level
-        # hub internally.
         all_in_a = [s for s in strokes
                     if a_start_idx <= s.idx < first_hub_start]
         if len(all_in_a) >= 3:
@@ -1768,13 +1836,12 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
                     k += 1
             if last_hidden_end >= 0:
                 a_start_idx = all_in_a[last_hidden_end].idx
+                a_start_dt = all_in_a[last_hidden_end].start.dt
 
         seg_a = [s for s in strokes
                  if a_start_idx <= s.idx < first_hub_start
                  and s.direction == trend_dir]
 
-        # Limit c-segment to strokes between the last hub and the next
-        # hub (or end of data).
         c_end_idx = hubs[j + 1].strokes[0].idx if j + 1 < len(hubs) else strokes[-1].idx + 1
         seg_c = [s for s in strokes
                  if s.idx > last_hub.strokes[-1].idx
@@ -1782,9 +1849,6 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
                  and s.direction == trend_dir]
 
         if seg_a and seg_c:
-            # c-segment must extend beyond last hub to confirm trend continuation.
-            # Downtrend: c's low must break below last_hub.zd;
-            # Uptrend: c's high must break above last_hub.zg.
             if trend_dir == -1:
                 c_extreme = min(s.end.low for s in seg_c)
                 if c_extreme >= last_hub.zd:
@@ -1796,8 +1860,17 @@ def check_trend_divergence(strokes: list[Stroke], hubs: list[Hub]) -> list[dict]
                     i = j + 1
                     continue
 
-            a_area = sum(s.macd_area for s in seg_a)
-            c_area = sum(s.macd_area for s in seg_c)
+            # Bar-level MACD histogram area (full interval, not just
+            # same-direction strokes).
+            if bars and a_start_dt and a_end_dt and c_start_dt and c_end_dt:
+                a_area = _macd_hist_area(bars, a_start_dt, a_end_dt,
+                                         trend_dir, dt_idx)
+                c_area = _macd_hist_area(bars, c_start_dt, c_end_dt,
+                                         trend_dir, dt_idx)
+            else:
+                a_area = sum(s.macd_area for s in seg_a)
+                c_area = sum(s.macd_area for s in seg_c)
+
             if a_area > 0 and c_area < a_area:
                 area_ratio = c_area / a_area
                 area_diverged = area_ratio < 0.9
@@ -4898,7 +4971,7 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
     # [9] Divergence detection — use merged hubs for trend divergence
     #     so that expanded hubs are already combined and the result is
     #     consistent with determine_trend().
-    trend_divs = check_trend_divergence(strokes, result.merged_hubs)
+    trend_divs = check_trend_divergence(strokes, result.merged_hubs, bars=bars)
     consol_divs = check_consolidation_divergence(strokes, hubs)
     result.divergences = trend_divs + consol_divs
 
