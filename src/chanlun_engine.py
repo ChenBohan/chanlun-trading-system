@@ -1079,9 +1079,11 @@ def find_hubs(strokes: list[Stroke]) -> list[Hub]:
             strokes=hub_strokes,
             entry_stroke=entry,
         ))
-        # j = exit stroke (E); next scan starts at j+1 so E is not
-        # reused as entry of the next hub.
-        i = j + 1
+        # j = exit stroke (E); reuse as entry (A) of the next hub.
+        # Per 缠论: the departure stroke of one hub becomes the approach
+        # stroke of the next — skipping it (j+1) loses valid hubs when
+        # strokes are tight (e.g. 天孚通信 S194-S197 after Hub 20).
+        i = j
 
     return hubs
 
@@ -1134,8 +1136,8 @@ def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
             segments=hub_segs,
             entry_segment=entry,
         ))
-        # Exit segment at j; next scan starts at j+1
-        i = j + 1
+        # Exit segment at j; reuse as entry of next hub (same as stroke hubs)
+        i = j
 
     return hubs
 

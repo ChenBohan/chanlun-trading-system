@@ -313,6 +313,7 @@ def _inject_snapshot_bsp(all_data: dict) -> int:
                 "inv_reason": sig.get("inv_reason", ""),
                 "hub_rank": sig.get("hub_rank", -1),
                 "hub_idx": -1, "inv_price": 0,
+                "signal_level": sig.get("signal_level", ""),
                 "source": "snapshot",
                 "dt": dt,
             }
@@ -925,7 +926,7 @@ let chart = null;
 
 // ─── Unified Signals Panel (个股/ETF/自选股 × DF/30F/5F) ───
 let spCategory = 'stock';
-let spLevel = '30F';
+let spLevel = 'DF';
 let spExpanded = true;
 let spT1Open = false;
 let spT2Open = false;
@@ -987,7 +988,7 @@ function renderSignalsPanel() {
       : _isPan ? '<span style="color:#d29922" title="DF盘整">◆</span>'
       : '<span style="color:#8b949e" title="DF方向不明">—</span>';
     const snapBadge = isSnapshot ? ' <span title="历史快照：曾于' + (s.first_seen||'') + '发现" style="font-size:10px;color:#d29922;cursor:help">📸</span>' : '';
-    let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;' + rowOpacity + '">';
+    let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;white-space:nowrap;' + rowOpacity + '">';
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
     r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="DF:' + trend + '">' + s.etf_name + '</a></td>';
     r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + snapBadge + '</td>';
@@ -1016,13 +1017,13 @@ function renderSignalsPanel() {
     const cnt = signals.length;
     const arrow = isOpen ? '▼' : '▶';
     const cntBadge = cnt > 0 ? ' <span style="font-size:11px;color:#8b949e;font-weight:400">' + cnt + '个</span>' : '';
-    let t = '<div style="margin-bottom:6px">';
+    let t = '<div style="margin-bottom:6px;overflow-x:auto">';
     t += '<h4 onclick="' + toggleVar + '=!' + toggleVar + ';renderSignalsPanel()" style="color:#c9d1d9;margin:12px 0 6px;font-size:14px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px">';
     t += '<span style="font-size:10px;color:#8b949e;transition:transform 0.2s">' + arrow + '</span> ' + title + cntBadge;
     t += '</h4>';
     if (isOpen) {
       t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden">';
-      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px;white-space:nowrap">';
       t += '<th style="padding:8px;text-align:left">时间</th>';
       t += '<th style="padding:8px;text-align:left">标的</th>';
       t += '<th style="padding:8px;text-align:center">类型</th>';
@@ -3383,7 +3384,7 @@ let _liveReady = false;
 
 // ─── Mobile Watchlist Panel (自选股最新买卖点) ───
 
-let mgsTab = '30F';
+let mgsTab = 'DF';
 let mgsExpanded = true;
 let mgsPage = 1;
 const mgsPageSize = {{t1: 10, t2: 5, t3: 20}};
@@ -3453,7 +3454,7 @@ function renderMobileGlobalSignals() {{
       : _mPanDn ? '<span style="color:#7ee787" title="DF盘整偏空">◆↓</span>'
       : _mPan ? '<span style="color:#d29922" title="DF盘整">◆</span>'
       : '<span style="color:#8b949e" title="DF方向不明">—</span>';
-    let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;${{rowOpacity}}">`;
+    let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;white-space:nowrap;${{rowOpacity}}">`;
     r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
@@ -3484,7 +3485,7 @@ function renderMobileGlobalSignals() {{
     if (isOpen) {{
       t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
       t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
-      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px;white-space:nowrap">';
       t += '<th style="padding:4px;text-align:left">时间</th>';
       t += '<th style="padding:4px;text-align:left">标的</th>';
       t += '<th style="padding:4px;text-align:center">类型</th>';
