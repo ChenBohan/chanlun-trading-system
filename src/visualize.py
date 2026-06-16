@@ -931,6 +931,7 @@ let spExpanded = true;
 let spT1Open = false;
 let spT2Open = false;
 let spT3Open = true;
+let spTrendHubOpen = true;
 
 function getSignalSource(cat) {
   if (cat === 'stock') return SIGNAL_DATA.stock || {};
@@ -1046,8 +1047,71 @@ function renderSignalsPanel() {
     return t;
   }
 
+  function trendHubRow(th, i) {
+    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+    const isUp = th.direction === '上涨';
+    const dirColor = isUp ? '#f85149' : '#3fb950';
+    const dirIcon = isUp ? '📈' : '📉';
+    const idxInfo = INDEX_LIST.find(x => x.etf_code === th.etf_code);
+    const trend = idxInfo ? (idxInfo.trend || '') : '';
+    const _isBroken = trend.includes('破坏');
+    const _isUp = !_isBroken && trend.includes('上涨');
+    const _isDown = !_isBroken && trend.includes('下跌');
+    const trendIcon = _isBroken ? '<span style="color:#e3b341" title="DF趋势破坏">⚠</span>'
+      : _isUp ? '<span style="color:#f85149" title="DF上涨趋势">▲</span>'
+      : _isDown ? '<span style="color:#3fb950" title="DF下跌趋势">▼</span>'
+      : '<span style="color:#8b949e" title="DF方向不明">—</span>';
+    const rkLabels = {2:'②第2', 3:'③第3', 4:'④第4', 5:'⑤第5'};
+    const rkColors = {2:'#e3b341', 3:'#d29922', 4:'#da3633', 5:'#da3633'};
+    const rkStr = rkLabels[th.rank] || '⑥+第' + th.rank;
+    const rkClr = rkColors[th.rank] || '#6e7681';
+    const zRange = th.zd.toFixed(2) + ' ~ ' + th.zg.toFixed(2);
+    let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;white-space:nowrap">';
+    r += '<td style="padding:6px 8px;font-family:monospace;font-size:12px">' + (th.end_dt || '-') + '</td>';
+    r += '<td style="padding:6px 8px;font-weight:600">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + th.etf_code + '\');selectLevel(\'' + (th.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer">' + th.etf_name + '</a></td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + dirColor + '">' + dirIcon + ' ' + th.direction + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-weight:600;color:' + rkClr + '">' + rkStr + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-size:12px;color:#8b949e">' + zRange + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center;font-size:12px;color:#8b949e">' + (th.evo || '-') + '</td>';
+    r += '</tr>';
+    return r;
+  }
+
+  function trendHubTable(title, hubs, toggleVar, isOpen) {
+    const cnt = hubs.length;
+    const arrow = isOpen ? '▼' : '▶';
+    const cntBadge = cnt > 0 ? ' <span style="font-size:11px;color:#8b949e;font-weight:400">' + cnt + '个</span>' : '';
+    let upCnt = 0, dnCnt = 0;
+    hubs.forEach(th => { if (th.direction === '上涨') upCnt++; else dnCnt++; });
+    let dirBadge = '';
+    if (upCnt > 0) dirBadge += ' · <span style="color:#f85149;font-size:11px">' + upCnt + '上涨</span>';
+    if (dnCnt > 0) dirBadge += ' · <span style="color:#3fb950;font-size:11px">' + dnCnt + '下跌</span>';
+    let t = '<div style="margin-bottom:6px;overflow-x:auto">';
+    t += '<h4 onclick="' + toggleVar + '=!' + toggleVar + ';renderSignalsPanel()" style="color:#c9d1d9;margin:12px 0 6px;font-size:14px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px">';
+    t += '<span style="font-size:10px;color:#8b949e;transition:transform 0.2s">' + arrow + '</span> ' + title + cntBadge + dirBadge;
+    t += '</h4>';
+    if (isOpen) {
+      t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px;white-space:nowrap">';
+      t += '<th style="padding:8px;text-align:left">结束时间</th>';
+      t += '<th style="padding:8px;text-align:left">标的</th>';
+      t += '<th style="padding:8px;text-align:center">方向</th>';
+      t += '<th style="padding:8px;text-align:center">位次</th>';
+      t += '<th style="padding:8px;text-align:center">中枢区间</th>';
+      t += '<th style="padding:8px;text-align:center">演化</th>';
+      t += '</tr></thead><tbody>';
+      hubs.forEach((th, i) => { t += trendHubRow(th, i); });
+      if (hubs.length === 0) {
+        t += '<tr><td colspan="6" style="padding:12px;text-align:center;color:#484f58">暂无趋势中枢</td></tr>';
+      }
+      t += '</tbody></table>';
+    }
+    t += '</div>';
+    return t;
+  }
+
   // Count totals for each category
-  let totalAll = 0, buyCnt = 0, sellCnt = 0;
+  let totalAll = 0, buyCnt = 0, sellCnt = 0, hubCnt = 0;
   categories.forEach(cat => {
     const src = getSignalSource(cat.id);
     levels.forEach(lv => {
@@ -1057,8 +1121,10 @@ function renderSignalsPanel() {
         totalAll += arr.length;
         arr.forEach(s => { if (s.type && s.type.endsWith('B')) buyCnt++; else sellCnt++; });
       });
+      hubCnt += (d.trend_hubs || []).length;
     });
   });
+  totalAll += hubCnt;
 
   let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden">';
   h += '<div onclick="spExpanded=!spExpanded;renderSignalsPanel()" style="display:flex;align-items:center;padding:10px 16px;cursor:pointer;user-select:none">';
@@ -1066,6 +1132,7 @@ function renderSignalsPanel() {
   h += ' <span style="font-size:12px;color:#8b949e;font-weight:400">共 ' + totalAll + ' 个';
   if (buyCnt > 0) h += ' · <span style="color:#f85149">' + buyCnt + '买</span>';
   if (sellCnt > 0) h += ' · <span style="color:#3fb950">' + sellCnt + '卖</span>';
+  if (hubCnt > 0) h += ' · <span style="color:#e3b341">' + hubCnt + '中枢</span>';
   h += '</span></h3>';
   h += '<span style="color:#8b949e;font-size:12px;transition:transform 0.2s;transform:rotate(' + (spExpanded ? '180' : '0') + 'deg)">▼</span>';
   h += '</div>';
@@ -1080,7 +1147,7 @@ function renderSignalsPanel() {
       let catTotal = 0;
       levels.forEach(lv => {
         const d = src[lv] || {};
-        catTotal += (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
+        catTotal += (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length + (d.trend_hubs||[]).length;
       });
       const active = cat.id === spCategory;
       const bg = active ? '#21262d' : 'transparent';
@@ -1095,7 +1162,7 @@ function renderSignalsPanel() {
     h += '<div style="display:flex;gap:6px;margin-bottom:8px">';
     levels.forEach(lv => {
       const d = currentSrc[lv] || {};
-      const total = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
+      const total = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length + (d.trend_hubs||[]).length;
       const active = lv === spLevel;
       const bg = active ? '#1c2333' : 'transparent';
       const clr = active ? '#c9d1d9' : '#6e7681';
@@ -1109,6 +1176,7 @@ function renderSignalsPanel() {
     h += spTable('🔴 第一类买卖点（趋势背驰）', data.type1 || [], false, 'spT1Open', spT1Open);
     h += spTable('🟠 第二类买卖点（回调确认）', data.type2 || [], false, 'spT2Open', spT2Open);
     h += spTable('🔵 第三类买卖点（中枢突破）', data.type3 || [], true, 'spT3Open', spT3Open);
+    h += trendHubTable('🏗 趋势中枢监控（位次≥2）', data.trend_hubs || [], 'spTrendHubOpen', spTrendHubOpen);
     h += '</div>';
   }
   h += '</div>';
@@ -2699,6 +2767,69 @@ def _reclassify_dep_pb(all_data: dict):
 
 
 # ════════════════════════════════════════════════════════════════════
+# Trend Hub Collection (shared by desktop & mobile)
+# ════════════════════════════════════════════════════════════════════
+
+def _collect_trend_hubs(all_data: dict, idx_name_map: dict,
+                        level_labels: dict) -> list[dict]:
+    """Collect hubs with trend_seq >= 1 (rank >= 2) across all indices/levels.
+
+    Returns a list sorted by end_dt descending (most recent first).
+    """
+    entries: list[dict] = []
+    for key, data in all_data.items():
+        parts = key.rsplit("_", 1)
+        if len(parts) != 2:
+            continue
+        etf_code, level_key = parts
+        etf_name = idx_name_map.get(etf_code, etf_code)
+        level_cn = level_labels.get(level_key, level_key)
+        dates = data.get("dates", [])
+        for h in data.get("hubs", []):
+            if h.get("trend_seq", -1) < 1:
+                continue
+            direction = h.get("direction", "")
+            if direction not in ("上", "下"):
+                continue
+            rank = h["trend_seq"] + 1
+            start_dt = dates[h["x0"]] if h["x0"] < len(dates) else ""
+            end_dt = dates[h["x1"]] if h["x1"] < len(dates) else ""
+            entries.append({
+                "etf_code": etf_code,
+                "etf_name": etf_name,
+                "level": level_cn,
+                "level_key": level_key,
+                "direction": "上涨" if direction == "上" else "下跌",
+                "rank": rank,
+                "zg": round(h["zg"], 3),
+                "zd": round(h["zd"], 3),
+                "start_dt": start_dt,
+                "end_dt": end_dt,
+                "evo": h.get("evo", ""),
+                "hub_level": h.get("hub_level", ""),
+            })
+    entries.sort(key=lambda x: x["end_dt"], reverse=True)
+    return entries
+
+
+def _split_trend_hubs(trend_hub_all: list[dict], idx_type_map: dict,
+                      levels: list[str], limit: int = 30
+                      ) -> tuple[dict, dict]:
+    """Split trend hubs into stock vs ETF buckets by level."""
+    stock: dict[str, dict[str, list]] = {lv: {"trend_hubs": []} for lv in levels}
+    etf: dict[str, dict[str, list]] = {lv: {"trend_hubs": []} for lv in levels}
+    for th in trend_hub_all:
+        lv = th["level"]
+        if lv not in stock:
+            continue
+        item_type = idx_type_map.get(th["etf_code"], "stock")
+        target = stock if item_type == "stock" else etf
+        if len(target[lv]["trend_hubs"]) < limit:
+            target[lv]["trend_hubs"].append(th)
+    return stock, etf
+
+
+# ════════════════════════════════════════════════════════════════════
 # Generate HTML
 # ════════════════════════════════════════════════════════════════════
 
@@ -2820,6 +2951,13 @@ def generate_dashboard(data_dir: str = None,
         if len(target[lv][bucket]) < type_limits[bucket]:
             target[lv][bucket].append(s)
 
+    # Collect trend hubs (位次>=2) and merge into signal buckets
+    trend_hub_all = _collect_trend_hubs(all_data, idx_name_map, level_labels)
+    th_stock, th_etf = _split_trend_hubs(trend_hub_all, idx_type_map, levels)
+    for lv in levels:
+        stock_signals_by_level[lv]["trend_hubs"] = th_stock[lv]["trend_hubs"]
+        etf_signals_by_level[lv]["trend_hubs"] = th_etf[lv]["trend_hubs"]
+
     # Build watchlist-specific signals (pre-filtered, generous limits)
     _wl_path_early = os.path.join(_PROJECT_ROOT, "config", "watchlist.json")
     _wl_codes_set: set[str] = set()
@@ -2829,7 +2967,7 @@ def generate_dashboard(data_dir: str = None,
             _wl_codes_set = {item["etf_code"] for item in _wl_early.get("watchlist", [])}
     wl_type_limits = {"type1": 10, "type2": 5, "type3": 10}
     watchlist_signals_by_level: dict[str, dict[str, list]] = {
-        lv: {"type1": [], "type2": [], "type3": []} for lv in levels
+        lv: {"type1": [], "type2": [], "type3": [], "trend_hubs": []} for lv in levels
     }
     if _wl_codes_set:
         for s in global_signals:
@@ -2846,6 +2984,13 @@ def generate_dashboard(data_dir: str = None,
                 bucket = "type3"
             if len(watchlist_signals_by_level[lv][bucket]) < wl_type_limits[bucket]:
                 watchlist_signals_by_level[lv][bucket].append(s)
+    if _wl_codes_set:
+        for th in trend_hub_all:
+            if th["etf_code"] not in _wl_codes_set:
+                continue
+            lv = th["level"]
+            if lv in watchlist_signals_by_level and len(watchlist_signals_by_level[lv]["trend_hubs"]) < 30:
+                watchlist_signals_by_level[lv]["trend_hubs"].append(th)
 
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -2994,10 +3139,10 @@ def generate_mobile_dashboard(data_dir: str = None,
 
     # Split mobile signals into stock vs ETF
     mobile_stock_by_level: dict[str, dict[str, list]] = {
-        lv: {"type1": [], "type2": [], "type3": []} for lv in mobile_levels
+        lv: {"type1": [], "type2": [], "type3": [], "trend_hubs": []} for lv in mobile_levels
     }
     mobile_etf_by_level: dict[str, dict[str, list]] = {
-        lv: {"type1": [], "type2": [], "type3": []} for lv in mobile_levels
+        lv: {"type1": [], "type2": [], "type3": [], "trend_hubs": []} for lv in mobile_levels
     }
     for s in mobile_global_signals:
         lv = s["level"]
@@ -3016,12 +3161,20 @@ def generate_mobile_dashboard(data_dir: str = None,
             target = mobile_etf_by_level
         if len(target[lv][bucket]) < mobile_type_limits[bucket]:
             target[lv][bucket].append(s)
+
+    # Collect trend hubs for mobile
+    m_trend_hub_all = _collect_trend_hubs(all_data, idx_name_map_m, level_labels_m)
+    m_th_stock, m_th_etf = _split_trend_hubs(m_trend_hub_all, idx_type_map_m, mobile_levels, limit=60)
+    for lv in mobile_levels:
+        mobile_stock_by_level[lv]["trend_hubs"] = m_th_stock[lv]["trend_hubs"]
+        mobile_etf_by_level[lv]["trend_hubs"] = m_th_etf[lv]["trend_hubs"]
+
     mobile_global_signals_json = json.dumps({"stock": mobile_stock_by_level, "etf": mobile_etf_by_level}, ensure_ascii=False)
 
     # Build watchlist-specific signals for mobile (pre-filtered)
     mobile_wl_type_limits = {"type1": 30, "type2": 30, "type3": 30}
     mobile_wl_signals: dict[str, dict[str, list]] = {
-        lv: {"type1": [], "type2": [], "type3": []} for lv in mobile_levels
+        lv: {"type1": [], "type2": [], "type3": [], "trend_hubs": []} for lv in mobile_levels
     }
     if _wl_codes_set_m:
         for s in mobile_global_signals:
@@ -3038,6 +3191,13 @@ def generate_mobile_dashboard(data_dir: str = None,
                 bucket = "type3"
             if len(mobile_wl_signals[lv][bucket]) < mobile_wl_type_limits[bucket]:
                 mobile_wl_signals[lv][bucket].append(s)
+    if _wl_codes_set_m:
+        for th in m_trend_hub_all:
+            if th["etf_code"] not in _wl_codes_set_m:
+                continue
+            lv = th["level"]
+            if lv in mobile_wl_signals and len(mobile_wl_signals[lv]["trend_hubs"]) < 60:
+                mobile_wl_signals[lv]["trend_hubs"].append(th)
     mobile_watchlist_signals_json = json.dumps(mobile_wl_signals, ensure_ascii=False)
 
     # ── Market Thermometer data ──
@@ -3391,6 +3551,7 @@ const mgsPageSize = {{t1: 10, t2: 5, t3: 20}};
 let mgsT1Open = false;
 let mgsT2Open = false;
 let mgsT3Open = true;
+let mgsTrendHubOpen = true;
 let mgsCat = 'stock';
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
@@ -3411,7 +3572,7 @@ function renderMobileGlobalSignals() {{
     return WATCHLIST_SIGNALS || {{}};
   }}
 
-  let totalAll = 0, buyCnt = 0, sellCnt = 0;
+  let totalAll = 0, buyCnt = 0, sellCnt = 0, hubCnt = 0;
   categories.forEach(cat => {{
     const src = getMobileSrc(cat.id);
     levels.forEach(lv => {{
@@ -3421,8 +3582,10 @@ function renderMobileGlobalSignals() {{
         totalAll += arr.length;
         arr.forEach(s => {{ if (s.type && s.type.endsWith('B')) buyCnt++; else sellCnt++; }});
       }});
+      hubCnt += (d.trend_hubs || []).length;
     }});
   }});
+  totalAll += hubCnt;
   function mgsRow(s, i, isType3) {{
     const _mgsSnap = s.source === 'snapshot';
     const bg = _mgsSnap ? '#1a1510' : (i % 2 === 0 ? '#0d1117' : '#161b22');
@@ -3505,12 +3668,74 @@ function renderMobileGlobalSignals() {{
     return t;
   }}
 
+  function mgsTrendHubRow(th, i) {{
+    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+    const isUp = th.direction === '上涨';
+    const dirClr = isUp ? '#f85149' : '#3fb950';
+    const dirIcon = isUp ? '📈' : '📉';
+    const mIdxInfo = INDEX_LIST.find(x => x.etf_code === th.etf_code);
+    const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
+    const _mBk = mTrend.includes('破坏');
+    const _mUp = !_mBk && mTrend.includes('上涨');
+    const _mDn = !_mBk && mTrend.includes('下跌');
+    const mTrendIcon = _mBk ? '<span style="color:#e3b341">⚠</span>'
+      : _mUp ? '<span style="color:#f85149">▲</span>'
+      : _mDn ? '<span style="color:#3fb950">▼</span>'
+      : '<span style="color:#8b949e">—</span>';
+    const rkL = {{2:'②', 3:'③', 4:'④', 5:'⑤'}};
+    const rkC = {{2:'#e3b341', 3:'#d29922', 4:'#da3633', 5:'#da3633'}};
+    const rkS = rkL[th.rank] || '⑥+';
+    const rkClr = rkC[th.rank] || '#6e7681';
+    const dtShort = th.end_dt ? th.end_dt.substring(5) : '-';
+    const zRange = th.zd.toFixed(2) + '~' + th.zg.toFixed(2);
+    let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;white-space:nowrap">`;
+    r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px">${{dtShort}}</td>`;
+    r += `<td style="padding:3px 4px;font-weight:600">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{th.etf_code}}');switchLevel('${{th.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{th.etf_name}}</a></td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{dirClr}};font-size:10px">${{dirIcon}}${{th.direction}}</td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-weight:600;color:${{rkClr}};font-size:10px">${{rkS}}</td>`;
+    r += `<td style="padding:3px 4px;text-align:center;font-size:9px;color:#8b949e">${{zRange}}</td>`;
+    r += '</tr>';
+    return r;
+  }}
+
+  function mgsTrendHubTable(title, hubs, toggleVar, isOpen) {{
+    const cnt = hubs.length;
+    const arrow = isOpen ? '▼' : '▶';
+    let upC = 0, dnC = 0;
+    hubs.forEach(th => {{ if (th.direction === '上涨') upC++; else dnC++; }});
+    let dirBadge = '';
+    if (upC > 0) dirBadge += ' <span style="color:#f85149;font-size:10px">' + upC + '↑</span>';
+    if (dnC > 0) dirBadge += ' <span style="color:#3fb950;font-size:10px">' + dnC + '↓</span>';
+    let t = '<div style="margin-bottom:4px">';
+    t += '<div onclick="' + toggleVar + '=!' + toggleVar + ';renderMobileGlobalSignals()" style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px">';
+    t += '<span style="font-size:9px;color:#8b949e">' + arrow + '</span> ' + title + ' (' + cnt + ')' + dirBadge + '</div>';
+    if (isOpen) {{
+      t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+      t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px;white-space:nowrap">';
+      t += '<th style="padding:4px;text-align:left">时间</th>';
+      t += '<th style="padding:4px;text-align:left">标的</th>';
+      t += '<th style="padding:4px;text-align:center">方向</th>';
+      t += '<th style="padding:4px;text-align:center">位次</th>';
+      t += '<th style="padding:4px;text-align:center">中枢区间</th>';
+      t += '</tr></thead><tbody>';
+      hubs.forEach((th, i) => {{ t += mgsTrendHubRow(th, i); }});
+      if (hubs.length === 0) {{
+        t += '<tr><td colspan="5" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无趋势中枢</td></tr>';
+      }}
+      t += '</tbody></table></div>';
+    }}
+    t += '</div>';
+    return t;
+  }}
+
   let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden">';
   h += '<div onclick="mgsExpanded=!mgsExpanded;renderMobileGlobalSignals()" style="display:flex;align-items:center;padding:8px 10px;cursor:pointer;user-select:none">';
   h += '<span style="color:#c9d1d9;font-size:12px;font-weight:bold;flex:1">📡 最新买卖点';
   h += ' <span style="font-size:10px;color:#8b949e;font-weight:400">' + totalAll + '个';
   if (buyCnt > 0) h += ' · <span style="color:#f85149">' + buyCnt + '买</span>';
   if (sellCnt > 0) h += ' · <span style="color:#3fb950">' + sellCnt + '卖</span>';
+  if (hubCnt > 0) h += ' · <span style="color:#e3b341">' + hubCnt + '中枢</span>';
   h += '</span></span>';
   h += '<span style="color:#8b949e;font-size:10px;transition:transform 0.2s;transform:rotate(' + (mgsExpanded ? '180' : '0') + 'deg)">▼</span>';
   h += '</div>';
@@ -3525,7 +3750,7 @@ function renderMobileGlobalSignals() {{
     let catTotal = 0;
     levels.forEach(lv => {{
       const d = src[lv] || {{}};
-      catTotal += (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
+      catTotal += (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length + (d.trend_hubs||[]).length;
     }});
     const active = cat.id === mgsCat;
     const bg = active ? '#21262d' : 'transparent';
@@ -3540,7 +3765,7 @@ function renderMobileGlobalSignals() {{
   h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
   levels.forEach(lv => {{
     const d = currentSrc[lv] || {{}};
-    const total = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
+    const total = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length + (d.trend_hubs||[]).length;
     const active = lv === mgsTab;
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
@@ -3566,6 +3791,7 @@ function renderMobileGlobalSignals() {{
   h += mgsTable('🔴 第一类买卖点', gT1, false, 'mgsT1Open', mgsT1Open);
   h += mgsTable('🟠 第二类买卖点', gT2, false, 'mgsT2Open', mgsT2Open);
   h += mgsTable('🔵 第三类买卖点', gT3, true, 'mgsT3Open', mgsT3Open);
+  h += mgsTrendHubTable('🏗 趋势中枢（位次≥2）', data.trend_hubs || [], 'mgsTrendHubOpen', mgsTrendHubOpen);
   if (gTotalPages > 1) {{
     h += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:8px 0 4px">';
     for (let pg = 1; pg <= gTotalPages; pg++) {{
