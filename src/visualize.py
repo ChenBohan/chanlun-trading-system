@@ -906,9 +906,10 @@ function loadChartData(key) {
   });
 }
 
-// Load live.js for delta merge
+// Deferred live.js loading — waits until first chart renders to avoid blocking startup
 let _liveReady = false;
-(function() {
+function _loadLiveJs() {
+  if (_liveReady) return;
   const ls = document.createElement('script');
   ls.src = 'data/live.js';
   ls.onload = () => {
@@ -923,7 +924,7 @@ let _liveReady = false;
   };
   ls.onerror = () => { _liveReady = true; };
   document.head.appendChild(ls);
-})();
+}
 
 // 确保默认选择有数据文件的指数
 const coreIndices = ["510300", "510050", "510500", "512100", "159915", "588000", "513180", "513100"];
@@ -1265,6 +1266,7 @@ async function init() {
   chart = echarts.init(document.getElementById('chart-container'));
   window.addEventListener('resize', () => chart.resize());
   await render();
+  prefetchLevels(currentIndex);
 }
 
 let navExpanded = false;
@@ -1294,6 +1296,15 @@ function selectIndex(code) {
   if (idx) document.getElementById('current-asset-label').textContent = formatAssetLabel(idx);
   if (navExpanded) toggleNav();
   render();
+  prefetchLevels(code);
+}
+
+function prefetchLevels(code) {
+  const levels = ['daily', '30min', '5min'];
+  levels.forEach(lv => {
+    const k = code + '_' + lv;
+    if (!DATA_CACHE[k] && DATA_KEYS.indexOf(k) >= 0) loadChartData(k);
+  });
 }
 
 function selectLevel(level) {
@@ -1316,6 +1327,7 @@ async function render() {
   updateConclusionBar(data);
   updateStructBar(data);
   renderChart(data);
+  if (!_liveReady) _loadLiveJs();
 }
 
 function updateConclusionBar(data) {
@@ -3113,6 +3125,9 @@ def generate_mobile_dashboard(data_dir: str = None,
 
     # Generate live.js for delta deployment
     generate_live_js(data_out_dir, all_data)
+
+    # Auto-save baseline after full dashboard so subsequent live.js stays minimal
+    save_deploy_baseline(data_out_dir, all_data)
 
     data_keys_json = json.dumps(sorted(all_data.keys()), ensure_ascii=False)
     index_list_json = json.dumps(index_list, ensure_ascii=False)
