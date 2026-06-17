@@ -932,6 +932,8 @@ let spT1Open = false;
 let spT2Open = false;
 let spT3Open = true;
 let spTrendHubOpen = true;
+let spPage = 1;
+const SP_PAGE_SIZE = 10;
 
 function getSignalSource(cat) {
   if (cat === 'stock') return SIGNAL_DATA.stock || {};
@@ -1153,7 +1155,7 @@ function renderSignalsPanel() {
       const bg = active ? '#21262d' : 'transparent';
       const clr = active ? '#58a6ff' : '#8b949e';
       const border = active ? '2px solid #58a6ff' : '2px solid transparent';
-      h += `<button onclick="spCategory='${cat.id}';renderSignalsPanel()" style="padding:8px 18px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:14px;font-weight:600;border-radius:6px 6px 0 0">${cat.label} (${catTotal})</button>`;
+      h += `<button onclick="spCategory='${cat.id}';spPage=1;renderSignalsPanel()" style="padding:8px 18px;border:none;border-bottom:${border};background:${bg};color:${clr};cursor:pointer;font-size:14px;font-weight:600;border-radius:6px 6px 0 0">${cat.label} (${catTotal})</button>`;
     });
     h += '</div>';
 
@@ -1167,16 +1169,41 @@ function renderSignalsPanel() {
       const bg = active ? '#1c2333' : 'transparent';
       const clr = active ? '#c9d1d9' : '#6e7681';
       const border = active ? '1px solid #30363d' : '1px solid transparent';
-      h += `<button onclick="spLevel='${lv}';renderSignalsPanel()" style="padding:5px 14px;border:${border};background:${bg};color:${clr};cursor:pointer;font-size:12px;border-radius:4px">${lv} (${total})</button>`;
+      h += `<button onclick="spLevel='${lv}';spPage=1;renderSignalsPanel()" style="padding:5px 14px;border:${border};background:${bg};color:${clr};cursor:pointer;font-size:12px;border-radius:4px">${lv} (${total})</button>`;
     });
     h += '</div>';
 
-    // Signal tables for current category + level
+    // Signal tables for current category + level (paginated: 5 pages × 10 items)
     const data = currentSrc[spLevel] || {};
-    h += spTable('🔴 第一类买卖点（趋势背驰）', data.type1 || [], false, 'spT1Open', spT1Open);
-    h += spTable('🟠 第二类买卖点（回调确认）', data.type2 || [], false, 'spT2Open', spT2Open);
-    h += spTable('🔵 第三类买卖点（中枢突破）', data.type3 || [], true, 'spT3Open', spT3Open);
-    h += trendHubTable('🏗 趋势中枢监控（位次≥2）', data.trend_hubs || [], 'spTrendHubOpen', spTrendHubOpen);
+    const allT1 = data.type1 || [];
+    const allT2 = data.type2 || [];
+    const allT3 = data.type3 || [];
+    const allTH = data.trend_hubs || [];
+    const spMaxItems = Math.max(allT1.length, allT2.length, allT3.length, allTH.length);
+    const spTotalPages = Math.min(5, Math.max(1, Math.ceil(spMaxItems / SP_PAGE_SIZE)));
+    if (spPage > spTotalPages) spPage = spTotalPages;
+    const spOff = (spPage - 1) * SP_PAGE_SIZE;
+    const pgT1 = allT1.slice(spOff, spOff + SP_PAGE_SIZE);
+    const pgT2 = allT2.slice(spOff, spOff + SP_PAGE_SIZE);
+    const pgT3 = allT3.slice(spOff, spOff + SP_PAGE_SIZE);
+    const pgTH = allTH.slice(spOff, spOff + SP_PAGE_SIZE);
+
+    h += spTable('🔴 第一类买卖点（趋势背驰）', pgT1, false, 'spT1Open', spT1Open);
+    h += spTable('🟠 第二类买卖点（回调确认）', pgT2, false, 'spT2Open', spT2Open);
+    h += spTable('🔵 第三类买卖点（中枢突破）', pgT3, true, 'spT3Open', spT3Open);
+    h += trendHubTable('🏗 趋势中枢监控（位次≥2）', pgTH, 'spTrendHubOpen', spTrendHubOpen);
+
+    if (spTotalPages > 1) {
+      h += '<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin:12px 0 6px">';
+      for (let pg = 1; pg <= spTotalPages; pg++) {
+        const isActive = pg === spPage;
+        const bgP = isActive ? '#58a6ff' : '#21262d';
+        const clrP = isActive ? '#fff' : '#8b949e';
+        h += `<button onclick="spPage=${pg};renderSignalsPanel()" style="min-width:32px;padding:4px 10px;border:1px solid ${isActive?'#58a6ff':'#30363d'};border-radius:4px;background:${bgP};color:${clrP};cursor:pointer;font-size:13px">${pg}</button>`;
+      }
+      h += `<span style="color:#484f58;font-size:12px;margin-left:4px">${spPage}/${spTotalPages}</span>`;
+      h += '</div>';
+    }
     h += '</div>';
   }
   h += '</div>';
@@ -2920,7 +2947,7 @@ def generate_dashboard(data_dir: str = None,
             global_signals.append(entry)
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
     global_signals = update_signal_snapshots(global_signals)
-    type_limits = {"type1": 10, "type2": 5, "type3": 20}
+    type_limits = {"type1": 50, "type2": 50, "type3": 50}
     levels = ["DF", "30F", "5F"]
 
     # Build type map: etf_code -> "stock" / "broad" / "sector"
@@ -2953,7 +2980,7 @@ def generate_dashboard(data_dir: str = None,
 
     # Collect trend hubs (位次>=2) and merge into signal buckets
     trend_hub_all = _collect_trend_hubs(all_data, idx_name_map, level_labels)
-    th_stock, th_etf = _split_trend_hubs(trend_hub_all, idx_type_map, levels)
+    th_stock, th_etf = _split_trend_hubs(trend_hub_all, idx_type_map, levels, limit=50)
     for lv in levels:
         stock_signals_by_level[lv]["trend_hubs"] = th_stock[lv]["trend_hubs"]
         etf_signals_by_level[lv]["trend_hubs"] = th_etf[lv]["trend_hubs"]
@@ -2965,7 +2992,7 @@ def generate_dashboard(data_dir: str = None,
         with open(_wl_path_early, "r", encoding="utf-8") as wf:
             _wl_early = json.load(wf)
             _wl_codes_set = {item["etf_code"] for item in _wl_early.get("watchlist", [])}
-    wl_type_limits = {"type1": 10, "type2": 5, "type3": 10}
+    wl_type_limits = {"type1": 50, "type2": 50, "type3": 50}
     watchlist_signals_by_level: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": [], "trend_hubs": []} for lv in levels
     }
@@ -2989,7 +3016,7 @@ def generate_dashboard(data_dir: str = None,
             if th["etf_code"] not in _wl_codes_set:
                 continue
             lv = th["level"]
-            if lv in watchlist_signals_by_level and len(watchlist_signals_by_level[lv]["trend_hubs"]) < 30:
+            if lv in watchlist_signals_by_level and len(watchlist_signals_by_level[lv]["trend_hubs"]) < 50:
                 watchlist_signals_by_level[lv]["trend_hubs"].append(th)
 
     html = _HTML_TEMPLATE
@@ -3134,7 +3161,7 @@ def generate_mobile_dashboard(data_dir: str = None,
             mobile_global_signals.append(entry_m)
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
     mobile_global_signals = update_signal_snapshots(mobile_global_signals)
-    mobile_type_limits = {"type1": 30, "type2": 15, "type3": 60}
+    mobile_type_limits = {"type1": 50, "type2": 50, "type3": 50}
     mobile_levels = ["DF", "30F", "5F"]
 
     # Split mobile signals into stock vs ETF
@@ -3164,7 +3191,7 @@ def generate_mobile_dashboard(data_dir: str = None,
 
     # Collect trend hubs for mobile
     m_trend_hub_all = _collect_trend_hubs(all_data, idx_name_map_m, level_labels_m)
-    m_th_stock, m_th_etf = _split_trend_hubs(m_trend_hub_all, idx_type_map_m, mobile_levels, limit=60)
+    m_th_stock, m_th_etf = _split_trend_hubs(m_trend_hub_all, idx_type_map_m, mobile_levels, limit=50)
     for lv in mobile_levels:
         mobile_stock_by_level[lv]["trend_hubs"] = m_th_stock[lv]["trend_hubs"]
         mobile_etf_by_level[lv]["trend_hubs"] = m_th_etf[lv]["trend_hubs"]
@@ -3172,7 +3199,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     mobile_global_signals_json = json.dumps({"stock": mobile_stock_by_level, "etf": mobile_etf_by_level}, ensure_ascii=False)
 
     # Build watchlist-specific signals for mobile (pre-filtered)
-    mobile_wl_type_limits = {"type1": 30, "type2": 30, "type3": 30}
+    mobile_wl_type_limits = {"type1": 50, "type2": 50, "type3": 50}
     mobile_wl_signals: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": [], "trend_hubs": []} for lv in mobile_levels
     }
@@ -3196,7 +3223,7 @@ def generate_mobile_dashboard(data_dir: str = None,
             if th["etf_code"] not in _wl_codes_set_m:
                 continue
             lv = th["level"]
-            if lv in mobile_wl_signals and len(mobile_wl_signals[lv]["trend_hubs"]) < 60:
+            if lv in mobile_wl_signals and len(mobile_wl_signals[lv]["trend_hubs"]) < 50:
                 mobile_wl_signals[lv]["trend_hubs"].append(th)
     mobile_watchlist_signals_json = json.dumps(mobile_wl_signals, ensure_ascii=False)
 
@@ -3547,7 +3574,7 @@ let _liveReady = false;
 let mgsTab = 'DF';
 let mgsExpanded = true;
 let mgsPage = 1;
-const mgsPageSize = {{t1: 10, t2: 5, t3: 20}};
+const mgsPageSize = 10;
 let mgsT1Open = false;
 let mgsT2Open = false;
 let mgsT3Open = true;
@@ -3778,20 +3805,19 @@ function renderMobileGlobalSignals() {{
   const gAllT1 = data.type1 || [];
   const gAllT2 = data.type2 || [];
   const gAllT3 = data.type3 || [];
-  const gMaxItems = Math.max(gAllT1.length, gAllT2.length, gAllT3.length);
-  const gMaxPageSize = Math.max(mgsPageSize.t1, mgsPageSize.t2, mgsPageSize.t3);
-  const gTotalPages = Math.min(3, Math.max(1, Math.ceil(gMaxItems / gMaxPageSize)));
+  const gAllTH = data.trend_hubs || [];
+  const gMaxItems = Math.max(gAllT1.length, gAllT2.length, gAllT3.length, gAllTH.length);
+  const gTotalPages = Math.min(5, Math.max(1, Math.ceil(gMaxItems / mgsPageSize)));
   if (mgsPage > gTotalPages) mgsPage = gTotalPages;
-  const gs1 = (mgsPage - 1) * mgsPageSize.t1;
-  const gs2 = (mgsPage - 1) * mgsPageSize.t2;
-  const gs3 = (mgsPage - 1) * mgsPageSize.t3;
-  const gT1 = gAllT1.slice(gs1, gs1 + mgsPageSize.t1);
-  const gT2 = gAllT2.slice(gs2, gs2 + mgsPageSize.t2);
-  const gT3 = gAllT3.slice(gs3, gs3 + mgsPageSize.t3);
+  const gOff = (mgsPage - 1) * mgsPageSize;
+  const gT1 = gAllT1.slice(gOff, gOff + mgsPageSize);
+  const gT2 = gAllT2.slice(gOff, gOff + mgsPageSize);
+  const gT3 = gAllT3.slice(gOff, gOff + mgsPageSize);
+  const gTH = gAllTH.slice(gOff, gOff + mgsPageSize);
   h += mgsTable('🔴 第一类买卖点', gT1, false, 'mgsT1Open', mgsT1Open);
   h += mgsTable('🟠 第二类买卖点', gT2, false, 'mgsT2Open', mgsT2Open);
   h += mgsTable('🔵 第三类买卖点', gT3, true, 'mgsT3Open', mgsT3Open);
-  h += mgsTrendHubTable('🏗 趋势中枢（位次≥2）', data.trend_hubs || [], 'mgsTrendHubOpen', mgsTrendHubOpen);
+  h += mgsTrendHubTable('🏗 趋势中枢（位次≥2）', gTH, 'mgsTrendHubOpen', mgsTrendHubOpen);
   if (gTotalPages > 1) {{
     h += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:8px 0 4px">';
     for (let pg = 1; pg <= gTotalPages; pg++) {{
