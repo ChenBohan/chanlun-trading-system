@@ -675,6 +675,8 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 entry["structure"] = struct_list
             if p.dt in fractal_merge:
                 entry["fractal_bars"] = fractal_merge[p.dt]
+            entry = {k: v for k, v in entry.items()
+                     if v is not None and v != "" and v != []}
             bsp_markers.append(entry)
 
     # For daily K-lines: tentative if last bar is today and market hasn't closed
@@ -1940,6 +1942,10 @@ function renderChart(data) {
         type: 'candlestick',
         data: data.kline,
         xAxisIndex: 0, yAxisIndex: 0,
+        large: true,
+        largeThreshold: 500,
+        progressive: 500,
+        animation: false,
         itemStyle: {
           color: upColor, color0: downColor,
           borderColor: upColor, borderColor0: downColor,
@@ -2052,6 +2058,9 @@ function renderChart(data) {
         type: 'bar',
         data: data.macd_hist,
         xAxisIndex: 1, yAxisIndex: 1,
+        large: true,
+        largeThreshold: 500,
+        animation: false,
         itemStyle: {
           color: (params) => params.data >= 0 ? upColor : downColor,
         },
@@ -2094,6 +2103,9 @@ function renderChart(data) {
         })),
         xAxisIndex: 2, yAxisIndex: 2,
         barWidth: '60%',
+        large: true,
+        largeThreshold: 500,
+        animation: false,
       },
     ],
   };
