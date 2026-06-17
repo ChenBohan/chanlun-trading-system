@@ -1316,6 +1316,7 @@ function selectLevel(level) {
 }
 
 async function render() {
+  const _t0 = performance.now();
   const key = currentIndex + '_' + currentLevel;
   const cached = getChartData(key);
   if (!cached) {
@@ -1323,12 +1324,16 @@ async function render() {
                        maskColor: 'rgba(13,17,23,0.8)', fontSize: 14});
   }
   const data = cached || await loadChartData(key);
+  const _t1 = performance.now();
   chart.hideLoading();
   if (!data) { chart.clear(); return; }
 
   updateConclusionBar(data);
   updateStructBar(data);
+  const _t2 = performance.now();
   renderChart(data);
+  const _t3 = performance.now();
+  console.log(`[perf] ${key}: load=${(_t1-_t0).toFixed(0)}ms bars=${_t2-_t1<1?'<1':(_t2-_t1).toFixed(0)}ms chart=${(_t3-_t2).toFixed(0)}ms total=${(_t3-_t0).toFixed(0)}ms cached=${!!cached}`);
   if (!_liveReady) _loadLiveJs();
 }
 
@@ -1432,6 +1437,7 @@ function updateStructBar(data) {
 
 
 function renderChart(data) {
+  const _rc0 = performance.now();
   const upColor = '#f85149';
   const downColor = '#3fb950';
 
@@ -2110,7 +2116,10 @@ function renderChart(data) {
     ],
   };
 
+  const _rc1 = performance.now();
   chart.setOption(option, true);
+  const _rc2 = performance.now();
+  console.log(`[perf:chart] optionBuild=${(_rc1-_rc0).toFixed(0)}ms setOption=${(_rc2-_rc1).toFixed(0)}ms klines=${data.kline.length} strokes=${data.strokes.length} bsp=${data.bsp.length} hubs=${data.hubs.length}`);
 }
 
 init();
