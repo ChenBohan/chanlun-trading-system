@@ -556,9 +556,17 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         si = dt_index.get(h.start_dt)
         ei = dt_index.get(h.end_dt)
         if si is not None and ei is not None:
-            # Hub context direction from first stroke pattern:
-            # 1 = uptrend hub (下-上-下), -1 = downtrend hub (上-下-上)
-            hub_dir = h.context_direction
+            # Hub color direction: prefer sequence direction (midpoint shift)
+            # over context_direction (entry stroke), because in chained hubs
+            # the exit-becomes-entry pattern yields misleading UP bounces in
+            # downtrends (and vice versa).  Fall back to context_direction
+            # only for the first hub where no sequence direction exists.
+            if h.direction == "上":
+                hub_dir = 1
+            elif h.direction == "下":
+                hub_dir = -1
+            else:
+                hub_dir = h.context_direction
             hub_rects.append({
                 "x0": si, "x1": ei,
                 "zg": h.zg, "zd": h.zd,
