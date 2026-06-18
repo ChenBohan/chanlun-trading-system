@@ -694,10 +694,13 @@ def fetch_kline(code: str, period: str, market: str = "",
 def _build_source_order(primary: str, period: str = "daily") -> list[str]:
     """Build the data source fallback chain.
 
-    Tencent is always first (most stable, no IP blocking).
-    Sina/EastMoney are fallbacks only — they rate-limit aggressively
-    when hit with bulk requests (241 symbols × 3 periods every 5 min).
+    For minute periods (5min, 30min), EastMoney is always first because it
+    supports forward-adjusted prices (fqt=1) which is required for Chanlun
+    analysis.  Tencent minute API returns unadjusted prices only.
+    For daily, Tencent is first (most stable, qfq available).
     """
+    if period in ("5min", "30min"):
+        return ["eastmoney", "tencent", "sina"]
     all_sources = ["tencent", "eastmoney", "sina"]
     if primary in all_sources:
         all_sources.remove(primary)
