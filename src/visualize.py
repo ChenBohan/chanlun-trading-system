@@ -2548,7 +2548,7 @@ def _analyze_one_index_worker(args: tuple) -> dict:
             continue
         bars = load_bars_from_csv(csv_path)
         result = analyze(bars, level_key)
-        mb = 1250 if level_key == "daily" else 0
+        mb = 1250 if level_key == "daily" else 1200
         echarts_data = _result_to_echarts_data(result, max_bars=mb)
         echarts_items[f"{etf_code}_{level_key}"] = echarts_data
         level_results[level_key] = result
@@ -2633,7 +2633,7 @@ def run_analysis_pipeline(data_dir: str = None,
                 bars = load_bars_from_csv(csv_path)
                 result = analyze(bars, level_key)
                 level_results[level_key] = result
-                mb = 1250 if level_key == "daily" else 0
+                mb = 1250 if level_key == "daily" else 1200
                 echarts_data = _result_to_echarts_data(result, max_bars=mb)
                 all_data[f"{idx.etf_code}_{level_key}"] = echarts_data
                 print(f"OK ({result.trend}, {len(result.buy_sell_points)} signals)")
