@@ -3144,11 +3144,11 @@ def generate_mobile_dashboard(data_dir: str = None,
         with open(fpath, "w", encoding="utf-8") as df:
             df.write(f'DATA_CACHE["{key}"]={json_str};\n')
 
-    # Generate live.js for delta deployment
-    generate_live_js(data_out_dir, all_data)
-
-    # Auto-save baseline after full dashboard so subsequent live.js stays minimal
-    save_deploy_baseline(data_out_dir, all_data)
+    # Remove stale live.js to prevent delta corruption when viewing locally.
+    # live.js is now generated only by the deploy script (delta deploy path).
+    _stale_live = os.path.join(data_out_dir, "live.js")
+    if os.path.exists(_stale_live):
+        os.remove(_stale_live)
 
     data_keys_json = json.dumps(sorted(all_data.keys()), ensure_ascii=False)
     index_list_json = json.dumps(index_list, ensure_ascii=False)

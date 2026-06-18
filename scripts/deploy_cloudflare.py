@@ -305,12 +305,49 @@ def deploy(delta_only=False, save_baseline=False):
             _save_baseline_from_data_dir(DEPLOY_DIR / "data")
 
 
+def _generate_live_js_for_deploy(data_dir: Path) -> bool:
+    """Generate live.js by reading current data files and comparing against deploy baseline.
+
+    Returns True if live.js was produced, False otherwise.
+    The deploy baseline (.baseline.json) is only saved during full deploys,
+    so the delta always represents the diff from the last full deploy.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from src.visualize import generate_live_js
+
+    baseline_path = data_dir / ".baseline.json"
+    if not baseline_path.exists():
+        print("  No deploy baseline found, cannot generate live.js")
+        return False
+
+    all_data = {}
+    for p in sorted(data_dir.iterdir()):
+        if not p.is_file() or p.suffix != ".js" or p.name == "live.js":
+            continue
+        key = p.stem
+        content = p.read_text(encoding="utf-8")
+        json_str = content.split("=", 1)[1].rstrip().rstrip(";")
+        try:
+            all_data[key] = json.loads(json_str)
+        except json.JSONDecodeError:
+            print(f"  WARNING: Failed to parse {p.name}, skipping")
+
+    if not all_data:
+        print("  No data files found for live.js generation")
+        return False
+
+    result = generate_live_js(str(data_dir), all_data)
+    return result is not None
+
+
 def _prepare_delta_deploy(deploy_dir):
-    """Prepare delta deploy: upload only HTML + live.js, merge with cached manifest."""
+    """Prepare delta deploy: generate live.js from deploy baseline, upload HTML + live.js."""
     if not MANIFEST_CACHE.exists():
         print("No cached manifest found, falling back to full deploy")
         files = collect_files(deploy_dir, delta_only=False)
         return files, {f["path"]: f["hash"] for f in files}
+
+    _generate_live_js_for_deploy(deploy_dir / "data")
 
     with open(MANIFEST_CACHE, "r") as f:
         old_manifest = json.load(f)
@@ -340,25 +377,24 @@ def _prepare_delta_deploy(deploy_dir):
 
 
 def _save_baseline_from_data_dir(data_dir: Path):
-    """Read all data/*.js files and save bar counts as baseline."""
-    import re
-    baseline = {"time": time.strftime("%Y-%m-%d %H:%M"), "bars": {}}
-    pattern = re.compile(r'"dates":\[([^\]]*)\]')
+    """Read all data/*.js files and save bar counts + last dates as deploy baseline."""
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from src.visualize import save_deploy_baseline
+
+    all_data = {}
     for p in sorted(data_dir.iterdir()):
         if not p.is_file() or p.suffix != ".js" or p.name == "live.js":
             continue
         key = p.stem
         content = p.read_text(encoding="utf-8")
-        m = pattern.search(content)
-        if m:
-            dates_str = m.group(1)
-            n_bars = dates_str.count('"') // 2 if dates_str else 0
-            baseline["bars"][key] = n_bars
+        json_str = content.split("=", 1)[1].rstrip().rstrip(";")
+        try:
+            all_data[key] = json.loads(json_str)
+        except json.JSONDecodeError:
+            print(f"  WARNING: Failed to parse {p.name}, skipping")
 
-    out = data_dir / ".baseline.json"
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(baseline, f, ensure_ascii=False)
-    print(f"  Baseline saved: {len(baseline['bars'])} keys")
+    save_deploy_baseline(str(data_dir), all_data)
+    print(f"  Baseline saved: {len(all_data)} keys")
 
 
 if __name__ == "__main__":
