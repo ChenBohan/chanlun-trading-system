@@ -42,7 +42,12 @@ from .chanlun_engine import (
     format_synthesis_report,
 )
 
-from .visualize import generate_dashboard, generate_mobile_dashboard, run_analysis_pipeline
+from .visualize import (
+    generate_dashboard,
+    generate_mobile_dashboard,
+    run_analysis_pipeline,
+    parse_merged_data_files,
+)
 
 __all__ = [
     # data_fetcher
@@ -62,4 +67,5 @@ __all__ = [
     "generate_dashboard",
     "generate_mobile_dashboard",
     "run_analysis_pipeline",
+    "parse_merged_data_files",
 ]

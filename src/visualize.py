@@ -19,6 +19,7 @@ import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from .data_fetcher import load_index_watchlist, IndexConfig, _PROJECT_ROOT
@@ -78,9 +79,9 @@ def generate_live_js(data_out_dir: str, all_data: dict) -> Optional[str]:
     base_last_dates = baseline.get("last_dates", {})
     base_time_str = baseline.get("time", "")[:10]  # e.g. "2026-06-04"
     live_entries = {}
-    array_fields = ("dates", "kline", "volumes", "macd_hist", "dif", "dea", "ma5", "ma10")
-    analysis_fields = ("bsp", "strokes", "segments", "seg_labels", "hubs",
-                       "trend", "hub_position", "hub_detail",
+    array_fields = ("dates", "kline", "volumes", "macd_hist", "dif", "dea", "ma5", "ma10", "ma250")
+    analysis_fields = ("bsp", "strokes", "segments", "seg_labels", "fractals",
+                       "hubs", "trend", "hub_position", "hub_detail",
                        "trend_completion", "volume_profile", "tentative")
 
     for key, data in all_data.items():
@@ -490,9 +491,10 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         dea_line.append(round(b.dea, 4))
         closes.append(b.close)
 
-    # MA5 / MA10
+    # MA5 / MA10 / MA250
     ma5 = []
     ma10 = []
+    ma250 = []
     for i in range(len(closes)):
         if i < 4:
             ma5.append(None)
@@ -502,6 +504,10 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
             ma10.append(None)
         else:
             ma10.append(round(sum(closes[i-9:i+1]) / 10, 3))
+        if i < 249:
+            ma250.append(None)
+        else:
+            ma250.append(round(sum(closes[i-249:i+1]) / 250, 3))
 
     dt_index = {b.dt: i for i, b in enumerate(bars)}
     stroke_lines = []
@@ -610,6 +616,18 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 if raw_idxs:
                     fractal_merge[f.dt] = raw_idxs
 
+    # Fractal markers: only keep last N fractals to avoid clutter
+    _FRACTAL_TAIL = 8
+    fractal_markers = []
+    for f in result.fractals[-_FRACTAL_TAIL:]:
+        fi = dt_index.get(f.dt)
+        if fi is not None:
+            fractal_markers.append({
+                "idx": fi,
+                "type": f.type,
+                "price": f.high if f.type == "top" else f.low,
+            })
+
     # Buy/sell points as markers
     bsp_markers = []
     for p in result.buy_sell_points:
@@ -661,18 +679,6 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                     entry["hub_evo"] = hub_obj.evolution_type
             if ranges:
                 entry["ranges"] = ranges
-            struct_list = []
-            for st in p.structure:
-                si = dt_index.get(st.get("start_dt"))
-                ei = dt_index.get(st.get("end_dt"))
-                if si is not None and ei is not None:
-                    item = {"tag": st["tag"], "x0": si, "x1": ei}
-                    if "zg" in st:
-                        item["zg"] = st["zg"]
-                        item["zd"] = st["zd"]
-                    struct_list.append(item)
-            if struct_list:
-                entry["structure"] = struct_list
             if p.dt in fractal_merge:
                 entry["fractal_bars"] = fractal_merge[p.dt]
             entry = {k: v for k, v in entry.items()
@@ -699,9 +705,11 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         "dea": dea_line,
         "ma5": ma5,
         "ma10": ma10,
+        "ma250": ma250,
         "strokes": stroke_lines,
         "segments": segment_points,
         "seg_labels": segment_labels,
+        "fractals": fractal_markers,
         "hubs": hub_rects,
         "seg_hubs": seg_hub_rects,
         "bsp": bsp_markers,
@@ -837,12 +845,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   <span style="color:#bc8cff;font-weight:bold">━ 线段</span>
   <span style="color:#ffd700">━ MA5</span>
   <span style="color:#58a6ff">━ MA10</span>
+  <span style="color:#e040fb">┅ MA250</span>
   <span>█<span style="color:rgba(248,81,73,0.6)">中枢↑</span></span>
   <span>█<span style="color:rgba(63,185,80,0.6)">中枢↓</span></span>
   <span>█<span style="color:rgba(255,215,0,0.7)">段中枢</span></span>
 </div>
 
-<div id="chart-container"></div>
+<div id="chart-placeholder" style="display:flex;align-items:center;justify-content:center;
+  height:calc(100vh - 380px);min-height:420px;background:#0d1117;cursor:pointer"
+  onclick="initChart()">
+  <div style="text-align:center;color:#8b949e">
+    <div style="font-size:40px;margin-bottom:12px">📈</div>
+    <div style="font-size:15px">点击加载K线图</div>
+    <div style="font-size:12px;margin-top:4px;color:#484f58">切换标的时自动加载</div>
+  </div>
+</div>
+<div id="chart-container" style="display:none"></div>
 
 
 <script>
@@ -851,7 +869,6 @@ var DATA_CACHE = {};
 var LIVE_DATA = null;
 const DATA_KEYS = __ALL_DATA_JSON__;
 const INDEX_LIST = __INDEX_LIST_JSON__;
-const SYNTHESIS = __SYNTHESIS_JSON__;
 const SIGNAL_DATA = __GLOBAL_SIGNALS_JSON__;
 const WATCHLIST_SIGNALS = __WATCHLIST_SIGNALS_JSON__;
 const WATCHLIST_CODES = __WATCHLIST_CODES_JSON__;
@@ -859,8 +876,8 @@ const WATCHLIST_CODES = __WATCHLIST_CODES_JSON__;
 function applyLiveDelta(key, base) {
   if (!LIVE_DATA || !LIVE_DATA[key]) return base;
   const live = LIVE_DATA[key];
-  const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10'];
-  const replaceFields = ['bsp','strokes','segments','seg_labels','hubs',
+  const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10','ma250'];
+  const replaceFields = ['bsp','strokes','segments','seg_labels','fractals','hubs',
                          'trend','hub_position','hub_detail',
                          'trend_completion','volume_profile','tentative'];
   if (live.full_replace) {
@@ -889,23 +906,34 @@ function applyLiveDelta(key, base) {
 
 function getChartData(key) { return DATA_CACHE[key] || null; }
 
-function loadChartData(key) {
-  return new Promise(resolve => {
-    if (DATA_CACHE[key]) { resolve(DATA_CACHE[key]); return; }
+var _stockLoadPromises = {};
+function _extractCode(key) {
+  return key.replace(/_(daily|30min|5min)$/, '');
+}
+function loadStockData(code) {
+  if (_stockLoadPromises[code]) return _stockLoadPromises[code];
+  _stockLoadPromises[code] = new Promise(resolve => {
     const s = document.createElement('script');
-    s.src = 'data/' + key + '.js';
+    s.src = 'data/' + code + '.js';
     s.onload = () => {
-      let d = DATA_CACHE[key] || null;
-      if (d) {
-        DATA_CACHE['_base_' + key] = d;
-        d = applyLiveDelta(key, d);
-        DATA_CACHE[key] = d;
-      }
-      resolve(d);
+      ['daily', '30min', '5min'].forEach(lv => {
+        const k = code + '_' + lv;
+        if (DATA_CACHE[k] && !DATA_CACHE['_base_' + k]) {
+          DATA_CACHE['_base_' + k] = DATA_CACHE[k];
+          DATA_CACHE[k] = applyLiveDelta(k, DATA_CACHE[k]);
+        }
+      });
+      resolve();
     };
-    s.onerror = () => resolve(null);
+    s.onerror = () => resolve();
     document.head.appendChild(s);
   });
+  return _stockLoadPromises[code];
+}
+function loadChartData(key) {
+  if (DATA_CACHE[key]) return Promise.resolve(DATA_CACHE[key]);
+  const code = _extractCode(key);
+  return loadStockData(code).then(() => DATA_CACHE[key] || null);
 }
 
 // Deferred live.js loading — waits until first chart renders to avoid blocking startup
@@ -966,8 +994,7 @@ function renderSignalsPanel() {
   const strengthMap = {'strongest': '🔥最强', 'strong': '💪强势', 'standard': '📌标准', 'weak': '⚠弱'};
 
   function sigRow(s, i, isType3) {
-    const isSnapshot = s.source === 'snapshot';
-    const bg = isSnapshot ? '#1a1510' : (i % 2 === 0 ? '#0d1117' : '#161b22');
+    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tClr = typeColors[s.type] || '#c9d1d9';
     let confStr = confIcons[s.conf] || s.conf || '-';
     if (s.conf_score !== undefined && s.conf_score !== null) confStr += ' <span style="color:#8b949e;font-size:11px">(' + s.conf_score + ')</span>';
@@ -977,7 +1004,7 @@ function renderSignalsPanel() {
     if (s.str_score !== undefined && s.str_score !== null) strStr += ' <span style="color:#8b949e;font-size:11px">(' + s.str_score + ')</span>';
     const inv = s.status === 'invalidated';
     const pending = s.status === 'pending';
-    const rowOpacity = inv ? 'opacity:0.45;' : (isSnapshot ? 'opacity:0.75;' : '');
+    const rowOpacity = inv ? 'opacity:0.45;' : '';
     const strike = inv ? 'text-decoration:line-through;' : '';
     const isBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const confirmedColor = isBuyType ? '#f85149' : '#3fb950';
@@ -1001,13 +1028,13 @@ function renderSignalsPanel() {
       : _isPanDn ? '<span style="color:#7ee787" title="DF盘整偏空">◆↓</span>'
       : _isPan ? '<span style="color:#d29922" title="DF盘整">◆</span>'
       : '<span style="color:#8b949e" title="DF方向不明">—</span>';
-    const snapBadge = isSnapshot ? ' <span title="历史快照：曾于' + (s.first_seen||'') + '发现" style="font-size:10px;color:#d29922;cursor:help">📸</span>' : '';
+    const snapBadge = '';
     let r = '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;white-space:nowrap;' + rowOpacity + '">';
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
     r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="DF:' + trend + '">' + s.etf_name + '</a></td>';
     r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + snapBadge + '</td>';
     r += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#e3b341;' + strike + '">' + (s.signal_level || '-') + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center">' + (isSnapshot ? '<span style="color:#d29922" title="走势延续后结构变化">📸历史</span>' : statusHtml) + '</td>';
+    r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
     r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
     r += '<td style="padding:6px 8px;font-size:12px">' + (s.pos_advice || '-') + '</td>';
@@ -1265,10 +1292,38 @@ async function init() {
   }
 
   renderSignalsPanel();
+  updateConclusionBarFromIndex();
+}
+
+let _chartInited = false;
+function initChart() {
+  if (_chartInited) return;
+  _chartInited = true;
+  document.getElementById('chart-placeholder').style.display = 'none';
+  document.getElementById('chart-container').style.display = '';
+  document.getElementById('chart-container').style.height = 'calc(100vh - 380px)';
+  document.getElementById('chart-container').style.minHeight = '420px';
   chart = echarts.init(document.getElementById('chart-container'));
   window.addEventListener('resize', () => chart.resize());
-  await render();
+  render();
   prefetchLevels(currentIndex);
+}
+
+function updateConclusionBarFromIndex() {
+  const idx = INDEX_LIST.find(x => x.etf_code === currentIndex);
+  if (!idx) return;
+  const bar = document.getElementById('conclusion-bar');
+  const sc = idx.score || 0;
+  const scoreBg = sc >= 140 ? '#3a1a1a' : (sc >= 110 ? '#2a2a1a' : (sc >= 80 ? '#1a2a1a' : '#1a1a2a'));
+  const scoreClr = sc >= 140 ? '#f85149' : (sc >= 110 ? '#d29922' : (sc >= 80 ? '#3fb950' : '#8b949e'));
+  bar.innerHTML = `
+    <span class="concl-group"><span class="concl-label">评分</span>
+      <span class="concl-value" style="background:${scoreBg};color:${scoreClr};padding:2px 8px;border-radius:4px">${sc}</span></span>
+    <span class="concl-group"><span class="concl-label">方向</span>
+      <span class="concl-value">${idx.alignment || '-'}</span></span>
+    <span class="concl-group"><span class="concl-label">倾向</span>
+      <span class="concl-value">${idx.bias || '-'}</span></span>
+    <span class="concl-advice">${idx.conclusion || idx.summary || '-'}</span>`;
 }
 
 let navExpanded = false;
@@ -1297,16 +1352,14 @@ function selectIndex(code) {
   const idx = INDEX_LIST.find(x => x.etf_code === code);
   if (idx) document.getElementById('current-asset-label').textContent = formatAssetLabel(idx);
   if (navExpanded) toggleNav();
+  updateConclusionBarFromIndex();
+  if (!_chartInited) { initChart(); return; }
   render();
   prefetchLevels(code);
 }
 
 function prefetchLevels(code) {
-  const levels = ['daily', '30min', '5min'];
-  levels.forEach(lv => {
-    const k = code + '_' + lv;
-    if (!DATA_CACHE[k] && DATA_KEYS.indexOf(k) >= 0) loadChartData(k);
-  });
+  loadStockData(code);
 }
 
 function selectLevel(level) {
@@ -1555,7 +1608,7 @@ function renderChart(data) {
   const TIER1_THRESHOLD = maxBspIdx - 1;  // latest 2: full detail
   const TIER2_THRESHOLD = maxBspIdx - 5;  // next 4: compact #N type
   function bspTier(p) {
-    if (p.source === 'snapshot' && p.bsp_idx < 0) return 1;
+    if (p.bsp_idx < 0) return 1;
     if (p.bsp_idx >= TIER1_THRESHOLD) return 1;
     if (p.bsp_idx >= TIER2_THRESHOLD) return 2;
     return 3;
@@ -1564,7 +1617,7 @@ function renderChart(data) {
     const tier = bspTier(p);
     const isT3 = p.type === '3B' || p.type === '3S';
     const effTier = (isT3 && p.status !== 'invalidated' && tier > 1) ? Math.max(tier - 1, 1) : tier;
-    const prefix = isT3 ? '◆' : (p.source === 'snapshot' ? '📌' : '#');
+    const prefix = isT3 ? '◆' : '#';
     const idxStr = p.bsp_idx >= 0 ? p.bsp_idx : '';
     if (effTier === 3) return prefix + idxStr;
     let text = prefix + idxStr + ' ' + (p.signal_level || p.label);
@@ -1599,7 +1652,7 @@ function renderChart(data) {
     const isT3 = p.type === '3B' || p.type === '3S';
     let h = '<div style="max-width:420px;font-size:13px;line-height:1.6">';
     const typeColor = p.is_buy ? '#f85149' : '#3fb950';
-    h += '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">' + (p.source === 'snapshot' ? '📌' : '#' + p.bsp_idx) + ' ' + p.label + '</div>';
+    h += '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">#' + p.bsp_idx + ' ' + p.label + '</div>';
     h += '<div style="color:#8b949e;margin:2px 0">日期: ' + (data.dates[p.idx] || '') + ' | 价格: ' + p.price.toFixed(3) + '</div>';
 
     // --- Type-3 buy/sell: hub context panel ---
@@ -1769,115 +1822,21 @@ function renderChart(data) {
   const buyPoints = buildPoints(sortedBuys, true);
   const sellPoints = buildPoints(sortedSells, false);
 
-  // a+A+b+B+c / A+a+c structure labels on K-line chart
-  // Show structure areas + MACD areas for the same set of recent signals
-  const structAreas = [];
-  const structLabels = [];
-  const hubColorPC = '#ffd700';
-  const hubFillPC = 'rgba(255,215,0,0.08)';
-  const bspWithStruct = data.bsp.filter(p => (p.type === '1B' || p.type === '1S') && p.structure && p.structure.length > 0);
-  const visibleBspIdx = new Set(bspWithStruct.map(p => p.idx));
-  bspWithStruct.forEach(p => {
-    const tag_prefix = '#' + p.bsp_idx + ' ';
-    p.structure.forEach((st, si) => {
-      const x0 = data.dates[st.x0], x1 = data.dates[st.x1];
-      if (st.zg !== undefined) {
-        structAreas.push([
-          { xAxis: x0, yAxis: st.zd,
-            itemStyle: { color: hubFillPC,
-                         borderColor: hubColorPC,
-                         borderWidth: 1, borderType: 'dashed' } },
-          { xAxis: x1, yAxis: st.zg },
-        ]);
-        const midX = data.dates[Math.round((st.x0 + st.x1) / 2)];
-        const kMid = data.kline[Math.round((st.x0 + st.x1) / 2)];
-        const yVal = kMid ? Math.max(kMid[1], kMid[2], kMid[3], kMid[0]) : 0;
-        structLabels.push({
-          coord: [midX, yVal],
-          symbol: 'circle', symbolSize: 1,
-          itemStyle: { color: 'transparent' },
-          label: { show: true, formatter: tag_prefix + st.tag,
-            fontSize: 14, fontWeight: 'bold', fontStyle: 'italic',
-            color: hubColorPC, position: 'top', distance: 15,
-            textShadowColor: '#000', textShadowBlur: 3 },
-        });
-      } else {
-        const isFirst = (si === 0);
-        const isLast = (si === p.structure.length - 1);
-        const bClr = isFirst ? '#58a6ff' : (isLast ? '#f85149' : '#8b949e');
-        const fClr = isFirst ? 'rgba(88,166,255,0.10)' : (isLast ? 'rgba(248,81,73,0.10)' : 'rgba(139,148,158,0.06)');
-        structAreas.push([
-          { xAxis: x0,
-            itemStyle: { color: fClr, borderColor: bClr,
-                         borderWidth: 1, borderType: 'dashed' } },
-          { xAxis: x1 },
-        ]);
-        const midX = data.dates[Math.round((st.x0 + st.x1) / 2)];
-        const kMid = data.kline[Math.round((st.x0 + st.x1) / 2)];
-        const yVal = kMid ? Math.max(kMid[1], kMid[2], kMid[3], kMid[0]) : 0;
-        structLabels.push({
-          coord: [midX, yVal],
-          symbol: 'circle', symbolSize: 1,
-          itemStyle: { color: 'transparent' },
-          label: { show: true, formatter: tag_prefix + st.tag,
-            fontSize: 14, fontWeight: 'bold', fontStyle: 'italic',
-            color: bClr, position: 'top', distance: 15,
-            textShadowColor: '#000', textShadowBlur: 3 },
-        });
-      }
-    });
-  });
-
-  // MACD area highlight regions — synced with K-line structure visibility
-  const areaStyles = [
-    { fill: 'rgba(88,166,255,0.12)', border: 'rgba(88,166,255,0.45)', clr: '#79b8ff' },
-    { fill: 'rgba(248,81,73,0.14)', border: 'rgba(248,81,73,0.50)', clr: '#f85149' },
-  ];
-  const macdAreaLabels = [];
-  const macdMarkAreaItems = [];
-  data.bsp.forEach(p => {
-    if (!p.ranges || p.ranges.length < 2) return;
-    if (!visibleBspIdx.has(p.idx)) return;
-    const r0 = p.ranges[0], r1 = p.ranges[1];
-    const ratio = r0.area > 0 ? Math.round(r1.area / r0.area * 100) : 0;
-    const idx = p.bsp_idx >= 0 ? '#' + p.bsp_idx + ' ' : '';
-    const divergeStrong = ratio < 60;
-    const confTag = p.conf ? ' [' + (confIcons[p.conf] || p.conf) + ']' : '';
-
-    p.ranges.forEach((r, ri) => {
-      macdMarkAreaItems.push([
-        { xAxis: data.dates[r.x0], itemStyle: { color: areaStyles[ri].fill, borderColor: areaStyles[ri].border, borderWidth: 1 } },
-        { xAxis: data.dates[r.x1] },
-      ]);
-      const midIdx = Math.round((r.x0 + r.x1) / 2);
-      const midVal = data.macd_hist[midIdx] || 0;
-      let labelText, labelClr;
-      if (ri === 0) {
-        labelText = idx + p.type + confTag + '  ' + r.label + ':' + r.area;
-        labelClr = areaStyles[0].clr;
-      } else {
-        labelText = r.label + ':' + r.area + ' (' + ratio + '%) 背驰';
-        labelClr = divergeStrong ? '#ffa657' : areaStyles[1].clr;
-      }
-      macdAreaLabels.push({
-        coord: [data.dates[midIdx], midVal],
-        symbol: 'none',
-        label: {
-          show: true,
-          formatter: labelText,
-          fontSize: ri === 0 ? 11 : 10,
-          fontWeight: ri === 0 ? 'bold' : 'normal',
-          color: labelClr,
-          backgroundColor: 'rgba(13,17,23,0.88)',
-          padding: [2, 6],
-          borderRadius: 3,
-          borderColor: ri === 1 && divergeStrong ? '#ffa657' : 'transparent',
-          borderWidth: ri === 1 && divergeStrong ? 1 : 0,
-          position: ri === 0 ? 'top' : 'bottom',
-          distance: 4,
-        },
-      });
-    });
+  // Fractal markers: small arrows close to K-lines (markPoint, same as BSP)
+  const fractalPts = (data.fractals || []).map(f => {
+    const isTop = f.type === 'top';
+    const kBar = data.kline[f.idx];
+    const price = isTop ? (kBar ? kBar[3] : f.price)
+                        : (kBar ? kBar[2] : f.price);
+    return {
+      coord: [data.dates[f.idx], price],
+      symbol: 'triangle',
+      symbolRotate: isTop ? 0 : 180,
+      symbolSize: [6, 5],
+      symbolOffset: isTop ? [0, '-60%'] : [0, '60%'],
+      itemStyle: { color: isTop ? '#f85149' : '#3fb950', opacity: 0.7 },
+      label: { show: false },
+    };
   });
 
   // MACD colors
@@ -1957,7 +1916,7 @@ function renderChart(data) {
           borderColor: upColor, borderColor0: downColor,
         },
         markPoint: {
-          data: [...buyPoints, ...sellPoints, ...hubLabelPts, ...segHubLabelPts, ...structLabels],
+          data: [...fractalPts, ...buyPoints, ...sellPoints, ...hubLabelPts, ...segHubLabelPts],
           animation: false,
           tooltip: {
             show: true,
@@ -2001,7 +1960,7 @@ function renderChart(data) {
                 { xAxis: data.dates[Math.min(sh.x1, data.dates.length - 1)], yAxis: sh.zg },
               ];
             });
-            return [...segHubAreas, ...hubAreas, ...structAreas];
+            return [...segHubAreas, ...hubAreas];
           })(),
           label: { show: false },
         },
@@ -2025,6 +1984,17 @@ function renderChart(data) {
         xAxisIndex: 0, yAxisIndex: 0,
         symbol: 'none',
         lineStyle: { color: '#58a6ff', width: 1.2 },
+        connectNulls: false,
+        z: 2,
+      },
+      // MA250
+      {
+        name: 'MA250',
+        type: 'line',
+        data: data.ma250,
+        xAxisIndex: 0, yAxisIndex: 0,
+        symbol: 'none',
+        lineStyle: { color: '#e040fb', width: 1.5, type: 'dashed' },
         connectNulls: false,
         z: 2,
       },
@@ -2072,7 +2042,7 @@ function renderChart(data) {
         },
         barWidth: '60%',
       },
-      // DIF line (also carries MACD area annotations for stable zoom behavior)
+      // DIF line
       {
         name: 'DIF',
         type: 'line',
@@ -2080,15 +2050,6 @@ function renderChart(data) {
         xAxisIndex: 1, yAxisIndex: 1,
         lineStyle: { color: '#58a6ff', width: 1 },
         symbol: 'none',
-        markArea: {
-          silent: true,
-          animation: false,
-          data: macdMarkAreaItems,
-        },
-        markPoint: {
-          data: macdAreaLabels,
-          animation: false,
-        },
       },
       // DEA line
       {
@@ -2898,6 +2859,78 @@ def _split_trend_hubs(trend_hub_all: list[dict], idx_type_map: dict,
 
 
 # ════════════════════════════════════════════════════════════════════
+# Data File I/O
+# ════════════════════════════════════════════════════════════════════
+
+_LEVEL_SUFFIXES = ("_daily", "_30min", "_5min")
+
+
+def _extract_code(key: str) -> str:
+    """Extract stock/ETF code from a data key like '300502_daily' → '300502'."""
+    for suffix in _LEVEL_SUFFIXES:
+        if key.endswith(suffix):
+            return key[: -len(suffix)]
+    return key
+
+
+def _write_merged_data_files(data_out_dir: str, all_data: dict) -> None:
+    """Write merged per-code data files: one .js file per stock containing all levels.
+
+    File format (each line is a DATA_CACHE assignment):
+        DATA_CACHE["300502_daily"]={...};
+        DATA_CACHE["300502_30min"]={...};
+        DATA_CACHE["300502_5min"]={...};
+    """
+    from collections import defaultdict
+    by_code: dict[str, list[tuple[str, dict]]] = defaultdict(list)
+    for key in sorted(all_data.keys()):
+        code = _extract_code(key)
+        by_code[code].append((key, all_data[key]))
+
+    # Remove legacy per-level files (e.g. 300502_daily.js)
+    for key in all_data:
+        legacy = os.path.join(data_out_dir, f"{key}.js")
+        if os.path.exists(legacy):
+            os.remove(legacy)
+
+    for code, items in by_code.items():
+        fpath = os.path.join(data_out_dir, f"{code}.js")
+        with open(fpath, "w", encoding="utf-8") as df:
+            for key, chart_data in items:
+                json_str = json.dumps(chart_data, ensure_ascii=False,
+                                      separators=(",", ":"))
+                df.write(f'DATA_CACHE["{key}"]={json_str};\n')
+
+
+def parse_merged_data_files(data_dir: str) -> dict:
+    """Read merged .js data files and return {key: data_dict}.
+
+    Handles both merged format (multiple DATA_CACHE assignments per file)
+    and legacy format (single assignment per file).
+    """
+    import re
+    _pat = re.compile(r'^DATA_CACHE\["([^"]+)"\]=(.+);$')
+    all_data: dict = {}
+
+    for p in sorted(Path(data_dir).iterdir()):
+        if not p.is_file() or p.suffix != ".js" or p.name == "live.js":
+            continue
+        content = p.read_text(encoding="utf-8")
+        for line in content.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            m = _pat.match(line)
+            if m:
+                key, json_str = m.group(1), m.group(2)
+                try:
+                    all_data[key] = json.loads(json_str)
+                except json.JSONDecodeError:
+                    print(f"  WARNING: Failed to parse key {key} in {p.name}")
+    return all_data
+
+
+# ════════════════════════════════════════════════════════════════════
 # Generate HTML
 # ════════════════════════════════════════════════════════════════════
 
@@ -2936,9 +2969,6 @@ def generate_dashboard(data_dir: str = None,
         indices = pipe["indices"]
 
     _reclassify_dep_pb(all_data)
-    snap_count = _inject_snapshot_bsp(all_data)
-    if snap_count:
-        print(f"  Injected {snap_count} snapshot BSP markers into chart data")
 
     # Collect global signals (1B/1S/2B/2S/3B/3S) across all indices
     level_labels = {"daily": "DF", "30min": "30F", "5min": "5F"}
@@ -2987,7 +3017,6 @@ def generate_dashboard(data_dir: str = None,
                 entry["area_cmp"] = ""
             global_signals.append(entry)
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    global_signals = update_signal_snapshots(global_signals)
     type_limits = {"type1": 50, "type2": 50, "type3": 50}
     levels = ["DF", "30F", "5F"]
 
@@ -3063,24 +3092,19 @@ def generate_dashboard(data_dir: str = None,
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
     html = html.replace("__DATA_TIME__", latest_data_time or "-")
-    # Write per-index data files for lazy loading (JS format for file:// compat)
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
-    for key, chart_data in all_data.items():
-        fpath = os.path.join(data_out_dir, f"{key}.js")
-        json_str = json.dumps(chart_data, ensure_ascii=False, separators=(",", ":"))
-        with open(fpath, "w", encoding="utf-8") as df:
-            df.write(f'DATA_CACHE["{key}"]={json_str};\n')
+    _write_merged_data_files(data_out_dir, all_data)
 
+    data_js_files = [f for f in os.listdir(data_out_dir) if f.endswith(".js") and f != "live.js"]
     total_data_kb = sum(
-        os.path.getsize(os.path.join(data_out_dir, f))
-        for f in os.listdir(data_out_dir) if f.endswith(".js")
+        os.path.getsize(os.path.join(data_out_dir, f)) for f in data_js_files
     ) / 1024
+    num_data_files = len(data_js_files)
 
     html = html.replace("__ALL_DATA_JSON__",
                          json.dumps(sorted(all_data.keys()), ensure_ascii=False))
     html = html.replace("__INDEX_LIST_JSON__", json.dumps(index_list, ensure_ascii=False))
-    html = html.replace("__SYNTHESIS_JSON__", json.dumps(synthesis_data, ensure_ascii=False))
     html = html.replace("__GLOBAL_SIGNALS_JSON__", json.dumps({"stock": stock_signals_by_level, "etf": etf_signals_by_level}, ensure_ascii=False))
     html = html.replace("__WATCHLIST_SIGNALS_JSON__", json.dumps(watchlist_signals_by_level, ensure_ascii=False))
 
@@ -3093,7 +3117,7 @@ def generate_dashboard(data_dir: str = None,
 
     size_kb = os.path.getsize(output_path) / 1024
     print(f"\nDashboard saved to: {output_path}")
-    print(f"HTML size: {size_kb:.0f} KB  |  Data files: {total_data_kb:.0f} KB ({len(all_data)} files)")
+    print(f"HTML size: {size_kb:.0f} KB  |  Data files: {total_data_kb:.0f} KB ({num_data_files} merged files, {len(all_data)} charts)")
     return output_path
 
 
@@ -3131,18 +3155,13 @@ def generate_mobile_dashboard(data_dir: str = None,
         indices = pipe["indices"]
 
     _reclassify_dep_pb(all_data)
-    _inject_snapshot_bsp(all_data)
 
     gen_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     data_time = latest_data_time or "-"
 
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
-    for key, chart_data in all_data.items():
-        fpath = os.path.join(data_out_dir, f"{key}.js")
-        json_str = json.dumps(chart_data, ensure_ascii=False, separators=(",", ":"))
-        with open(fpath, "w", encoding="utf-8") as df:
-            df.write(f'DATA_CACHE["{key}"]={json_str};\n')
+    _write_merged_data_files(data_out_dir, all_data)
 
     # Remove stale live.js to prevent delta corruption when viewing locally.
     # live.js is now generated only by the deploy script (delta deploy path).
@@ -3152,7 +3171,6 @@ def generate_mobile_dashboard(data_dir: str = None,
 
     data_keys_json = json.dumps(sorted(all_data.keys()), ensure_ascii=False)
     index_list_json = json.dumps(index_list, ensure_ascii=False)
-    synthesis_json = json.dumps(synthesis_data, ensure_ascii=False)
 
     # Watchlist codes for mobile
     watchlist_codes_m = []
@@ -3204,7 +3222,6 @@ def generate_mobile_dashboard(data_dir: str = None,
                 entry_m["area_cmp"] = ""
             mobile_global_signals.append(entry_m)
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    mobile_global_signals = update_signal_snapshots(mobile_global_signals)
     mobile_type_limits = {"type1": 50, "type2": 50, "type3": 50}
     mobile_levels = ["DF", "30F", "5F"]
 
@@ -3499,12 +3516,17 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
   </div>
   <div class="info-bar" id="infoBar"></div>
   <div id="loadingOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(13,17,23,0.7);z-index:999;align-items:center;justify-content:center"><span style="color:#58a6ff;font-size:15px">加载数据中...</span></div>
+  <div id="mChartPlaceholder" style="display:flex;align-items:center;justify-content:center;height:320px;background:#0d1117;border-radius:4px;margin:6px 10px;cursor:pointer" onclick="mInitChart()">
+    <div style="text-align:center;color:#8b949e"><div style="font-size:36px;margin-bottom:8px">📈</div><div style="font-size:14px">点击加载K线图</div></div>
+  </div>
+  <div id="mChartSection" style="display:none">
   <div class="chart-area"><canvas id="klineCanvas" height="320"></canvas></div>
   <div class="legend">
     <div class="legend-item"><div class="legend-color" style="background:#f85149"></div>阳线</div>
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>阴线</div>
     <div class="legend-item"><div class="legend-color" style="background:#ffd700"></div>MA5</div>
     <div class="legend-item"><div class="legend-color" style="background:#58a6ff"></div>MA10</div>
+    <div class="legend-item"><div class="legend-color" style="background:#e040fb;border:1px dashed #e040fb"></div>MA250</div>
     <div class="legend-item"><div class="legend-color" style="background:#f0883e"></div>笔</div>
     <div class="legend-item"><div class="legend-color" style="background:#79c0ff"></div>上涨背驰笔</div>
     <div class="legend-item"><div class="legend-color" style="background:#d2a8ff"></div>下跌背驰笔</div>
@@ -3524,6 +3546,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
   </div>
   <div class="chart-area" style="margin-bottom:0"><canvas id="volumeCanvas" height="44"></canvas></div>
   <div id="bspTooltip" style="display:none;position:fixed;z-index:1000;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;max-width:88vw;box-shadow:0 4px 16px rgba(0,0,0,0.5);font-size:12px;line-height:1.6;color:#c9d1d9;pointer-events:auto"></div>
+  </div>
 </div>
 
 <div id="marketThermo" style="margin-top:8px;margin-bottom:8px"></div>
@@ -3535,7 +3558,6 @@ var DATA_CACHE = {{}};
 var LIVE_DATA = null;
 const DATA_KEYS = {data_keys_json};
 const INDEX_LIST = {index_list_json};
-const SYNTHESIS = {synthesis_json};
 const SIGNAL_DATA = {mobile_global_signals_json};
 const WATCHLIST_SIGNALS = {mobile_watchlist_signals_json};
 const WATCHLIST_CODES = {watchlist_codes_json};
@@ -3544,8 +3566,8 @@ const MARKET_THERMO = {market_thermo_json};
 function applyLiveDelta(key, base) {{
   if (!LIVE_DATA || !LIVE_DATA[key]) return base;
   const live = LIVE_DATA[key];
-  const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10'];
-  const replaceFields = ['bsp','strokes','segments','seg_labels','hubs',
+  const arrFields = ['dates','kline','volumes','macd_hist','dif','dea','ma5','ma10','ma250'];
+  const replaceFields = ['bsp','strokes','segments','seg_labels','fractals','hubs',
                          'trend','hub_position','hub_detail',
                          'trend_completion','volume_profile','tentative'];
   if (live.full_replace) {{
@@ -3574,23 +3596,34 @@ function applyLiveDelta(key, base) {{
 
 function getChartData(key) {{ return DATA_CACHE[key] || null; }}
 
-function loadChartData(key) {{
-  return new Promise(resolve => {{
-    if (DATA_CACHE[key]) {{ resolve(DATA_CACHE[key]); return; }}
+var _stockLoadPromises = {{}};
+function _extractCode(key) {{
+  return key.replace(/_(daily|30min|5min)$/, '');
+}}
+function loadStockData(code) {{
+  if (_stockLoadPromises[code]) return _stockLoadPromises[code];
+  _stockLoadPromises[code] = new Promise(resolve => {{
     const s = document.createElement('script');
-    s.src = 'data/' + key + '.js';
+    s.src = 'data/' + code + '.js';
     s.onload = () => {{
-      let d = DATA_CACHE[key] || null;
-      if (d) {{
-        DATA_CACHE['_base_' + key] = d;
-        d = applyLiveDelta(key, d);
-        DATA_CACHE[key] = d;
-      }}
-      resolve(d);
+      ['daily', '30min', '5min'].forEach(lv => {{
+        const k = code + '_' + lv;
+        if (DATA_CACHE[k] && !DATA_CACHE['_base_' + k]) {{
+          DATA_CACHE['_base_' + k] = DATA_CACHE[k];
+          DATA_CACHE[k] = applyLiveDelta(k, DATA_CACHE[k]);
+        }}
+      }});
+      resolve();
     }};
-    s.onerror = () => resolve(null);
+    s.onerror = () => resolve();
     document.head.appendChild(s);
   }});
+  return _stockLoadPromises[code];
+}}
+function loadChartData(key) {{
+  if (DATA_CACHE[key]) return Promise.resolve(DATA_CACHE[key]);
+  const code = _extractCode(key);
+  return loadStockData(code).then(() => DATA_CACHE[key] || null);
 }}
 
 // Load live.js at startup for delta merge
@@ -3658,8 +3691,7 @@ function renderMobileGlobalSignals() {{
   }});
   totalAll += hubCnt;
   function mgsRow(s, i, isType3) {{
-    const _mgsSnap = s.source === 'snapshot';
-    const bg = _mgsSnap ? '#1a1510' : (i % 2 === 0 ? '#0d1117' : '#161b22');
+    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tc = tClrs[s.type] || '#c9d1d9';
     let confStr = (confIcons[s.conf] || '') + (s.conf === 'high' ? '高' : s.conf === 'medium' ? '中' : s.conf === 'low' ? '低' : '');
     if (s.conf_score !== undefined && s.conf_score !== null) confStr += '<span style="color:#8b949e;font-size:9px">(' + s.conf_score + ')</span>';
@@ -3668,11 +3700,11 @@ function renderMobileGlobalSignals() {{
     const dtShort = s.dt ? s.dt.substring(5) : '-';
     const inv = s.status === 'invalidated';
     const pending = s.status === 'pending';
-    const rowOpacity = inv ? 'opacity:0.45;' : (_mgsSnap ? 'opacity:0.75;' : '');
+    const rowOpacity = inv ? 'opacity:0.45;' : '';
     const strike = inv ? 'text-decoration:line-through;' : '';
     const mGsBuyType = ['1B','2B','3B','PB'].includes(s.type);
     const mGsConfClr = mGsBuyType ? '#f85149' : '#3fb950';
-    const statusTag = _mgsSnap ? '<span style="font-size:9px;color:#d29922;margin-left:2px">📸</span>' : (inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>'));
+    const statusTag = inv ? '<span style="font-size:9px;color:#da3633;margin-left:2px">✗</span>' : (pending ? '<span style="font-size:9px;color:#d29922;margin-left:2px">⏳</span>' : '<span style="font-size:9px;color:' + mGsConfClr + ';margin-left:2px">✓</span>');
     const mIdxInfo = INDEX_LIST.find(x => x.etf_code === s.etf_code);
     const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
     const _mBk = mTrend.includes('破坏');
@@ -3945,6 +3977,8 @@ async function switchIndex(code) {{
   const idx = INDEX_LIST.find(x => x.etf_code === code);
   if (idx) document.getElementById('mCurrentAsset').textContent = formatAssetLabel(idx);
   if (mNavOpen) toggleMobileNav();
+  mUpdateInfoBarFromIndex();
+  if (!_mChartInited) {{ await mInitChart(); return; }}
   await loadAndRender();
 }}
 
@@ -3970,6 +4004,7 @@ async function switchLevel(level) {{
   const tabs = document.querySelectorAll('.level-tab');
   const i = order.indexOf(level);
   if (i >= 0 && tabs[i]) tabs[i].classList.add('active');
+  if (!_mChartInited) {{ await mInitChart(); return; }}
   await loadAndRender();
 }}
 
@@ -4149,6 +4184,19 @@ function renderKline(data) {{
   }}
   drawMA(data.ma5, '#ffd700');
   drawMA(data.ma10, '#58a6ff');
+  // MA250 with dashed line
+  if (data.ma250 && data.ma250.length > 0) {{
+    ctx.strokeStyle = '#e040fb'; ctx.lineWidth = 1.2; ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    let _ma250s = false;
+    for (let gi = viewStart; gi < viewEnd; gi++) {{
+      if (data.ma250[gi] == null) {{ _ma250s = false; continue; }}
+      const x = scaleX(gi), y = scaleY(data.ma250[gi]);
+      if (!_ma250s) {{ ctx.moveTo(x, y); _ma250s = true; }}
+      else ctx.lineTo(x, y);
+    }}
+    ctx.stroke(); ctx.setLineDash([]);
+  }}
 
   // Candlesticks
   const tentLast = data.tentative > 0 ? kline.length - 1 : -1;
@@ -4194,6 +4242,26 @@ function renderKline(data) {{
     if (lb.x < viewStart || lb.x >= viewEnd) return;
     ctx.fillStyle = '#bc8cff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('D' + (lb.idx + 1), scaleX(lb.x), scaleY(lb.y) - 8);
+  }});
+
+  // Fractal markers: small triangles near K-lines
+  (data.fractals || []).forEach(f => {{
+    if (f.idx < viewStart || f.idx >= viewEnd) return;
+    const x = scaleX(f.idx);
+    const isTop = f.type === 'top';
+    const kBar = kline[f.idx];
+    const price = isTop ? (kBar ? Math.max(kBar[1], kBar[2], kBar[3], kBar[0]) : f.price)
+                        : (kBar ? Math.min(kBar[1], kBar[2], kBar[3], kBar[0]) : f.price);
+    const y = scaleY(price);
+    const sz = 3;
+    ctx.fillStyle = isTop ? 'rgba(248,81,73,0.7)' : 'rgba(63,185,80,0.7)';
+    ctx.beginPath();
+    if (isTop) {{
+      ctx.moveTo(x, y - sz - 2); ctx.lineTo(x - sz, y - 2); ctx.lineTo(x + sz, y - 2);
+    }} else {{
+      ctx.moveTo(x, y + sz + 2); ctx.lineTo(x - sz, y + 2); ctx.lineTo(x + sz, y + 2);
+    }}
+    ctx.closePath(); ctx.fill();
   }});
 
   // Strokes with volume trend markers + divergence color
@@ -4246,7 +4314,7 @@ function renderKline(data) {{
     ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
     ctx.font = mIsT3 ? 'bold 9px sans-serif' : 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mConfIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
-    const mPrefix = mIsT3 ? '◆' : (p.source === 'snapshot' ? '📌' : '#');
+    const mPrefix = mIsT3 ? '◆' : '#';
     const mIdxStr = p.bsp_idx >= 0 ? p.bsp_idx : '';
     let bspText = mPrefix + mIdxStr + ' ' + p.label.substring(0, 2);
     if (p.conf) bspText += (mConfIcons[p.conf] || '');
@@ -4260,54 +4328,6 @@ function renderKline(data) {{
       ctx.font = '7px sans-serif';
       ctx.fillText(r0.label + '↔' + r1.label + ' 背驰 ' + ratio + '%', x, p.is_buy ? y + 36 : y - 12);
     }}
-  }});
-
-  // a+A+b+B+c+C+...+f structure areas and labels (only for 1B/1S trend divergence)
-  const hubColor = '#ffd700';
-  const hubFill = 'rgba(255,215,0,0.10)';
-  data.bsp.filter(p => p.type === '1B' || p.type === '1S').forEach(p => {{
-    if (!p.structure || !p.structure.length) return;
-    p.structure.forEach((st, si) => {{
-      if (st.x1 < viewStart || st.x0 >= viewEnd) return;
-      const sx0 = scaleX(Math.max(st.x0, viewStart));
-      const sx1 = scaleX(Math.min(st.x1, viewEnd - 1));
-      const w = sx1 - sx0;
-      if (w < 2) return;
-      if (st.zg !== undefined) {{
-        // Hub (A/B/C/D/E...): gold rectangle with ZG-ZD bounds
-        const y0 = scaleY(st.zg), y1 = scaleY(st.zd);
-        ctx.fillStyle = hubFill;
-        ctx.fillRect(sx0, y0, w, y1 - y0);
-        ctx.strokeStyle = hubColor;
-        ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
-        ctx.strokeRect(sx0, y0, w, y1 - y0);
-        ctx.setLineDash([]);
-        const mx = (sx0 + sx1) / 2;
-        ctx.font = 'bold italic 14px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillStyle = hubColor;
-        ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
-        ctx.fillText(st.tag, mx, y0 - 4);
-        ctx.shadowBlur = 0;
-      }} else {{
-        // Segments: first=blue(a), last=red(divergence comparison), middle=gray
-        const isFirst = (si === 0);
-        const isLast = (si === p.structure.length - 1);
-        const borderClr = isFirst ? '#58a6ff' : (isLast ? '#f85149' : '#8b949e');
-        const fillClr = isFirst ? 'rgba(88,166,255,0.12)' : (isLast ? 'rgba(248,81,73,0.12)' : 'rgba(139,148,158,0.06)');
-        ctx.fillStyle = fillClr;
-        ctx.fillRect(sx0, pad.t, w, H - pad.t - pad.b);
-        ctx.strokeStyle = borderClr;
-        ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
-        ctx.strokeRect(sx0, pad.t, w, H - pad.t - pad.b);
-        ctx.setLineDash([]);
-        const mx = (sx0 + sx1) / 2;
-        ctx.font = 'bold italic 14px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillStyle = borderClr;
-        ctx.shadowColor = '#000'; ctx.shadowBlur = 3;
-        ctx.fillText(st.tag, mx, pad.t + 16);
-        ctx.shadowBlur = 0;
-      }}
-    }});
   }});
 
   // X-axis dates
@@ -4418,7 +4438,7 @@ function showBspTooltip(bp, screenX, screenY) {{
   const d = getData();
   const dateStr = d && d.dates && d.dates[bp.idx] ? d.dates[bp.idx] : '';
   const typeColor = bp.is_buy ? '#f85149' : '#3fb950';
-  let h = '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">' + (bp.source === 'snapshot' ? '📌' : '#' + bp.bsp_idx) + ' ' + bp.label;
+  let h = '<div style="font-weight:bold;font-size:14px;color:' + typeColor + '">#' + bp.bsp_idx + ' ' + bp.label;
   h += ' <span style="float:right;cursor:pointer;color:#8b949e;font-size:16px" onclick="hideBspTooltip()">✕</span></div>';
   h += '<div style="color:#8b949e;margin:2px 0">日期: ' + dateStr + ' | 价格: ' + bp.price.toFixed(3) + '</div>';
   h += '<table style="width:100%;border-collapse:collapse;margin:4px 0">';
@@ -4797,8 +4817,33 @@ function renderThermo() {{
 }}
 renderThermo();
 
-window.addEventListener('load', async () => {{ await loadAndRender(); setupInteraction(); }});
-window.addEventListener('resize', render);
+let _mChartInited = false;
+async function mInitChart() {{
+  if (_mChartInited) return;
+  _mChartInited = true;
+  const ph = document.getElementById('mChartPlaceholder');
+  if (ph) ph.style.display = 'none';
+  document.getElementById('mChartSection').style.display = '';
+  await loadAndRender();
+  setupInteraction();
+}}
+
+function mUpdateInfoBarFromIndex() {{
+  const idx = INDEX_LIST.find(x => x.etf_code === currentIndex);
+  if (!idx) return;
+  const bar = document.getElementById('infoBar');
+  const sc = idx.score || 0;
+  const scoreBg = sc >= 140 ? '#3a1a1a' : (sc >= 110 ? '#2a2a1a' : (sc >= 80 ? '#1a2a1a' : '#1a1a2a'));
+  const scoreClr = sc >= 140 ? '#f85149' : (sc >= 110 ? '#d29922' : (sc >= 80 ? '#3fb950' : '#8b949e'));
+  bar.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
+    + '<span style="background:' + scoreBg + ';color:' + scoreClr + ';padding:1px 6px;border-radius:3px;font-weight:700">' + sc + '</span>'
+    + '<span>' + (idx.alignment || '-') + '</span>'
+    + '<span style="color:#d2a8ff">' + (idx.conclusion || idx.summary || '-') + '</span>'
+    + '</div>';
+}}
+
+window.addEventListener('load', () => {{ mUpdateInfoBarFromIndex(); renderThermo(); }});
+window.addEventListener('resize', () => {{ if (_mChartInited) render(); }});
 </script>
 </body>
 </html>"""

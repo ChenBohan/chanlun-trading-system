@@ -313,24 +313,14 @@ def _generate_live_js_for_deploy(data_dir: Path) -> bool:
     so the delta always represents the diff from the last full deploy.
     """
     sys.path.insert(0, str(PROJECT_ROOT))
-    from src.visualize import generate_live_js
+    from src.visualize import generate_live_js, parse_merged_data_files
 
     baseline_path = data_dir / ".baseline.json"
     if not baseline_path.exists():
         print("  No deploy baseline found, cannot generate live.js")
         return False
 
-    all_data = {}
-    for p in sorted(data_dir.iterdir()):
-        if not p.is_file() or p.suffix != ".js" or p.name == "live.js":
-            continue
-        key = p.stem
-        content = p.read_text(encoding="utf-8")
-        json_str = content.split("=", 1)[1].rstrip().rstrip(";")
-        try:
-            all_data[key] = json.loads(json_str)
-        except json.JSONDecodeError:
-            print(f"  WARNING: Failed to parse {p.name}, skipping")
+    all_data = parse_merged_data_files(str(data_dir))
 
     if not all_data:
         print("  No data files found for live.js generation")
@@ -379,20 +369,9 @@ def _prepare_delta_deploy(deploy_dir):
 def _save_baseline_from_data_dir(data_dir: Path):
     """Read all data/*.js files and save bar counts + last dates as deploy baseline."""
     sys.path.insert(0, str(PROJECT_ROOT))
-    from src.visualize import save_deploy_baseline
+    from src.visualize import save_deploy_baseline, parse_merged_data_files
 
-    all_data = {}
-    for p in sorted(data_dir.iterdir()):
-        if not p.is_file() or p.suffix != ".js" or p.name == "live.js":
-            continue
-        key = p.stem
-        content = p.read_text(encoding="utf-8")
-        json_str = content.split("=", 1)[1].rstrip().rstrip(";")
-        try:
-            all_data[key] = json.loads(json_str)
-        except json.JSONDecodeError:
-            print(f"  WARNING: Failed to parse {p.name}, skipping")
-
+    all_data = parse_merged_data_files(str(data_dir))
     save_deploy_baseline(str(data_dir), all_data)
     print(f"  Baseline saved: {len(all_data)} keys")
 
