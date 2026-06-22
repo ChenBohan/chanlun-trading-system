@@ -1032,12 +1032,16 @@ def find_hubs(strokes: list[Stroke]) -> list[Hub]:
     """Build hubs from stroke sequence.
 
     Structure per 缠论动力学十一讲 P06: A + B + C + D + E
-      A = entry stroke (enters the hub zone, NOT part of [ZD, ZG])
+      A = entry stroke (enters the hub zone from OUTSIDE, NOT part of [ZD, ZG])
       B, C, D = hub core (three overlapping strokes define the range)
       E = exit stroke (first stroke leaving the hub zone)
 
-    After E exits, the next scan starts at E+1 (not E), so the exit
-    of one hub is NOT reused as the entry of the next hub.
+    Entry pen validation (进入笔方向性验证):
+      The entry pen must ENTER the zone [ZD, ZG] from outside:
+      - Up entry (dir=1): starts below ZD, reaches into/above zone
+      - Down entry (dir=-1): starts above ZG, reaches into/below zone
+      This ensures the entry pen is directional — it brings price INTO the
+      center zone, rather than being an arbitrary preceding pen.
     """
     if len(strokes) < 4:
         return []
@@ -1046,7 +1050,7 @@ def find_hubs(strokes: list[Stroke]) -> list[Hub]:
     i = 0
 
     while i < len(strokes) - 3:
-        # strokes[i] = entry (A), strokes[i+1..i+3] = hub (B, C, D)
+        # strokes[i] = entry candidate (A), strokes[i+1..i+3] = hub (B, C, D)
         ranges = [_stroke_range(strokes[k]) for k in range(i + 1, i + 4)]
         zg = min(r[0] for r in ranges)
         zd = max(r[1] for r in ranges)
@@ -1059,7 +1063,21 @@ def find_hubs(strokes: list[Stroke]) -> list[Hub]:
             i += 1
             continue
 
+        # Validate entry pen: must enter zone [ZD, ZG] from outside
         entry = strokes[i]
+        entry_h, entry_l = _stroke_range(entry)
+        entry_valid = False
+        if entry.direction == 1:
+            # Up pen entering from below: starts below ZD, reaches zone
+            entry_valid = entry_l < zd and entry_h >= zd
+        else:
+            # Down pen entering from above: starts above ZG, reaches zone
+            entry_valid = entry_h > zg and entry_l <= zg
+
+        if not entry_valid:
+            i += 1
+            continue
+
         hub_strokes = list(strokes[i + 1:i + 4])
         j = i + 4
 
