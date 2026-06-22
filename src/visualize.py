@@ -743,6 +743,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>缠论交易系统 v2 — 可视化仪表盘</title>
+<script>if(/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)&&!/nomobile/i.test(location.search))location.replace('mobile.html'+location.search);</script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }

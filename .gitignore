@@ -51,3 +51,4 @@ stocks/*/fundamental/
 # Runtime logs (should not be committed)
 logs/
 *.log
+.wrangler/
