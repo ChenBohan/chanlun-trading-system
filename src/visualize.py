@@ -915,7 +915,7 @@ function loadStockData(code) {
   if (_stockLoadPromises[code]) return _stockLoadPromises[code];
   _stockLoadPromises[code] = new Promise(resolve => {
     const s = document.createElement('script');
-    s.src = 'data/' + code + '.js';
+    s.src = 'data/' + code + '.js?v=__GEN_TS__';
     s.onload = () => {
       ['daily', '30min', '5min'].forEach(lv => {
         const k = code + '_' + lv;
@@ -3092,6 +3092,7 @@ def generate_dashboard(data_dir: str = None,
 
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    html = html.replace("__GEN_TS__", str(int(datetime.now().timestamp())))
     html = html.replace("__DATA_TIME__", latest_data_time or "-")
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
@@ -3420,6 +3421,7 @@ def generate_mobile_dashboard(data_dir: str = None,
             f'{trend_icon} {il["index_name"]}</div>')
     idx_tabs_html = "\n      ".join(tab_parts)
     first_code = index_list[0]["etf_code"] if index_list else ""
+    gen_ts = int(datetime.now().timestamp())
 
     mobile_html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -3605,7 +3607,7 @@ function loadStockData(code) {{
   if (_stockLoadPromises[code]) return _stockLoadPromises[code];
   _stockLoadPromises[code] = new Promise(resolve => {{
     const s = document.createElement('script');
-    s.src = 'data/' + code + '.js';
+    s.src = 'data/' + code + '.js?v={gen_ts}';
     s.onload = () => {{
       ['daily', '30min', '5min'].forEach(lv => {{
         const k = code + '_' + lv;
