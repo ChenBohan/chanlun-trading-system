@@ -1530,7 +1530,7 @@ function renderChart(data) {
       { coord: [data.dates[s.coords[0][0]], s.coords[0][1]] },
       { coord: [data.dates[s.coords[1][0]], s.coords[1][1]],
         lineStyle: { color: strokeColor, width: s.div ? 2.5 : 1.5 },
-        label: { show: true, formatter: 'S' + (s.idx + 1) + volSuffix, fontSize: 12, fontWeight: 'bold', color: strokeColor,
+        label: { show: true, formatter: 'S' + s.idx + volSuffix, fontSize: 12, fontWeight: 'bold', color: strokeColor,
                  position: 'middle', distance: -14 } },
     ];
   });
@@ -1551,7 +1551,7 @@ function renderChart(data) {
     symbol: 'circle',
     symbolSize: 1,
     itemStyle: { color: 'transparent' },
-    label: { show: true, formatter: 'D' + (lb.idx + 1),
+    label: { show: true, formatter: 'D' + lb.idx,
              fontSize: 13, fontWeight: 'bold',
              color: '#bc8cff',
              backgroundColor: 'rgba(13,17,23,0.85)',
@@ -1574,7 +1574,7 @@ function renderChart(data) {
     const dirTag = dirIcons[h.direction] || '';
     const seqTag = h.trend_seq >= 0 ? '#' + (h.trend_seq + 1) : '';
     const lvlTag = h.hub_level || '';
-    const label = lvlTag + (h.idx + 1) + dirTag + seqTag + evoTag + (mergedTag ? ' ' + mergedTag : '') + (volTag ? ' ' + volTag : '') + (durTag ? ' ' + durTag : '');
+    const label = lvlTag + h.idx + dirTag + seqTag + evoTag + (mergedTag ? ' ' + mergedTag : '') + (volTag ? ' ' + volTag : '') + (durTag ? ' ' + durTag : '');
     const evoClr = h.is_merged ? '#d29922' : (evoColorsExt[h.evo] || '#58a6ff');
     return {
       coord: [data.dates[midX], h.zg],
@@ -1593,7 +1593,7 @@ function renderChart(data) {
     const dirTag = dirIcons[sh.direction] || '';
     const seqTag = sh.trend_seq >= 0 ? '#' + (sh.trend_seq + 1) : '';
     const lvlTag = sh.hub_level || '线段中枢';
-    const label = lvlTag + (sh.idx + 1) + dirTag + seqTag + evoTag;
+    const label = lvlTag + sh.idx + dirTag + seqTag + evoTag;
     const evoClr = evoColorsExt[sh.evo] || '#ffd700';
     return {
       coord: [data.dates[midX], sh.zg],
@@ -1661,7 +1661,7 @@ function renderChart(data) {
 
     // --- Type-3 buy/sell: hub context panel ---
     if (isT3 && p.hub_zg !== undefined) {
-      const hubNum = (p.hub_idx !== undefined ? p.hub_idx + 1 : '?');
+      const hubNum = (p.hub_idx !== undefined ? p.hub_idx : '?');
       const rankMap = {0: '下跌末端', 1: '首个中枢', 2: '第二中枢', 3: '第三中枢'};
       const rankLabel = p.hub_rank !== undefined ? (rankMap[p.hub_rank] || '第' + p.hub_rank + '中枢') : '-';
       const rankColor = p.hub_rank <= 1 ? '#3fb950' : (p.hub_rank === 2 ? '#d29922' : '#f85149');
@@ -4155,7 +4155,7 @@ function renderKline(data) {{
     const seqLabel = h.trend_seq >= 0 ? '#' + (h.trend_seq + 1) : '';
     const lvlTag = h.hub_level || '';
     ctx.fillStyle = evoClr; ctx.font = '8px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(lvlTag + (h.idx + 1) + dirIcon + seqLabel + (h.evo ? ' ' + h.evo : '') + volMark, x1 + 2, scaleY(h.zg) + 8);
+    ctx.fillText(lvlTag + h.idx + dirIcon + seqLabel + (h.evo ? ' ' + h.evo : '') + volMark, x1 + 2, scaleY(h.zg) + 8);
     ctx.fillStyle = '#58a6ff';
     ctx.fillText('ZG=' + h.zg.toFixed(2), x1 + 2, scaleY(h.zg) + 17);
     ctx.fillText('ZD=' + h.zd.toFixed(2), x1 + 2, scaleY(h.zd) + 10);
@@ -4175,7 +4175,7 @@ function renderKline(data) {{
     const seqLabel = sh.trend_seq >= 0 ? '#' + (sh.trend_seq + 1) : '';
     const lvlTag = sh.hub_level || '线段中枢';
     ctx.fillStyle = '#ffd700'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(lvlTag + (sh.idx + 1) + dirIcon + seqLabel + (sh.evo ? ' ' + sh.evo : ''), x0 + 2, scaleY(sh.zg) - 3);
+    ctx.fillText(lvlTag + sh.idx + dirIcon + seqLabel + (sh.evo ? ' ' + sh.evo : ''), x0 + 2, scaleY(sh.zg) - 3);
   }});
 
   // MA5 / MA10 lines
@@ -4251,7 +4251,7 @@ function renderKline(data) {{
   (data.seg_labels || []).forEach(lb => {{
     if (lb.x < viewStart || lb.x >= viewEnd) return;
     ctx.fillStyle = '#bc8cff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('D' + (lb.idx + 1), scaleX(lb.x), scaleY(lb.y) - 8);
+    ctx.fillText('D' + lb.idx, scaleX(lb.x), scaleY(lb.y) - 8);
   }});
 
   // Fractal markers: small triangles near K-lines
@@ -4288,7 +4288,7 @@ function renderKline(data) {{
     ctx.fillStyle = labelColor; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mx = (x1 + x2) / 2;
     const volSuf = sVolIcons[s.vol_trend] || '';
-    ctx.fillText('S' + (s.idx + 1) + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
+    ctx.fillText('S' + s.idx + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
   }});
 
   // Buy/Sell markers

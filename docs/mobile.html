@@ -65,7 +65,7 @@ canvas { display: block; width: 100%; background: #0d1117; border-radius: 4px; }
 <body>
 <div class="container">
 <h1>缠论交易系统 v2</h1>
-<div class="subtitle">移动版 · 数据 2026-06-23 15:00:00 · 生成 2026-06-23 16:36 · DF→30F→5F</div>
+<div class="subtitle">移动版 · 数据 2026-06-23 15:00:00 · 生成 2026-06-23 16:52 · DF→30F→5F</div>
 
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 
@@ -429,7 +429,7 @@ function loadStockData(code) {
   if (_stockLoadPromises[code]) return _stockLoadPromises[code];
   _stockLoadPromises[code] = new Promise(resolve => {
     const s = document.createElement('script');
-    s.src = 'data/' + code + '.js?v=1782203784';
+    s.src = 'data/' + code + '.js?v=1782204732';
     s.onload = () => {
       ['daily', '30min', '5min'].forEach(lv => {
         const k = code + '_' + lv;
@@ -972,7 +972,7 @@ function renderKline(data) {
     const seqLabel = h.trend_seq >= 0 ? '#' + (h.trend_seq + 1) : '';
     const lvlTag = h.hub_level || '';
     ctx.fillStyle = evoClr; ctx.font = '8px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(lvlTag + (h.idx + 1) + dirIcon + seqLabel + (h.evo ? ' ' + h.evo : '') + volMark, x1 + 2, scaleY(h.zg) + 8);
+    ctx.fillText(lvlTag + h.idx + dirIcon + seqLabel + (h.evo ? ' ' + h.evo : '') + volMark, x1 + 2, scaleY(h.zg) + 8);
     ctx.fillStyle = '#58a6ff';
     ctx.fillText('ZG=' + h.zg.toFixed(2), x1 + 2, scaleY(h.zg) + 17);
     ctx.fillText('ZD=' + h.zd.toFixed(2), x1 + 2, scaleY(h.zd) + 10);
@@ -992,7 +992,7 @@ function renderKline(data) {
     const seqLabel = sh.trend_seq >= 0 ? '#' + (sh.trend_seq + 1) : '';
     const lvlTag = sh.hub_level || '线段中枢';
     ctx.fillStyle = '#ffd700'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText(lvlTag + (sh.idx + 1) + dirIcon + seqLabel + (sh.evo ? ' ' + sh.evo : ''), x0 + 2, scaleY(sh.zg) - 3);
+    ctx.fillText(lvlTag + sh.idx + dirIcon + seqLabel + (sh.evo ? ' ' + sh.evo : ''), x0 + 2, scaleY(sh.zg) - 3);
   });
 
   // MA5 / MA10 lines
@@ -1068,7 +1068,7 @@ function renderKline(data) {
   (data.seg_labels || []).forEach(lb => {
     if (lb.x < viewStart || lb.x >= viewEnd) return;
     ctx.fillStyle = '#bc8cff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('D' + (lb.idx + 1), scaleX(lb.x), scaleY(lb.y) - 8);
+    ctx.fillText('D' + lb.idx, scaleX(lb.x), scaleY(lb.y) - 8);
   });
 
   // Fractal markers: small triangles near K-lines
@@ -1105,7 +1105,7 @@ function renderKline(data) {
     ctx.fillStyle = labelColor; ctx.font = 'bold 8px sans-serif'; ctx.textAlign = 'center';
     const mx = (x1 + x2) / 2;
     const volSuf = sVolIcons[s.vol_trend] || '';
-    ctx.fillText('S' + (s.idx + 1) + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
+    ctx.fillText('S' + s.idx + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
   });
 
   // Buy/Sell markers
