@@ -313,6 +313,7 @@ def _inject_snapshot_bsp(all_data: dict) -> int:
                 "status": sig.get("status", "active"),
                 "inv_reason": sig.get("inv_reason", ""),
                 "hub_rank": sig.get("hub_rank", -1),
+                "hub_width": sig.get("hub_width", 0),
                 "hub_idx": -1, "inv_price": 0,
                 "signal_level": sig.get("signal_level", ""),
                 "source": "snapshot",
@@ -3010,6 +3011,7 @@ def generate_dashboard(data_dir: str = None,
                 "status": p.get("status", "active"),
                 "inv_reason": p.get("inv_reason", ""),
                 "hub_rank": p.get("hub_rank", -1),
+                "hub_width": p.get("hub_width", 0),
                 "signal_level": p.get("signal_level", ""),
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
@@ -3216,6 +3218,7 @@ def generate_mobile_dashboard(data_dir: str = None,
                 "status": p.get("status", "active"),
                 "inv_reason": p.get("inv_reason", ""),
                 "hub_rank": p.get("hub_rank", -1),
+                "hub_width": p.get("hub_width", 0),
                 "signal_level": p.get("signal_level", ""),
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
