@@ -1368,65 +1368,79 @@ def classify_seg_hub_evolution(seg_hubs: list[SegHub], analysis_level: str = "da
 def assign_hub_direction_and_sequence(hubs: list[Hub]):
     """Assign direction ('上'/'下') and trend_seq to each hub.
 
-    Direction: determined by the entry stroke direction.
-      - Entry stroke UP (dir=1) → hub direction = "上" (uptrend context)
-      - Entry stroke DOWN (dir=-1) → hub direction = "下" (downtrend context)
-
+    Direction: determined by midpoint movement between consecutive hubs.
     Sequence: consecutive same-direction hubs form a chain numbered from 0.
 
-    Theory (108课 §1.5 / 缠论动力学十一讲 P06):
-      - 上涨趋势中的中枢: entry stroke is UP → "上"
-      - 下跌趋势中的中枢: entry stroke is DOWN → "下"
+    Theory (108课 §1.5 / 缠论解析 定理二):
+      - 后ZD > 前ZG → 上涨及其延续
+      - 后ZG < 前ZD → 下跌及其延续
+      - Otherwise: midpoint comparison
     """
     if not hubs:
         return
 
+    hubs[0].direction = ""
+    hubs[0].trend_seq = 0
+
     seq = 0
     prev_dir = ""
-    for i, h in enumerate(hubs):
-        entry_dir = h.context_direction
-        if entry_dir == 1:
+    for i in range(1, len(hubs)):
+        prev, curr = hubs[i - 1], hubs[i]
+        if curr.zd > prev.zg:
             d = "上"
-        elif entry_dir == -1:
+        elif curr.zg < prev.zd:
             d = "下"
         else:
-            d = prev_dir if prev_dir else ""
+            prev_mid = (prev.zg + prev.zd) / 2
+            curr_mid = (curr.zg + curr.zd) / 2
+            if curr_mid > prev_mid:
+                d = "上"
+            elif curr_mid < prev_mid:
+                d = "下"
+            else:
+                d = prev_dir if prev_dir else ""
 
-        h.direction = d
-        if i == 0:
-            seq = 0
-        elif d == prev_dir and d != "":
+        hubs[i].direction = d
+        if d == prev_dir and d != "":
             seq += 1
         else:
             seq = 0
-        h.trend_seq = seq
+        hubs[i].trend_seq = seq
         prev_dir = d
 
 
 def assign_seg_hub_direction_and_sequence(seg_hubs: list[SegHub]):
-    """Same direction/sequence logic for segment-level hubs (entry segment direction)."""
+    """Same direction/sequence logic for segment-level hubs (midpoint movement)."""
     if not seg_hubs:
         return
 
+    seg_hubs[0].direction = ""
+    seg_hubs[0].trend_seq = 0
+
     seq = 0
     prev_dir = ""
-    for i, h in enumerate(seg_hubs):
-        entry_dir = h.context_direction
-        if entry_dir == 1:
+    for i in range(1, len(seg_hubs)):
+        prev, curr = seg_hubs[i - 1], seg_hubs[i]
+        if curr.zd > prev.zg:
             d = "上"
-        elif entry_dir == -1:
+        elif curr.zg < prev.zd:
             d = "下"
         else:
-            d = prev_dir if prev_dir else ""
+            prev_mid = (prev.zg + prev.zd) / 2
+            curr_mid = (curr.zg + curr.zd) / 2
+            if curr_mid > prev_mid:
+                d = "上"
+            elif curr_mid < prev_mid:
+                d = "下"
+            else:
+                d = prev_dir if prev_dir else ""
 
-        h.direction = d
-        if i == 0:
-            seq = 0
-        elif d == prev_dir and d != "":
+        seg_hubs[i].direction = d
+        if d == prev_dir and d != "":
             seq += 1
         else:
             seq = 0
-        h.trend_seq = seq
+        seg_hubs[i].trend_seq = seq
         prev_dir = d
 
 
