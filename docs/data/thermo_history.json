@@ -3,47 +3,47 @@
     "levels": {
       "DF": {
         "hub": {
-          "above": 76,
-          "inside": 27,
-          "below": 142
+          "above": 75,
+          "inside": 29,
+          "below": 141
         },
         "sig": {
-          "3B": 15,
+          "3B": 14,
           "PB": 89,
           "1B": 5,
           "PS": 107,
-          "3S": 23,
+          "3S": 24,
           "other": 5
         }
       },
       "30F": {
         "hub": {
-          "above": 76,
+          "above": 79,
           "inside": 51,
-          "below": 118
+          "below": 115
         },
         "sig": {
-          "3B": 21,
-          "PB": 92,
-          "1B": 3,
-          "PS": 89,
-          "3S": 31,
+          "3B": 23,
+          "PB": 95,
+          "1B": 2,
+          "PS": 86,
+          "3S": 30,
           "other": 2
         }
       },
       "5F": {
         "hub": {
-          "above": 40,
-          "inside": 49,
-          "below": 156
+          "above": 42,
+          "inside": 53,
+          "below": 150
         },
         "sig": {
-          "3B": 27,
-          "PB": 109,
+          "3B": 14,
+          "PB": 128,
           "1B": 0,
-          "PS": 87,
-          "3S": 20,
-          "other": 2
+          "PS": 91,
+          "3S": 12,
+          "other": 0
         }
       }
     },

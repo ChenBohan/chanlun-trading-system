@@ -1034,22 +1034,24 @@ function renderSignalsPanel() {
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
     r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="DF:' + trend + '">' + s.etf_name + '</a></td>';
     r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + snapBadge + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#e3b341;' + strike + '">' + (s.signal_level || '-') + '</td>';
+    if (!isType3) r += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#e3b341;' + strike + '">' + (s.signal_level || '-') + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
-    r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
+    if (!isType3) r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
+    if (!isType3) r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + strStr + '</td>';
     r += '<td style="padding:6px 8px;font-size:12px">' + (s.pos_advice || '-') + '</td>';
     r += '<td style="padding:6px 8px;text-align:center;color:' + wolfClr + '">' + wolfStr + '</td>';
     if (isType3) {
       const rk = s.hub_rank;
-      const rkLabels = {0:'⓪末端',1:'①首个',2:'②第二',3:'③第三'};
+      const rkLabels = {0:'0末端',1:'1首个',2:'2第二',3:'3第三'};
       const rkColors = {0:'#f0883e',1:'#3fb950',2:'#d29922',3:'#8b949e'};
       let rkStr = '-', rkClr = '#8b949e';
       if (rk !== undefined && rk >= 0) {
-        rkStr = rkLabels[rk] || '⑤+第' + rk;
+        rkStr = rkLabels[rk] || rk + '第' + rk;
         rkClr = rkColors[rk] || (rk <= 5 ? '#da3633' : '#6e7681');
       }
       r += '<td style="padding:6px 8px;text-align:center;font-size:12px;font-weight:600;color:' + rkClr + '">' + rkStr + '</td>';
+      const hw = s.hub_width;
+      r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + (hw > 0 ? hw + '笔' : '-') + '</td>';
     }
     r += '</tr>';
     return r;
@@ -1069,16 +1071,16 @@ function renderSignalsPanel() {
       t += '<th style="padding:8px;text-align:left">时间</th>';
       t += '<th style="padding:8px;text-align:left">标的</th>';
       t += '<th style="padding:8px;text-align:center">类型</th>';
-      t += '<th style="padding:8px;text-align:center">级别</th>';
+      if (!isType3) t += '<th style="padding:8px;text-align:center">级别</th>';
       t += '<th style="padding:8px;text-align:center">状态</th>';
-      t += '<th style="padding:8px;text-align:center">置信度</th>';
-      t += '<th style="padding:8px;text-align:center">强弱</th>';
+      if (!isType3) t += '<th style="padding:8px;text-align:center">置信度</th>';
+      if (!isType3) t += '<th style="padding:8px;text-align:center">强弱</th>';
       t += '<th style="padding:8px;text-align:left">仓位建议</th>';
       t += '<th style="padding:8px;text-align:center">防狼</th>';
-      if (isType3) t += '<th style="padding:8px;text-align:center">位次</th>';
+      if (isType3) { t += '<th style="padding:8px;text-align:center">位次</th>'; t += '<th style="padding:8px;text-align:center">笔数</th>'; }
       t += '</tr></thead><tbody>';
       signals.forEach((s, i) => { t += sigRow(s, i, isType3); });
-      const cols = isType3 ? 10 : 9;
+      const cols = isType3 ? 8 : 9;
       if (signals.length === 0) {
         t += '<tr><td colspan="' + cols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
       }
@@ -3727,19 +3729,23 @@ function renderMobileGlobalSignals() {{
     r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
-    r += `<td style="padding:3px 4px;text-align:center;font-size:9px;color:#e3b341;${{strike}}">${{s.signal_level || '-'}}</td>`;
-    r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{strStr}}</td>`;
-    r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{confStr}}</td>`;
+    if (!isType3) {{
+      r += `<td style="padding:3px 4px;text-align:center;font-size:9px;color:#e3b341;${{strike}}">${{s.signal_level || '-'}}</td>`;
+      r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{strStr}}</td>`;
+      r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{confStr}}</td>`;
+    }}
     if (isType3) {{
       const rk = s.hub_rank;
-      const rkL = {{0:'⓪',1:'①',2:'②',3:'③'}};
+      const rkL = {{0:'0末端',1:'1首个',2:'2第二',3:'3第三'}};
       const rkC = {{0:'#f0883e',1:'#3fb950',2:'#d29922',3:'#8b949e'}};
       let rkS = '-', rkClr = '#8b949e';
       if (rk !== undefined && rk >= 0) {{
-        rkS = rkL[rk] || '⑤+';
+        rkS = rkL[rk] || rk + '第' + rk;
         rkClr = rkC[rk] || (rk <= 5 ? '#da3633' : '#6e7681');
       }}
       r += `<td style="padding:3px 4px;text-align:center;font-size:10px;font-weight:600;color:${{rkClr}}">${{rkS}}</td>`;
+      const hw = s.hub_width;
+      r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{hw > 0 ? hw + '笔' : '-'}}</td>`;
     }}
     r += '</tr>';
     return r;
@@ -3758,12 +3764,10 @@ function renderMobileGlobalSignals() {{
       t += '<th style="padding:4px;text-align:left">时间</th>';
       t += '<th style="padding:4px;text-align:left">标的</th>';
       t += '<th style="padding:4px;text-align:center">类型</th>';
-      t += '<th style="padding:4px;text-align:center">级别</th>';
-      t += '<th style="padding:4px;text-align:center">强度</th>';
-      t += '<th style="padding:4px;text-align:center">置信</th>';
-      if (isType3) t += '<th style="padding:4px;text-align:center">位次</th>';
+      if (!isType3) {{ t += '<th style="padding:4px;text-align:center">级别</th>'; t += '<th style="padding:4px;text-align:center">强度</th>'; t += '<th style="padding:4px;text-align:center">置信</th>'; }}
+      if (isType3) {{ t += '<th style="padding:4px;text-align:center">位次</th>'; t += '<th style="padding:4px;text-align:center">笔数</th>'; }}
       t += '</tr></thead><tbody>';
-      const cols = isType3 ? 7 : 6;
+      const cols = isType3 ? 5 : 6;
       signals.forEach((s, i) => {{ t += mgsRow(s, i, isType3); }});
       if (signals.length === 0) {{
         t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;

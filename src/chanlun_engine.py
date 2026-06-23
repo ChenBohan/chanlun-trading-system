@@ -3897,37 +3897,37 @@ def _check_type3_buy(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                 break
 
     # --- Multi-stroke scan: complete sub-level departure + pullback ---
-    # Strictly bounded by scan_limit to prevent scanning into the next hub.
-    post_hub_ext = [s for s in strokes
-                    if s.idx > hub_end_idx and s.idx < scan_limit]
-    above_zg: list[Stroke] = []
-    for s in post_hub_ext:
-        if s.direction == 1:
-            if s.end.high <= hub.zg:
-                continue
-            above_zg.append(s)
-        elif s.direction == -1:
-            if s.end.low < hub.zg:
-                break
-            above_zg.append(s)
+    # Only fires when single-stroke scan didn't produce a signal (each hub
+    # should produce at most ONE type-3 buy signal).
+    if not single_found:
+        post_hub_ext = [s for s in strokes
+                        if s.idx > hub_end_idx and s.idx < scan_limit]
+        above_zg: list[Stroke] = []
+        for s in post_hub_ext:
+            if s.direction == 1:
+                if s.end.high <= hub.zg:
+                    continue
+                above_zg.append(s)
+            elif s.direction == -1:
+                if s.end.low < hub.zg:
+                    break
+                above_zg.append(s)
 
-    if len(above_zg) >= 3:
-        up_above = [s for s in above_zg if s.direction == 1]
-        if up_above:
-            peak_s = max(up_above, key=lambda s: s.end.high)
-            dep_up = len([s for s in up_above if s.idx <= peak_s.idx])
-            pb_downs = [s for s in above_zg
-                        if s.idx > peak_s.idx and s.direction == -1]
-            if pb_downs:
-                trough_s = min(pb_downs, key=lambda s: s.end.low)
-                if trough_s.end.low > hub.zg and (dep_up > 1 or len(pb_downs) > 1):
-                    multi_sig = _make_3b(
-                        peak_s, trough_s,
-                        dep_count=dep_up,
-                        pb_count=len(pb_downs),
-                    )
-                    if not single_found or multi_sig.dt != points[-1].dt:
-                        points.append(multi_sig)
+        if len(above_zg) >= 3:
+            up_above = [s for s in above_zg if s.direction == 1]
+            if up_above:
+                peak_s = max(up_above, key=lambda s: s.end.high)
+                dep_up = len([s for s in up_above if s.idx <= peak_s.idx])
+                pb_downs = [s for s in above_zg
+                            if s.idx > peak_s.idx and s.direction == -1]
+                if pb_downs:
+                    trough_s = min(pb_downs, key=lambda s: s.end.low)
+                    if trough_s.end.low > hub.zg and (dep_up > 1 or len(pb_downs) > 1):
+                        points.append(_make_3b(
+                            peak_s, trough_s,
+                            dep_count=dep_up,
+                            pb_count=len(pb_downs),
+                        ))
 
 
 def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
@@ -4291,37 +4291,37 @@ def _check_type3_sell(hub: Hub, strokes: list[Stroke], hub_end_idx: int,
                 break
 
     # --- Multi-stroke scan: complete sub-level departure + pullback ---
-    # Strictly bounded by scan_limit to prevent scanning into the next hub.
-    post_hub_ext = [s for s in strokes
-                    if s.idx > hub_end_idx and s.idx < scan_limit]
-    below_zd: list[Stroke] = []
-    for s in post_hub_ext:
-        if s.direction == -1:
-            if s.end.low >= hub.zd:
-                continue
-            below_zd.append(s)
-        elif s.direction == 1:
-            if s.end.high > hub.zd:
-                break
-            below_zd.append(s)
+    # Only fires when single-stroke scan didn't produce a signal (each hub
+    # should produce at most ONE type-3 sell signal).
+    if not single_found:
+        post_hub_ext = [s for s in strokes
+                        if s.idx > hub_end_idx and s.idx < scan_limit]
+        below_zd: list[Stroke] = []
+        for s in post_hub_ext:
+            if s.direction == -1:
+                if s.end.low >= hub.zd:
+                    continue
+                below_zd.append(s)
+            elif s.direction == 1:
+                if s.end.high > hub.zd:
+                    break
+                below_zd.append(s)
 
-    if len(below_zd) >= 3:
-        dn_below = [s for s in below_zd if s.direction == -1]
-        if dn_below:
-            trough_s = min(dn_below, key=lambda s: s.end.low)
-            dep_dn = len([s for s in dn_below if s.idx <= trough_s.idx])
-            pb_ups = [s for s in below_zd
-                      if s.idx > trough_s.idx and s.direction == 1]
-            if pb_ups:
-                peak_s = max(pb_ups, key=lambda s: s.end.high)
-                if peak_s.end.high < hub.zd and (dep_dn > 1 or len(pb_ups) > 1):
-                    multi_sig = _make_3s(
-                        trough_s, peak_s,
-                        dep_count=dep_dn,
-                        pb_count=len(pb_ups),
-                    )
-                    if not single_found or multi_sig.dt != points[-1].dt:
-                        points.append(multi_sig)
+        if len(below_zd) >= 3:
+            dn_below = [s for s in below_zd if s.direction == -1]
+            if dn_below:
+                trough_s = min(dn_below, key=lambda s: s.end.low)
+                dep_dn = len([s for s in dn_below if s.idx <= trough_s.idx])
+                pb_ups = [s for s in below_zd
+                          if s.idx > trough_s.idx and s.direction == 1]
+                if pb_ups:
+                    peak_s = max(pb_ups, key=lambda s: s.end.high)
+                    if peak_s.end.high < hub.zd and (dep_dn > 1 or len(pb_ups) > 1):
+                        points.append(_make_3s(
+                            trough_s, peak_s,
+                            dep_count=dep_dn,
+                            pb_count=len(pb_ups),
+                        ))
 
 
 # ── Helpers ──
