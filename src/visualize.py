@@ -1058,6 +1058,9 @@ function renderSignalsPanel() {
     r += '<td style="padding:6px 8px;white-space:nowrap;font-family:monospace;font-size:12px;' + strike + '">' + (s.dt || '-') + '</td>';
     r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="DF:' + trend + '">' + s.etf_name + '</a></td>';
     r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + snapBadge + '</td>';
+    const htClr = s.hub_type === '线段中枢' ? '#ffd700' : '#58a6ff';
+    const htLabel = s.hub_type === '线段中枢' ? '当前级别' : '次级别';
+    r += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:' + htClr + '">' + htLabel + '</td>';
     if (!isType3) r += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#e3b341;' + strike + '">' + (s.signal_level || '-') + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
     if (!isType3) r += '<td style="padding:6px 8px;text-align:center">' + confStr + '</td>';
@@ -1095,7 +1098,8 @@ function renderSignalsPanel() {
       t += '<th style="padding:8px;text-align:left">时间</th>';
       t += '<th style="padding:8px;text-align:left">标的</th>';
       t += '<th style="padding:8px;text-align:center">类型</th>';
-      if (!isType3) t += '<th style="padding:8px;text-align:center">级别</th>';
+      t += '<th style="padding:8px;text-align:center">中枢级别</th>';
+      if (!isType3) t += '<th style="padding:8px;text-align:center">信号级别</th>';
       t += '<th style="padding:8px;text-align:center">状态</th>';
       if (!isType3) t += '<th style="padding:8px;text-align:center">置信度</th>';
       if (!isType3) t += '<th style="padding:8px;text-align:center">强弱</th>';
@@ -3028,6 +3032,8 @@ def generate_dashboard(data_dir: str = None,
         etf_code, level_key = parts
         etf_name = idx_name_map.get(etf_code, etf_code)
         level_cn = level_labels.get(level_key, level_key)
+
+        # Stroke-level BSP (次级别)
         for p in data.get("bsp", []):
             if p["type"] not in valid_types:
                 continue
@@ -3055,6 +3061,7 @@ def generate_dashboard(data_dir: str = None,
                 "hub_rank": p.get("hub_rank", -1),
                 "hub_width": p.get("hub_width", 0),
                 "signal_level": p.get("signal_level", ""),
+                "hub_type": "笔中枢",
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
@@ -3063,6 +3070,38 @@ def generate_dashboard(data_dir: str = None,
             else:
                 entry["area_cmp"] = ""
             global_signals.append(entry)
+
+        # Segment-level BSP (当前级别)
+        for p in data.get("seg_bsp", []):
+            if p["type"] not in valid_types:
+                continue
+            dt_str = data["dates"][p["idx"]] if p["idx"] < len(data["dates"]) else ""
+            entry = {
+                "dt": dt_str,
+                "etf_code": etf_code,
+                "etf_name": etf_name,
+                "level": level_cn,
+                "level_key": level_key,
+                "type": p["type"],
+                "label": p["label"],
+                "price": p["price"],
+                "conf": p.get("conf", ""),
+                "conf_score": 0,
+                "strength": p.get("strength", ""),
+                "str_score": 0,
+                "pos_advice": "",
+                "desc": p.get("desc", ""),
+                "wolf": "",
+                "status": "active",
+                "inv_reason": "",
+                "hub_rank": -1,
+                "hub_width": 0,
+                "signal_level": p.get("signal_level", ""),
+                "hub_type": "线段中枢",
+                "area_cmp": "",
+            }
+            global_signals.append(entry)
+
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
     type_limits = {"type1": 50, "type2": 50, "type3": 50}
     levels = ["DF", "30F", "5F"]
@@ -3243,6 +3282,8 @@ def generate_mobile_dashboard(data_dir: str = None,
         etf_code, level_key = parts
         etf_name = idx_name_map_m.get(etf_code, etf_code)
         level_cn = level_labels_m.get(level_key, level_key)
+
+        # Stroke-level BSP (次级别)
         for p in data.get("bsp", []):
             if p["type"] not in valid_types_m:
                 continue
@@ -3262,6 +3303,7 @@ def generate_mobile_dashboard(data_dir: str = None,
                 "hub_rank": p.get("hub_rank", -1),
                 "hub_width": p.get("hub_width", 0),
                 "signal_level": p.get("signal_level", ""),
+                "hub_type": "笔中枢",
             }
             if p.get("ranges") and len(p["ranges"]) >= 2:
                 r0, r1 = p["ranges"][0], p["ranges"][1]
@@ -3270,6 +3312,30 @@ def generate_mobile_dashboard(data_dir: str = None,
             else:
                 entry_m["area_cmp"] = ""
             mobile_global_signals.append(entry_m)
+
+        # Segment-level BSP (当前级别)
+        for p in data.get("seg_bsp", []):
+            if p["type"] not in valid_types_m:
+                continue
+            dt_str = data["dates"][p["idx"]] if p["idx"] < len(data["dates"]) else ""
+            entry_m = {
+                "dt": dt_str, "etf_code": etf_code, "etf_name": etf_name,
+                "level": level_cn, "level_key": level_key,
+                "type": p["type"], "label": p["label"],
+                "price": p["price"], "conf": p.get("conf", ""),
+                "conf_score": 0,
+                "strength": p.get("strength", ""),
+                "str_score": 0,
+                "status": "active",
+                "inv_reason": "",
+                "hub_rank": -1,
+                "hub_width": 0,
+                "signal_level": p.get("signal_level", ""),
+                "hub_type": "线段中枢",
+                "area_cmp": "",
+            }
+            mobile_global_signals.append(entry_m)
+
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
     mobile_type_limits = {"type1": 50, "type2": 50, "type3": 50}
     mobile_levels = ["DF", "30F", "5F"]
@@ -3774,6 +3840,9 @@ function renderMobileGlobalSignals() {{
     r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px;white-space:nowrap;${{strike}}">${{dtShort}}</td>`;
     r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
+    const mHtClr = s.hub_type === '线段中枢' ? '#ffd700' : '#58a6ff';
+    const mHtLabel = s.hub_type === '线段中枢' ? '当前' : '次级';
+    r += `<td style="padding:3px 4px;text-align:center;font-size:9px;color:${{mHtClr}}">${{mHtLabel}}</td>`;
     if (!isType3) {{
       r += `<td style="padding:3px 4px;text-align:center;font-size:9px;color:#e3b341;${{strike}}">${{s.signal_level || '-'}}</td>`;
       r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{strStr}}</td>`;
@@ -3809,10 +3878,11 @@ function renderMobileGlobalSignals() {{
       t += '<th style="padding:4px;text-align:left">时间</th>';
       t += '<th style="padding:4px;text-align:left">标的</th>';
       t += '<th style="padding:4px;text-align:center">类型</th>';
+      t += '<th style="padding:4px;text-align:center">中枢</th>';
       if (!isType3) {{ t += '<th style="padding:4px;text-align:center">级别</th>'; t += '<th style="padding:4px;text-align:center">强度</th>'; t += '<th style="padding:4px;text-align:center">置信</th>'; }}
       if (isType3) {{ t += '<th style="padding:4px;text-align:center">位次</th>'; t += '<th style="padding:4px;text-align:center">笔数</th>'; }}
       t += '</tr></thead><tbody>';
-      const cols = isType3 ? 5 : 6;
+      const cols = isType3 ? 6 : 7;
       signals.forEach((s, i) => {{ t += mgsRow(s, i, isType3); }});
       if (signals.length === 0) {{
         t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;
