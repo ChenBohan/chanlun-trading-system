@@ -65,7 +65,7 @@ canvas { display: block; width: 100%; background: #0d1117; border-radius: 4px; }
 <body>
 <div class="container">
 <h1>缠论交易系统 v2</h1>
-<div class="subtitle">移动版 · 数据 2026-06-23 15:00:00 · 生成 2026-06-23 16:52 · DF→30F→5F</div>
+<div class="subtitle">移动版 · 数据 2026-06-23 15:00:00 · 生成 2026-06-23 17:16 · DF→30F→5F</div>
 
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 
@@ -429,7 +429,7 @@ function loadStockData(code) {
   if (_stockLoadPromises[code]) return _stockLoadPromises[code];
   _stockLoadPromises[code] = new Promise(resolve => {
     const s = document.createElement('script');
-    s.src = 'data/' + code + '.js?v=1782204732';
+    s.src = 'data/' + code + '.js?v=1782206203';
     s.onload = () => {
       ['daily', '30min', '5min'].forEach(lv => {
         const k = code + '_' + lv;

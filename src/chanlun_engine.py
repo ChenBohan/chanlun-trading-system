@@ -251,6 +251,7 @@ class AnalysisResult:
     merged_seg_hubs: list[SegHub] = field(default_factory=list)
     divergences: list[dict] = field(default_factory=list)
     buy_sell_points: list[BuySellPoint] = field(default_factory=list)
+    seg_buy_sell_points: list[BuySellPoint] = field(default_factory=list)
     position_vs_hub: str = ""
     hub_position_detail: dict = field(default_factory=dict)
     trend_completion: dict = field(default_factory=dict)
@@ -3130,6 +3131,283 @@ def find_buy_sell_points(
     return points
 
 
+# ════════════════════════════════════════════════════════════════════
+# 10b. Segment-Level Buy/Sell Points (线段级别买卖点)
+# ════════════════════════════════════════════════════════════════════
+
+def find_seg_buy_sell_points(
+    seg_hubs: list[SegHub],
+    segments: list[Segment],
+    bars: list[RawBar],
+    level: str,
+) -> list[BuySellPoint]:
+    """Identify Type 1/2/3 buy/sell points for segment-level hubs.
+
+    Operates on SegHub + Segment objects analogous to how
+    find_buy_sell_points operates on Hub + Stroke.
+    """
+    if not seg_hubs or len(segments) < 3:
+        return []
+
+    points: list[BuySellPoint] = []
+    dt_idx = {b.dt: i for i, b in enumerate(bars)} if bars else {}
+
+    def _seg_macd_area(seg: Segment, direction: int) -> float:
+        """MACD histogram area for entire segment in given direction."""
+        s_dt = seg.strokes[0].start.dt
+        e_dt = seg.strokes[-1].end.dt
+        return _macd_hist_area(bars, s_dt, e_dt, direction, dt_idx)
+
+    def _seg_end_price(seg: Segment) -> float:
+        if seg.direction == 1:
+            return seg.high
+        return seg.low
+
+    # Build segment index for quick lookup
+    seg_by_idx = {s.idx: s for s in segments}
+
+    # ── Type 3: Segment exits seg_hub, pullback doesn't re-enter ──
+    for i, hub in enumerate(seg_hubs):
+        if not hub.segments:
+            continue
+        last_core_seg = hub.segments[-1]
+        last_core_idx = last_core_seg.idx
+
+        # Find exit segment (first segment after core that doesn't overlap [ZD, ZG])
+        exit_seg = None
+        for seg in segments:
+            if seg.idx <= last_core_idx:
+                continue
+            seg_h = seg.high
+            seg_l = seg.low
+            overlaps = seg_h >= hub.zd and seg_l <= hub.zg
+            if not overlaps:
+                exit_seg = seg
+                break
+
+        if exit_seg is None:
+            continue
+
+        # Find pullback segment after exit
+        pullback_seg = None
+        for seg in segments:
+            if seg.idx > exit_seg.idx:
+                pullback_seg = seg
+                break
+
+        if pullback_seg is None:
+            continue
+
+        # Type 3 Buy: exit entirely above ZG, pullback low > ZG
+        if exit_seg.low > hub.zg:
+            if pullback_seg.low > hub.zg:
+                price = pullback_seg.low
+                points.append(BuySellPoint(
+                    type="3B", label="三买(线段)",
+                    dt=pullback_seg.end_dt, price=price,
+                    description=(
+                        f"[D{pullback_seg.idx}] 线段中枢{hub.idx}上方三买："
+                        f"离开段D{exit_seg.idx}突破ZG={hub.zg:.2f}，"
+                        f"回落段D{pullback_seg.idx}低点{price:.2f}>ZG"
+                    ),
+                    level=level,
+                    confidence="medium",
+                    hub_idx=hub.idx,
+                    seg_idx=pullback_seg.idx,
+                    strength="standard",
+                    signal_level=f"{hub.hub_level.replace('中枢', '') if hub.hub_level else 'DF'}三买",
+                ))
+
+        # Type 3 Sell: exit entirely below ZD, pullback high < ZD
+        elif exit_seg.high < hub.zd:
+            if pullback_seg.high < hub.zd:
+                price = pullback_seg.high
+                points.append(BuySellPoint(
+                    type="3S", label="三卖(线段)",
+                    dt=pullback_seg.end_dt, price=price,
+                    description=(
+                        f"[D{pullback_seg.idx}] 线段中枢{hub.idx}下方三卖："
+                        f"离开段D{exit_seg.idx}跌破ZD={hub.zd:.2f}，"
+                        f"反弹段D{pullback_seg.idx}高点{price:.2f}<ZD"
+                    ),
+                    level=level,
+                    confidence="medium",
+                    hub_idx=hub.idx,
+                    seg_idx=pullback_seg.idx,
+                    strength="standard",
+                    signal_level=f"{hub.hub_level.replace('中枢', '') if hub.hub_level else 'DF'}三卖",
+                ))
+
+    # ── Type 1: Segment-level trend divergence ──
+    if len(seg_hubs) >= 2 and bars:
+        for i in range(len(seg_hubs) - 1):
+            h0, h1 = seg_hubs[i], seg_hubs[i + 1]
+            is_down = h1.zd < h0.zd and h1.zg < h0.zg
+            is_up = h1.zd > h0.zd and h1.zg > h0.zg
+            if not is_down and not is_up:
+                continue
+
+            trend_dir = -1 if is_down else 1
+
+            # Extend chain of same-direction seg_hubs
+            j = i + 1
+            while j + 1 < len(seg_hubs):
+                nxt, cur = seg_hubs[j + 1], seg_hubs[j]
+                same = ((nxt.zd < cur.zd and nxt.zg < cur.zg) if trend_dir == -1
+                        else (nxt.zd > cur.zd and nxt.zg > cur.zg))
+                if same:
+                    j += 1
+                else:
+                    break
+
+            first_hub = seg_hubs[i]
+            last_hub = seg_hubs[j]
+
+            # a-segment: before first_hub
+            a_seg = first_hub.entry_segment
+            if a_seg is None:
+                continue
+
+            # c-segment: after last_hub (last exit + next segment)
+            last_core_idx = last_hub.segments[-1].idx if last_hub.segments else -1
+            c_segs = [s for s in segments
+                      if s.idx > last_core_idx and s.direction == trend_dir]
+            if not c_segs:
+                continue
+            c_seg = c_segs[-1]  # furthest segment in trend direction
+
+            a_area = _seg_macd_area(a_seg, trend_dir)
+            c_area = _seg_macd_area(c_seg, trend_dir)
+
+            if a_area <= 0:
+                continue
+
+            ratio = c_area / a_area
+            diverged = ratio < 0.9
+
+            if not diverged:
+                continue
+
+            # Confirm c extends beyond hub
+            if trend_dir == -1:
+                c_extreme = c_seg.low
+                if c_extreme >= last_hub.zd:
+                    continue
+            else:
+                c_extreme = c_seg.high
+                if c_extreme <= last_hub.zg:
+                    continue
+
+            price = c_extreme
+            sig_dt = c_seg.end_dt
+
+            if trend_dir == -1:
+                points.append(BuySellPoint(
+                    type="1B", label="一买(线段)",
+                    dt=sig_dt, price=price,
+                    description=(
+                        f"[D{c_seg.idx}] 线段级趋势背驰："
+                        f"c段面积({c_area:.1f}) < a段({a_area:.1f})，"
+                        f"比值={ratio:.2f}"
+                    ),
+                    level=level,
+                    confidence="medium" if ratio < 0.7 else "low",
+                    hub_idx=last_hub.idx,
+                    seg_idx=c_seg.idx,
+                    strength="strong" if ratio < 0.5 else "standard",
+                    signal_level=f"{last_hub.hub_level.replace('中枢', '') if last_hub.hub_level else 'DF'}一买",
+                ))
+            else:
+                points.append(BuySellPoint(
+                    type="1S", label="一卖(线段)",
+                    dt=sig_dt, price=price,
+                    description=(
+                        f"[D{c_seg.idx}] 线段级趋势背驰："
+                        f"c段面积({c_area:.1f}) < a段({a_area:.1f})，"
+                        f"比值={ratio:.2f}"
+                    ),
+                    level=level,
+                    confidence="medium" if ratio < 0.7 else "low",
+                    hub_idx=last_hub.idx,
+                    seg_idx=c_seg.idx,
+                    strength="strong" if ratio < 0.5 else "standard",
+                    signal_level=f"{last_hub.hub_level.replace('中枢', '') if last_hub.hub_level else 'DF'}一卖",
+                ))
+
+    # ── Type 2: First pullback after Type 1 ──
+    for t1 in [p for p in points if p.type == "1B" and p.seg_idx >= 0]:
+        t1_seg = seg_by_idx.get(t1.seg_idx)
+        if not t1_seg:
+            continue
+        # First up segment after t1
+        first_up = None
+        for seg in segments:
+            if seg.idx > t1_seg.idx and seg.direction == 1:
+                first_up = seg
+                break
+        if not first_up:
+            continue
+        # First pullback segment after first_up
+        first_pb = None
+        for seg in segments:
+            if seg.idx > first_up.idx and seg.direction == -1:
+                first_pb = seg
+                break
+        if first_pb and first_pb.low > t1.price:
+            points.append(BuySellPoint(
+                type="2B", label="二买(线段)",
+                dt=first_pb.end_dt, price=first_pb.low,
+                description=(
+                    f"[D{first_pb.idx}] 线段一买(D{t1.seg_idx})后回调"
+                    f"低点({first_pb.low:.2f})不破一买价({t1.price:.2f})"
+                ),
+                level=level,
+                confidence="medium",
+                hub_idx=t1.hub_idx,
+                seg_idx=first_pb.idx,
+                strength="standard",
+                signal_level=f"{t1.signal_level.replace('一买', '')}二买",
+            ))
+
+    for t1 in [p for p in points if p.type == "1S" and p.seg_idx >= 0]:
+        t1_seg = seg_by_idx.get(t1.seg_idx)
+        if not t1_seg:
+            continue
+        first_down = None
+        for seg in segments:
+            if seg.idx > t1_seg.idx and seg.direction == -1:
+                first_down = seg
+                break
+        if not first_down:
+            continue
+        first_rally = None
+        for seg in segments:
+            if seg.idx > first_down.idx and seg.direction == 1:
+                first_rally = seg
+                break
+        if first_rally and first_rally.high < t1.price:
+            points.append(BuySellPoint(
+                type="2S", label="二卖(线段)",
+                dt=first_rally.end_dt, price=first_rally.high,
+                description=(
+                    f"[D{first_rally.idx}] 线段一卖(D{t1.seg_idx})后反弹"
+                    f"高点({first_rally.high:.2f})不破一卖价({t1.price:.2f})"
+                ),
+                level=level,
+                confidence="medium",
+                hub_idx=t1.hub_idx,
+                seg_idx=first_rally.idx,
+                strength="standard",
+                signal_level=f"{t1.signal_level.replace('一卖', '')}二卖",
+            ))
+
+    points.sort(key=lambda p: p.dt)
+    for i, p in enumerate(points):
+        p.idx = i
+
+    return points
+
+
 _TYPE_ZH = {
     "1B": "一买", "1S": "一卖",
     "2B": "二买", "2S": "二卖",
@@ -5046,6 +5324,11 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
 
     for i, p in enumerate(result.buy_sell_points):
         p.idx = i
+
+    # [10c] Segment-level buy/sell points (线段级别买卖点)
+    result.seg_buy_sell_points = find_seg_buy_sell_points(
+        seg_hubs, segments, bars, level,
+    )
 
     # [11] Trend completion assessment (uses merged hubs for consistency)
     result.trend_completion = assess_trend_completion(

@@ -686,6 +686,28 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                      if v is not None and v != "" and v != []}
             bsp_markers.append(entry)
 
+    # Segment-level buy/sell points
+    seg_bsp_markers = []
+    for p in result.seg_buy_sell_points:
+        pi = dt_index.get(p.dt)
+        if pi is not None:
+            is_buy = p.type in ("1B", "2B", "3B", "PB")
+            entry = {
+                "idx": pi,
+                "price": p.price,
+                "type": p.type,
+                "label": p.label,
+                "desc": p.description,
+                "is_buy": is_buy,
+                "hub_idx": p.hub_idx,
+                "signal_level": p.signal_level,
+                "conf": p.confidence,
+                "seg_idx": p.seg_idx,
+            }
+            entry = {k: v for k, v in entry.items()
+                     if v is not None and v != "" and v != []}
+            seg_bsp_markers.append(entry)
+
     # For daily K-lines: tentative if last bar is today and market hasn't closed
     # For intraday: tentative if market is currently open
     tentative = 0
@@ -714,6 +736,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         "hubs": hub_rects,
         "seg_hubs": seg_hub_rects,
         "bsp": bsp_markers,
+        "seg_bsp": seg_bsp_markers,
         "trend": result.trend,
         "hub_position": result.position_vs_hub,
         "hub_detail": result.hub_position_detail,
@@ -1826,6 +1849,25 @@ function renderChart(data) {
   const buyPoints = buildPoints(sortedBuys, true);
   const sellPoints = buildPoints(sortedSells, false);
 
+  // Segment-level BSP markers (larger, gold-bordered)
+  const segBspPts = (data.seg_bsp || []).map(p => {
+    const isBuy = p.is_buy;
+    const baseColor = isBuy ? '#ff6b6b' : '#51cf66';
+    return {
+      coord: [data.dates[p.idx], p.price],
+      value: p.label,
+      symbol: 'pin',
+      symbolSize: 16,
+      symbolRotate: isBuy ? 0 : 180,
+      itemStyle: { color: baseColor, borderColor: '#ffd700', borderWidth: 2 },
+      label: { show: true, formatter: p.signal_level || p.label, position: isBuy ? 'bottom' : 'top',
+               fontSize: 11, fontWeight: 'bold', color: baseColor,
+               backgroundColor: 'rgba(13,17,23,0.85)', padding: [2, 4], borderRadius: 3,
+               distance: 12 },
+      _bp: p,
+    };
+  });
+
   // Fractal markers: small arrows close to K-lines (markPoint, same as BSP)
   const fractalPts = (data.fractals || []).map(f => {
     const isTop = f.type === 'top';
@@ -1920,7 +1962,7 @@ function renderChart(data) {
           borderColor: upColor, borderColor0: downColor,
         },
         markPoint: {
-          data: [...fractalPts, ...buyPoints, ...sellPoints, ...hubLabelPts, ...segHubLabelPts],
+          data: [...fractalPts, ...buyPoints, ...sellPoints, ...segBspPts, ...hubLabelPts, ...segHubLabelPts],
           animation: false,
           tooltip: {
             show: true,
