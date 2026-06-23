@@ -1117,7 +1117,11 @@ def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
     """Build hubs from segment sequence (线段中枢).
 
     Same convention as stroke hubs: A(entry) + B,C,D(core) + E(exit).
-    After E exits, next scan starts at E+1.
+
+    Entry segment validation (same principle as stroke hubs):
+      The entry segment must ENTER the zone [ZD, ZG] from outside:
+      - Up entry (dir=1): starts below ZD, reaches into/above zone
+      - Down entry (dir=-1): starts above ZG, reaches into/below zone
     """
     if len(segments) < 4:
         return []
@@ -1134,7 +1138,19 @@ def find_seg_hubs(segments: list[Segment]) -> list[SegHub]:
             i += 1
             continue
 
+        # Validate entry segment: must enter zone [ZD, ZG] from outside
         entry = segments[i]
+        entry_h, entry_l = _segment_range(entry)
+        entry_valid = False
+        if entry.direction == 1:
+            entry_valid = entry_l < zd and entry_h >= zd
+        else:
+            entry_valid = entry_h > zg and entry_l <= zg
+
+        if not entry_valid:
+            i += 1
+            continue
+
         hub_segs = list(segments[i + 1:i + 4])
         j = i + 4
 
