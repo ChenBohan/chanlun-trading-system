@@ -261,8 +261,12 @@ def deploy(delta_only=False, save_baseline=False):
     if not ensure_project(headers):
         sys.exit(1)
 
+    fell_back_to_full = False
     if delta_only:
         files_to_upload, manifest = _prepare_delta_deploy(DEPLOY_DIR)
+        if len(files_to_upload) > 2:
+            fell_back_to_full = True
+            delta_only = False
     else:
         files_to_upload = collect_files(DEPLOY_DIR, delta_only=False)
         manifest = {f["path"]: f["hash"] for f in files_to_upload}
@@ -298,10 +302,9 @@ def deploy(delta_only=False, save_baseline=False):
         sys.exit(1)
 
     if not delta_only:
-        # Save manifest for future delta deploys
         with open(MANIFEST_CACHE, "w") as f:
             json.dump(manifest, f)
-        if save_baseline:
+        if save_baseline or fell_back_to_full:
             _save_baseline_from_data_dir(DEPLOY_DIR / "data")
 
 
@@ -330,14 +333,29 @@ def _generate_live_js_for_deploy(data_dir: Path) -> bool:
     return result is not None
 
 
+LIVE_JS_SIZE_LIMIT = 20 * 1024 * 1024  # 20 MiB — beyond this, base64 payload exceeds CF limit
+
+
 def _prepare_delta_deploy(deploy_dir):
-    """Prepare delta deploy: generate live.js from deploy baseline, upload HTML + live.js."""
+    """Prepare delta deploy: generate live.js from deploy baseline, upload HTML + live.js.
+
+    Auto-falls back to full deploy + baseline save if live.js exceeds size limit.
+    """
     if not MANIFEST_CACHE.exists():
         print("No cached manifest found, falling back to full deploy")
         files = collect_files(deploy_dir, delta_only=False)
         return files, {f["path"]: f["hash"] for f in files}
 
     _generate_live_js_for_deploy(deploy_dir / "data")
+
+    live_js = deploy_dir / "data" / "live.js"
+    if live_js.exists() and live_js.stat().st_size > LIVE_JS_SIZE_LIMIT:
+        size_mb = live_js.stat().st_size / 1024 / 1024
+        print(f"  live.js ({size_mb:.1f} MB) exceeds {LIVE_JS_SIZE_LIMIT // 1024 // 1024} MB limit, "
+              f"auto-resetting baseline with full deploy")
+        files = collect_files(deploy_dir, delta_only=False)
+        manifest = {f["path"]: f["hash"] for f in files}
+        return files, manifest
 
     with open(MANIFEST_CACHE, "r") as f:
         old_manifest = json.load(f)
@@ -355,7 +373,6 @@ def _prepare_delta_deploy(deploy_dir):
         new_manifest["/index.html"] = h
 
     # live.js
-    live_js = deploy_dir / "data" / "live.js"
     if live_js.exists():
         h = hash_file(live_js)
         files_to_upload.append({"path": "/data/live.js", "hash": h,
