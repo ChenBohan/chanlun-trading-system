@@ -75,7 +75,7 @@ if [[ "${1:-}" == "--remove" ]]; then
     exit 0
 fi
 
-TIMEOUT_SEC=420  # 7 minutes max (MA250 filter first, then fetch ~200-340 filtered stocks)
+TIMEOUT_SEC=660  # 11 minutes max (475 daily ~6min + MA250 filter + ~300 intraday ~3min + analyze + dashboard)
 
 # ─── Lock to prevent concurrent runs ───────────────────────────────
 if [[ -f "$LOCK_FILE" ]]; then
