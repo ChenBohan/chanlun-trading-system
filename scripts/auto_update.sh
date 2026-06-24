@@ -138,7 +138,7 @@ cd "$PROJECT_DIR"
     full_reason=""
     if [[ ! -f "$BASELINE_FILE" ]]; then
         need_full=true; full_reason="no baseline"
-    elif (( HOUR == 15 && MINUTE >= 6 && MINUTE < 11 )); then
+    elif (( HOUR == 15 && MINUTE >= 6 && MINUTE < 20 )); then
         need_full=true; full_reason="post-close"
     elif [[ -f "$LIVE_JS" ]]; then
         live_size=$(stat -c %s "$LIVE_JS" 2>/dev/null || echo 0)

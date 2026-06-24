@@ -306,6 +306,10 @@ def deploy(delta_only=False, save_baseline=False):
             json.dump(manifest, f)
         if save_baseline or fell_back_to_full:
             _save_baseline_from_data_dir(DEPLOY_DIR / "data")
+            stale_live = DEPLOY_DIR / "data" / "live.js"
+            if stale_live.exists():
+                stale_live.unlink()
+                print("  Removed stale live.js after baseline save")
 
 
 def _generate_live_js_for_deploy(data_dir: Path) -> bool:
