@@ -939,34 +939,38 @@ function applyLiveDelta(key, base) {
 
 function getChartData(key) { return DATA_CACHE[key] || null; }
 
-var _stockLoadPromises = {};
 function _extractCode(key) {
   return key.replace(/_(daily|30min|5min)$/, '');
 }
-function loadStockData(code) {
-  if (_stockLoadPromises[code]) return _stockLoadPromises[code];
-  _stockLoadPromises[code] = new Promise(resolve => {
+function _loadLevelFile(key) {
+  return new Promise(resolve => {
     const s = document.createElement('script');
-    s.src = 'data/' + code + '.js?v=__GEN_TS__';
+    s.src = 'data/' + key + '.js?v=__GEN_TS__';
     s.onload = () => {
-      ['daily', '30min', '5min'].forEach(lv => {
-        const k = code + '_' + lv;
-        if (DATA_CACHE[k] && !DATA_CACHE['_base_' + k]) {
-          DATA_CACHE['_base_' + k] = DATA_CACHE[k];
-          DATA_CACHE[k] = applyLiveDelta(k, DATA_CACHE[k]);
-        }
-      });
+      if (DATA_CACHE[key] && !DATA_CACHE['_base_' + key]) {
+        DATA_CACHE['_base_' + key] = DATA_CACHE[key];
+        DATA_CACHE[key] = applyLiveDelta(key, DATA_CACHE[key]);
+      }
       resolve();
     };
     s.onerror = () => resolve();
     document.head.appendChild(s);
   });
-  return _stockLoadPromises[code];
 }
+const _levelLoadPromises = {};
 function loadChartData(key) {
   if (DATA_CACHE[key]) return Promise.resolve(DATA_CACHE[key]);
-  const code = _extractCode(key);
-  return loadStockData(code).then(() => DATA_CACHE[key] || null);
+  if (!_levelLoadPromises[key]) {
+    _levelLoadPromises[key] = _loadLevelFile(key);
+    const code = _extractCode(key);
+    ['daily','30min','5min'].forEach(lv => {
+      const other = code + '_' + lv;
+      if (other !== key && !_levelLoadPromises[other]) {
+        _levelLoadPromises[other] = new Promise(r => setTimeout(() => _loadLevelFile(other).then(r), 50));
+      }
+    });
+  }
+  return _levelLoadPromises[key].then(() => DATA_CACHE[key] || null);
 }
 
 // Deferred live.js loading — waits until first chart renders to avoid blocking startup
@@ -2945,32 +2949,32 @@ def _extract_code(key: str) -> str:
 
 
 def _write_merged_data_files(data_out_dir: str, all_data: dict) -> None:
-    """Write merged per-code data files: one .js file per stock containing all levels.
+    """Write per-level data files: one .js file per stock+level for fast loading.
 
-    File format (each line is a DATA_CACHE assignment):
+    File format (single DATA_CACHE assignment per file):
         DATA_CACHE["300502_daily"]={...};
-        DATA_CACHE["300502_30min"]={...};
-        DATA_CACHE["300502_5min"]={...};
+
+    Files: 300502_daily.js, 300502_30min.js, 300502_5min.js
     """
+    # Remove legacy merged per-code files (e.g. 300502.js containing all levels)
     from collections import defaultdict
-    by_code: dict[str, list[tuple[str, dict]]] = defaultdict(list)
+    by_code: dict[str, list] = defaultdict(list)
     for key in sorted(all_data.keys()):
         code = _extract_code(key)
-        by_code[code].append((key, all_data[key]))
+        by_code[code].append(key)
 
-    # Remove legacy per-level files (e.g. 300502_daily.js)
-    for key in all_data:
-        legacy = os.path.join(data_out_dir, f"{key}.js")
+    for code in by_code:
+        legacy = os.path.join(data_out_dir, f"{code}.js")
         if os.path.exists(legacy):
             os.remove(legacy)
 
-    for code, items in by_code.items():
-        fpath = os.path.join(data_out_dir, f"{code}.js")
+    # Write per-level files
+    for key, chart_data in all_data.items():
+        fpath = os.path.join(data_out_dir, f"{key}.js")
+        json_str = json.dumps(chart_data, ensure_ascii=False,
+                              separators=(",", ":"))
         with open(fpath, "w", encoding="utf-8") as df:
-            for key, chart_data in items:
-                json_str = json.dumps(chart_data, ensure_ascii=False,
-                                      separators=(",", ":"))
-                df.write(f'DATA_CACHE["{key}"]={json_str};\n')
+            df.write(f'DATA_CACHE["{key}"]={json_str};\n')
 
 
 def parse_merged_data_files(data_dir: str) -> dict:
@@ -3746,34 +3750,38 @@ function applyLiveDelta(key, base) {{
 
 function getChartData(key) {{ return DATA_CACHE[key] || null; }}
 
-var _stockLoadPromises = {{}};
 function _extractCode(key) {{
   return key.replace(/_(daily|30min|5min)$/, '');
 }}
-function loadStockData(code) {{
-  if (_stockLoadPromises[code]) return _stockLoadPromises[code];
-  _stockLoadPromises[code] = new Promise(resolve => {{
+function _loadLevelFile(key) {{
+  return new Promise(resolve => {{
     const s = document.createElement('script');
-    s.src = 'data/' + code + '.js?v={gen_ts}';
+    s.src = 'data/' + key + '.js?v={gen_ts}';
     s.onload = () => {{
-      ['daily', '30min', '5min'].forEach(lv => {{
-        const k = code + '_' + lv;
-        if (DATA_CACHE[k] && !DATA_CACHE['_base_' + k]) {{
-          DATA_CACHE['_base_' + k] = DATA_CACHE[k];
-          DATA_CACHE[k] = applyLiveDelta(k, DATA_CACHE[k]);
-        }}
-      }});
+      if (DATA_CACHE[key] && !DATA_CACHE['_base_' + key]) {{
+        DATA_CACHE['_base_' + key] = DATA_CACHE[key];
+        DATA_CACHE[key] = applyLiveDelta(key, DATA_CACHE[key]);
+      }}
       resolve();
     }};
     s.onerror = () => resolve();
     document.head.appendChild(s);
   }});
-  return _stockLoadPromises[code];
 }}
+const _levelLoadPromises = {{}};
 function loadChartData(key) {{
   if (DATA_CACHE[key]) return Promise.resolve(DATA_CACHE[key]);
-  const code = _extractCode(key);
-  return loadStockData(code).then(() => DATA_CACHE[key] || null);
+  if (!_levelLoadPromises[key]) {{
+    _levelLoadPromises[key] = _loadLevelFile(key);
+    const code = _extractCode(key);
+    ['daily','30min','5min'].forEach(lv => {{
+      const other = code + '_' + lv;
+      if (other !== key && !_levelLoadPromises[other]) {{
+        _levelLoadPromises[other] = new Promise(r => setTimeout(() => _loadLevelFile(other).then(r), 50));
+      }}
+    }});
+  }}
+  return _levelLoadPromises[key].then(() => DATA_CACHE[key] || null);
 }}
 
 // Load live.js at startup for delta merge

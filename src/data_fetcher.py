@@ -1018,21 +1018,26 @@ _print_lock = threading.Lock()
 def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
                      beg: str, datalen_daily: int, datalen_intraday: int,
                      delay: float, data_dir: str = "",
-                     force: bool = False) -> FetchResult:
-    """Fetch all 3 timeframes for a single index (runs in a worker thread).
+                     force: bool = False,
+                     periods: list = None) -> FetchResult:
+    """Fetch timeframes for a single index (runs in a worker thread).
 
     Supports incremental mode: checks existing CSV freshness and may
     skip or use reduced datalen for indices with up-to-date data.
     Set force=True to always do full fetch.
+    Set periods to limit which timeframes to fetch (e.g. ["daily"]).
     """
     result = FetchResult(index_cfg=idx)
     bar_counts = {}
     skipped_all = True
 
     csv_names = {"daily": "daily.csv", "30min": "30min.csv", "5min": "5min.csv"}
+    all_periods = [("daily", "DF"), ("30min", "30F"), ("5min", "5F")]
+    if periods:
+        all_periods = [(p, l) for p, l in all_periods if p in periods]
     idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}") if data_dir else ""
 
-    for period, label in [("daily", "DF"), ("30min", "30F"), ("5min", "5F")]:
+    for period, label in all_periods:
         csv_path = os.path.join(idx_dir, csv_names[period]) if idx_dir else ""
 
         strategy = _FULL if force else _fetch_strategy(csv_path, period)
@@ -1083,8 +1088,9 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
                       datalen_intraday: int = None,
                       delay: float = 0.2,
                       max_workers: int = 8,
-                      force: bool = False) -> list[FetchResult]:
-    """Fetch daily + 30min + 5min data for all indices (parallelized).
+                      force: bool = False,
+                      periods: list = None) -> list[FetchResult]:
+    """Fetch data for all indices (parallelized).
 
     Args:
         indices: list of IndexConfig (loads from config if None)
@@ -1094,6 +1100,7 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
         delay: seconds between API calls within each worker thread
         max_workers: number of concurrent download threads (default 8)
         force: bypass incremental mode, always full fetch
+        periods: list of periods to fetch (e.g. ["daily"] or ["daily","30min","5min"])
     """
     if indices is None:
         indices = load_index_watchlist()
@@ -1118,7 +1125,7 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
             fut = executor.submit(
                 _fetch_one_index, idx, i + 1, total,
                 beg, datalen_daily, datalen_intraday, delay,
-                data_dir, force,
+                data_dir, force, periods,
             )
             futures[fut] = i
 

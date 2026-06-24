@@ -149,8 +149,64 @@ def cmd_batch(args):
     print(f"Total lines: {len(lines)}")
 
 
+def _fetch_batch_realtime_prices(indices) -> dict:
+    """Fetch real-time prices for all stocks via Sina batch quote API.
+
+    Returns dict: {etf_code: latest_price} for stocks with valid quotes.
+    """
+    from urllib.request import Request, urlopen
+    from src.data_fetcher import _sina_symbol
+
+    prices = {}
+    symbols = []
+    code_map = {}  # sina_sym -> etf_code
+
+    for idx in indices:
+        sina_sym = _sina_symbol(idx.etf_code, idx.market)
+        symbols.append(sina_sym)
+        code_map[sina_sym] = idx.etf_code
+
+    # Sina supports batch: up to ~800 symbols per request
+    BATCH_SIZE = 500
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://finance.sina.com.cn"}
+
+    for i in range(0, len(symbols), BATCH_SIZE):
+        batch = symbols[i:i + BATCH_SIZE]
+        url = f"https://hq.sinajs.cn/list={','.join(batch)}"
+        try:
+            req = Request(url, headers=headers)
+            with urlopen(req, timeout=15) as resp:
+                raw = resp.read().decode("gbk")
+            for line in raw.strip().split("\n"):
+                if '="' not in line:
+                    continue
+                var_part = line.split("=")[0]
+                sina_sym = var_part.split("_")[-1]
+                content = line.split('="')[1].rstrip('";\n')
+                if not content:
+                    continue
+                parts = content.split(",")
+                if len(parts) < 4:
+                    continue
+                try:
+                    cur_price = float(parts[3])
+                    if cur_price > 0:
+                        etf_code = code_map.get(sina_sym, "")
+                        if etf_code:
+                            prices[etf_code] = cur_price
+                except (ValueError, IndexError):
+                    continue
+        except Exception:
+            continue
+
+    return prices
+
+
 def _filter_by_ma250(indices, data_dir: str) -> tuple[list, dict]:
-    """Filter indices by MA250: only keep those with latest close >= MA250.
+    """Filter indices by MA250: fetch real-time price, compare with MA250.
+
+    ETFs (type "broad" or "sector") bypass the filter entirely.
+    Only individual stocks (type "stock") are subject to MA250 filtering.
 
     Returns (filtered_indices, filter_stats) where filter_stats contains
     total_count, selected_count, and per-symbol details.
@@ -158,10 +214,26 @@ def _filter_by_ma250(indices, data_dir: str) -> tuple[list, dict]:
     import csv as _csv
 
     MA_PERIOD = 250
-    selected = []
-    stats = {"total": len(indices), "selected": 0, "above": [], "below": []}
+    BYPASS_TYPES = {"broad", "sector"}
 
-    for idx in indices:
+    # Separate ETFs and stocks
+    etfs = [idx for idx in indices if getattr(idx, 'type', '') in BYPASS_TYPES]
+    stocks = [idx for idx in indices if getattr(idx, 'type', '') not in BYPASS_TYPES]
+
+    stats = {"total": len(indices), "selected": 0, "above": [], "below": [],
+             "etf_bypass": len(etfs)}
+
+    # Fetch real-time prices for all stocks
+    print(f"  获取 {len(stocks)} 只个股实时行情...")
+    realtime_prices = _fetch_batch_realtime_prices(stocks)
+    print(f"  获取到 {len(realtime_prices)} 只实时价格")
+
+    selected = list(etfs)
+
+    for idx in stocks:
+        # Use real-time price if available, otherwise fall back to disk data
+        latest_price = realtime_prices.get(idx.etf_code)
+
         idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}")
         csv_path = os.path.join(idx_dir, "daily.csv")
         if not os.path.exists(csv_path):
@@ -178,21 +250,24 @@ def _filter_by_ma250(indices, data_dir: str) -> tuple[list, dict]:
             selected.append(idx)
             continue
 
-        latest_close = closes[-1]
+        # Use real-time price if available; otherwise use last close from CSV
+        if latest_price is None:
+            latest_price = closes[-1]
+
         ma250 = sum(closes[-MA_PERIOD:]) / MA_PERIOD
 
-        if latest_close >= ma250:
+        if latest_price >= ma250:
             selected.append(idx)
-            stats["above"].append((idx.etf_code, idx.etf_name, latest_close, ma250))
+            stats["above"].append((idx.etf_code, idx.etf_name, latest_price, ma250))
         else:
-            stats["below"].append((idx.etf_code, idx.etf_name, latest_close, ma250))
+            stats["below"].append((idx.etf_code, idx.etf_name, latest_price, ma250))
 
     stats["selected"] = len(selected)
     return selected, stats
 
 
 def cmd_run(args):
-    """Full pipeline: filter(MA250) → fetch filtered → analyze → dashboard."""
+    """Full pipeline: daily fetch → MA250 filter → fetch filtered → analyze → dashboard."""
     import time as _time
     from src.data_fetcher import (
         load_index_watchlist, fetch_all_indices,
@@ -214,41 +289,55 @@ def cmd_run(args):
     print("=" * 60)
 
     t_start = _time.perf_counter()
-
-    # Step 1: MA250 filter using existing data on disk
-    print("\n[Step 1/4] 年线过滤（MA250）...")
     indices = load_index_watchlist()
     data_dir = os.path.join(PROJECT_ROOT, "data")
+
+    # Step 1: Fetch daily data for ALL stocks (needed for MA250 calculation)
+    print(f"\n[Step 1/5] 拉取全量日线数据（{len(indices)} 标的）...")
+    t0 = _time.perf_counter()
+    daily_results = fetch_all_indices(
+        indices=indices, beg=args.beg,
+        delay=args.delay, max_workers=args.workers,
+        force=args.force,
+        periods=["daily"],
+    )
+    save_fetch_results(daily_results, fmt="csv")
+    t_daily = _time.perf_counter() - t0
+    print(f"  日线拉取完成: {t_daily:.1f}s")
+
+    # Step 2: MA250 filter (real-time price vs MA250 from daily data)
+    print("\n[Step 2/5] 年线过滤（实时价格 vs MA250）...")
     filtered_indices, filter_stats = _filter_by_ma250(indices, data_dir)
     print(f"  总股票池: {filter_stats['total']} | "
-          f"年线上方（入选）: {filter_stats['selected']} | "
-          f"年线下方（排除）: {len(filter_stats['below'])}")
+          f"ETF直通: {filter_stats.get('etf_bypass', 0)} | "
+          f"个股年线上方: {len(filter_stats['above'])} | "
+          f"个股年线下方（排除）: {len(filter_stats['below'])} | "
+          f"入选: {filter_stats['selected']}")
 
-    # Step 2: Fetch only filtered stocks
-    print(f"\n[Step 2/4] 数据拉取（{filter_stats['selected']} 标的）...")
+    # Step 3: Fetch 30min + 5min for filtered stocks only
+    print(f"\n[Step 3/5] 拉取入选标的分钟线（{filter_stats['selected']} 标的）...")
     t0 = _time.perf_counter()
-    results = fetch_all_indices(
+    intraday_results = fetch_all_indices(
         indices=filtered_indices, beg=args.beg,
         delay=args.delay, max_workers=args.workers,
         force=args.force,
+        periods=["30min", "5min"],
     )
-    print_fetch_summary(results)
+    save_fetch_results(intraday_results, fmt="csv")
+    t_intraday = _time.perf_counter() - t0
 
-    # Step 2b: Sina supplement for shallow data (skip during trading hours)
+    # Step 3b: Sina supplement for shallow data (skip during trading hours)
     if not getattr(args, 'no_supplement', False):
         from src.data_fetcher import _is_cn_market_closed
         if _is_cn_market_closed():
-            print("\n[Step 2b/4] Sina 深度补充（日线 + 分钟线）...")
-            supplement_daily_with_sina(results)
-            supplement_intraday_with_sina(results)
+            print(f"\n[Step 3b/5] Sina 深度补充...")
+            supplement_daily_with_sina(daily_results)
+            supplement_intraday_with_sina(intraday_results)
         else:
-            print("\n[Step 2b/4] Sina 深度补充... 盘中跳过（收盘后自动执行）")
+            print(f"\n[Step 3b/5] Sina 深度补充... 盘中跳过")
 
-    save_fetch_results(results, fmt="csv")
-    t_fetch = _time.perf_counter() - t0
-
-    # Step 3: Analyze filtered pool
-    print(f"\n[Step 3/4] 缠论分析（{filter_stats['selected']} 标的，多进程）...")
+    # Step 4: Analyze filtered pool
+    print(f"\n[Step 4/5] 缠论分析（{filter_stats['selected']} 标的，多进程）...")
     t0 = _time.perf_counter()
     analyze_workers = min(args.analyze_workers, len(filtered_indices))
     cache = run_analysis_pipeline(
@@ -258,16 +347,16 @@ def cmd_run(args):
     cache["filter_stats"] = filter_stats
     t_analyze = _time.perf_counter() - t0
 
-    # Step 4: Mobile dashboard (reuses analysis cache)
-    print("\n[Step 4/4] 生成移动版仪表盘...")
+    # Step 5: Mobile dashboard (reuses analysis cache)
+    print("\n[Step 5/5] 生成移动版仪表盘...")
     t0 = _time.perf_counter()
     generate_mobile_dashboard(cache=cache)
     t_mobile = _time.perf_counter() - t0
 
     t_total = _time.perf_counter() - t_start
     print(f"\n完整流水线执行完毕。")
-    print(f"  数据拉取: {t_fetch:.1f}s | 缠论分析: {t_analyze:.1f}s | "
-          f"移动仪表盘: {t_mobile:.1f}s | 总计: {t_total:.1f}s")
+    print(f"  日线拉取: {t_daily:.1f}s | 分钟线拉取: {t_intraday:.1f}s | "
+          f"缠论分析: {t_analyze:.1f}s | 仪表盘: {t_mobile:.1f}s | 总计: {t_total:.1f}s")
 
 
 def main():
