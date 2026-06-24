@@ -346,9 +346,11 @@ def _prepare_delta_deploy(deploy_dir):
         files = collect_files(deploy_dir, delta_only=False)
         return files, {f["path"]: f["hash"] for f in files}
 
-    _generate_live_js_for_deploy(deploy_dir / "data")
-
     live_js = deploy_dir / "data" / "live.js"
+    generated = _generate_live_js_for_deploy(deploy_dir / "data")
+    if not generated and live_js.exists():
+        live_js.unlink()
+
     if live_js.exists() and live_js.stat().st_size > LIVE_JS_SIZE_LIMIT:
         size_mb = live_js.stat().st_size / 1024 / 1024
         print(f"  live.js ({size_mb:.1f} MB) exceeds {LIVE_JS_SIZE_LIMIT // 1024 // 1024} MB limit, "
