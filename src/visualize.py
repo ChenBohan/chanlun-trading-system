@@ -595,6 +595,12 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
         si = dt_index.get(sh.start_dt)
         ei = dt_index.get(sh.end_dt)
         if si is not None and ei is not None:
+            if sh.direction == "上":
+                seg_dir = 1
+            elif sh.direction == "下":
+                seg_dir = -1
+            else:
+                seg_dir = sh.context_direction
             seg_hub_rects.append({
                 "x0": si, "x1": ei,
                 "zg": sh.zg, "zd": sh.zd,
@@ -604,6 +610,7 @@ def _result_to_echarts_data(result: AnalysisResult, max_bars: int = 0) -> dict:
                 "hub_level": sh.hub_level,
                 "direction": sh.direction,
                 "trend_seq": sh.trend_seq,
+                "dir": seg_dir,
             })
 
     # Build fractal merge map: fractal_dt → list of raw bar indices (if merged)
@@ -871,9 +878,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   <span style="color:#ffd700">━ MA5</span>
   <span style="color:#58a6ff">━ MA10</span>
   <span style="color:#e040fb">┅ MA250</span>
-  <span>█<span style="color:rgba(248,81,73,0.6)">中枢↑</span></span>
-  <span>█<span style="color:rgba(63,185,80,0.6)">中枢↓</span></span>
-  <span>█<span style="color:rgba(255,215,0,0.7)">段中枢</span></span>
+  <span style="color:rgba(248,81,73,0.5)">█<span style="color:rgba(248,81,73,0.7)">中枢↑</span></span>
+  <span style="color:rgba(63,185,80,0.5)">█<span style="color:rgba(63,185,80,0.7)">中枢↓</span></span>
+  <span style="color:rgba(248,81,73,0.6)">▓<span style="color:#8b949e">段↑</span></span>
+  <span style="color:rgba(63,185,80,0.6)">▓<span style="color:#8b949e">段↓</span></span>
 </div>
 
 <div id="chart-placeholder" style="display:flex;align-items:center;justify-content:center;
@@ -1543,9 +1551,15 @@ function renderChart(data) {
 
   // Hub direction color map: 1=up(red), -1=down(green), 0=consolidation(blue)
   const hubDirColors = {
-    1:  { fill: 'rgba(248,81,73,0.06)',  border: 'rgba(248,81,73,0.40)' },
-    '-1': { fill: 'rgba(63,185,80,0.06)',  border: 'rgba(63,185,80,0.40)' },
-    0:  { fill: 'rgba(88,166,255,0.05)', border: 'rgba(88,166,255,0.35)' },
+    1:  { fill: 'rgba(248,81,73,0.10)',  border: 'rgba(248,81,73,0.45)' },
+    '-1': { fill: 'rgba(63,185,80,0.10)',  border: 'rgba(63,185,80,0.45)' },
+    0:  { fill: 'rgba(88,166,255,0.08)', border: 'rgba(88,166,255,0.40)' },
+  };
+  // Segment hub direction colors: higher opacity + solid border to distinguish from stroke hubs
+  const segHubDirColors = {
+    1:  { fill: 'rgba(248,81,73,0.08)',  border: 'rgba(248,81,73,0.55)' },
+    '-1': { fill: 'rgba(63,185,80,0.08)',  border: 'rgba(63,185,80,0.55)' },
+    0:  { fill: 'rgba(88,166,255,0.06)', border: 'rgba(88,166,255,0.45)' },
   };
 
   // Stroke lines as markLine data with index labels + volume trend + divergence color
@@ -1621,7 +1635,8 @@ function renderChart(data) {
     const seqTag = sh.trend_seq >= 0 ? '#' + (sh.trend_seq + 1) : '';
     const lvlTag = sh.hub_level || '线段中枢';
     const label = lvlTag + sh.idx + dirTag + seqTag + evoTag;
-    const evoClr = evoColorsExt[sh.evo] || '#ffd700';
+    const dirClr = sh.dir === 1 ? 'rgba(248,81,73,0.85)' : (sh.dir === -1 ? 'rgba(63,185,80,0.85)' : '#8b949e');
+    const evoClr = evoColorsExt[sh.evo] || dirClr;
     return {
       coord: [data.dates[midX], sh.zg],
       symbol: 'circle', symbolSize: 1, itemStyle: { color: 'transparent' },
@@ -1999,11 +2014,12 @@ function renderChart(data) {
               ];
             });
             const segHubAreas = (data.seg_hubs || []).map(sh => {
+              const sc = segHubDirColors[sh.dir] || segHubDirColors[0];
               return [
                 { xAxis: data.dates[sh.x0], yAxis: sh.zd,
                   itemStyle: {
-                    color: 'rgba(255,215,0,0.06)',
-                    borderColor: 'rgba(255,215,0,0.5)',
+                    color: sc.fill,
+                    borderColor: sc.border,
                     borderWidth: 2,
                     borderType: 'solid',
                   } },
@@ -3649,7 +3665,8 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     <div class="legend-item"><div class="legend-color" style="background:#bc8cff"></div>线段</div>
     <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.4)"></div>上涨枢(↓↑↓)</div>
     <div class="legend-item"><div class="legend-color" style="background:rgba(63,185,80,0.4)"></div>下跌枢(↑↓↑)</div>
-    <div class="legend-item"><div class="legend-color" style="background:rgba(88,166,255,0.4)"></div>未定枢</div>
+    <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.55);border:2px solid rgba(248,81,73,0.7)"></div>段枢↑</div>
+    <div class="legend-item"><div class="legend-color" style="background:rgba(63,185,80,0.55);border:2px solid rgba(63,185,80,0.7)"></div>段枢↓</div>
     <div class="legend-item"><div class="legend-color" style="background:#f85149"></div>买▲</div>
     <div class="legend-item"><div class="legend-color" style="background:#3fb950"></div>卖▼</div>
     <div class="legend-item"><div class="legend-color" style="background:rgba(248,81,73,0.35);border:1px dashed rgba(248,81,73,0.6)"></div>暂定</div>
@@ -4273,20 +4290,24 @@ function renderKline(data) {{
     ctx.fillText('ZD=' + h.zd.toFixed(2), x1 + 2, scaleY(h.zd) + 10);
   }});
 
-  // Segment-level hubs (线段中枢, gold outline, drawn behind stroke hubs)
+  // Segment-level hubs (线段中枢, direction-colored, drawn behind stroke hubs)
+  const canvasSegHubClr = {{1: ['rgba(248,81,73,0.06)', 'rgba(248,81,73,0.55)', 'rgba(248,81,73,0.85)'],
+                            '-1': ['rgba(63,185,80,0.06)', 'rgba(63,185,80,0.55)', 'rgba(63,185,80,0.85)'],
+                            0: ['rgba(88,166,255,0.05)', 'rgba(88,166,255,0.45)', '#8b949e']}};
   (data.seg_hubs || []).forEach(sh => {{
     if (sh.x1 < viewStart || sh.x0 >= viewEnd) return;
     const x0 = scaleX(Math.max(sh.x0, viewStart)) - cw / 2;
     const x1 = scaleX(Math.min(sh.x1, viewEnd - 1)) + cw / 2;
-    ctx.fillStyle = 'rgba(255,215,0,0.04)';
+    const cc = canvasSegHubClr[sh.dir] || canvasSegHubClr[0];
+    ctx.fillStyle = cc[0];
     ctx.fillRect(x0, scaleY(sh.zg), x1 - x0, scaleY(sh.zd) - scaleY(sh.zg));
-    ctx.strokeStyle = 'rgba(255,215,0,0.5)'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = cc[1]; ctx.lineWidth = 1.5;
     ctx.setLineDash([]);
     ctx.strokeRect(x0, scaleY(sh.zg), x1 - x0, scaleY(sh.zd) - scaleY(sh.zg));
     const dirIcon = sh.direction === '上' ? '↑' : (sh.direction === '下' ? '↓' : '');
     const seqLabel = sh.trend_seq >= 0 ? '#' + (sh.trend_seq + 1) : '';
     const lvlTag = sh.hub_level || '线段中枢';
-    ctx.fillStyle = '#ffd700'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillStyle = cc[2]; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'left';
     ctx.fillText(lvlTag + sh.idx + dirIcon + seqLabel + (sh.evo ? ' ' + sh.evo : ''), x0 + 2, scaleY(sh.zg) - 3);
   }});
 

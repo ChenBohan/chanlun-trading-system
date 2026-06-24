@@ -3153,20 +3153,24 @@ def find_seg_buy_sell_points(
     seg_by_idx = {s.idx: s for s in segments}
 
     # ── Type 3: Segment exits seg_hub, pullback doesn't re-enter ──
+    #
+    # Key insight: the "exit segment" (first seg after core not overlapping hub)
+    # may already BE the pullback if its direction opposes the breakout.
+    # Example: hub ZG=120, core ends with S35(UP 65→658), then S36(DN 658→505)
+    #   → S36 is entirely above ZG, direction DOWN → S36 IS the pullback, not exit.
+    # If exit_seg direction matches breakout (UP for 3B), the NEXT opposite-dir seg
+    # is the pullback.
     for i, hub in enumerate(seg_hubs):
         if not hub.segments:
             continue
         last_core_seg = hub.segments[-1]
         last_core_idx = last_core_seg.idx
 
-        # Find exit segment (first segment after core that doesn't overlap [ZD, ZG])
         exit_seg = None
         for seg in segments:
             if seg.idx <= last_core_idx:
                 continue
-            seg_h = seg.high
-            seg_l = seg.low
-            overlaps = seg_h >= hub.zd and seg_l <= hub.zg
+            overlaps = seg.high >= hub.zd and seg.low <= hub.zg
             if not overlaps:
                 exit_seg = seg
                 break
@@ -3174,26 +3178,26 @@ def find_seg_buy_sell_points(
         if exit_seg is None:
             continue
 
-        # Find pullback segment after exit
-        pullback_seg = None
-        for seg in segments:
-            if seg.idx > exit_seg.idx:
-                pullback_seg = seg
-                break
-
-        if pullback_seg is None:
-            continue
-
-        # Type 3 Buy: exit entirely above ZG, pullback low > ZG
+        # --- 3B: entirely above ZG ---
         if exit_seg.low > hub.zg:
-            if pullback_seg.low > hub.zg:
+            if exit_seg.direction == -1:
+                # exit_seg itself is the pullback (DOWN move above hub)
+                pullback_seg = exit_seg
+            else:
+                # exit_seg is the true UP breakout; find next DOWN seg as pullback
+                pullback_seg = None
+                for seg in segments:
+                    if seg.idx > exit_seg.idx and seg.direction == -1:
+                        pullback_seg = seg
+                        break
+            if pullback_seg is not None and pullback_seg.low > hub.zg:
                 price = pullback_seg.low
                 points.append(BuySellPoint(
                     type="3B", label="三买(线段)",
                     dt=pullback_seg.end_dt, price=price,
                     description=(
                         f"[D{pullback_seg.idx}] 线段中枢{hub.idx}上方三买："
-                        f"离开段D{exit_seg.idx}突破ZG={hub.zg:.2f}，"
+                        f"突破ZG={hub.zg:.2f}，"
                         f"回落段D{pullback_seg.idx}低点{price:.2f}>ZG"
                     ),
                     level=level,
@@ -3204,16 +3208,26 @@ def find_seg_buy_sell_points(
                     signal_level=f"{hub.hub_level.replace('中枢', '') if hub.hub_level else 'DF'}三买",
                 ))
 
-        # Type 3 Sell: exit entirely below ZD, pullback high < ZD
+        # --- 3S: entirely below ZD ---
         elif exit_seg.high < hub.zd:
-            if pullback_seg.high < hub.zd:
+            if exit_seg.direction == 1:
+                # exit_seg itself is the pullback (UP move below hub)
+                pullback_seg = exit_seg
+            else:
+                # exit_seg is the true DOWN breakout; find next UP seg as pullback
+                pullback_seg = None
+                for seg in segments:
+                    if seg.idx > exit_seg.idx and seg.direction == 1:
+                        pullback_seg = seg
+                        break
+            if pullback_seg is not None and pullback_seg.high < hub.zd:
                 price = pullback_seg.high
                 points.append(BuySellPoint(
                     type="3S", label="三卖(线段)",
                     dt=pullback_seg.end_dt, price=price,
                     description=(
                         f"[D{pullback_seg.idx}] 线段中枢{hub.idx}下方三卖："
-                        f"离开段D{exit_seg.idx}跌破ZD={hub.zd:.2f}，"
+                        f"跌破ZD={hub.zd:.2f}，"
                         f"反弹段D{pullback_seg.idx}高点{price:.2f}<ZD"
                     ),
                     level=level,
