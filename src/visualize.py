@@ -850,7 +850,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 <div class="header">
   <h1>缠论交易系统 v2</h1>
   <span>DF（方向）→ 30F（买卖点）→ 5F（择时）</span>
-  <span class="gen-time">数据：__DATA_TIME__ | 生成：__GEN_TIME__</span>
+  <span class="gen-time">数据：__DATA_TIME__ | 生成：__GEN_TIME__ | 股票池 __POOL_SELECTED__/__POOL_TOTAL__（年线上方）</span>
 </div>
 
 <div id="signals-panel" style="margin:0 32px 16px"></div>
@@ -2600,12 +2600,17 @@ def _analyze_one_index_worker(args: tuple) -> dict:
 
 
 def run_analysis_pipeline(data_dir: str = None,
-                          max_workers: int = None) -> dict:
+                          max_workers: int = None,
+                          indices_override: list = None) -> dict:
     """Run chanlun analysis on all indices and return shared results.
 
     Supports multiprocess parallelism for analyze() calls.
     The returned dict can be passed to generate_dashboard() and
     generate_mobile_dashboard() to avoid redundant computation.
+
+    Args:
+        indices_override: If provided, use this list instead of loading
+            from watchlist. Used for MA250-filtered stock pool.
 
     Returns dict with keys: all_data, synthesis_data, index_list,
     latest_data_time, indices.
@@ -2613,7 +2618,7 @@ def run_analysis_pipeline(data_dir: str = None,
     if data_dir is None:
         data_dir = os.path.join(_PROJECT_ROOT, "data")
 
-    indices = load_index_watchlist()
+    indices = indices_override if indices_override is not None else load_index_watchlist()
     levels_cfg = [("daily", "daily.csv", "DF"),
                   ("30min", "30min.csv", "30F"),
                   ("5min", "5min.csv", "5F")]
@@ -3191,10 +3196,17 @@ def generate_dashboard(data_dir: str = None,
             if lv in watchlist_signals_by_level and len(watchlist_signals_by_level[lv]["trend_hubs"]) < 50:
                 watchlist_signals_by_level[lv]["trend_hubs"].append(th)
 
+    # Pool filter stats for display
+    _fstats = cache.get("filter_stats") if cache else None
+    _pool_total = str(_fstats["total"]) if _fstats else str(len(indices))
+    _pool_selected = str(_fstats["selected"]) if _fstats else str(len(indices))
+
     html = _HTML_TEMPLATE
     html = html.replace("__GEN_TIME__", datetime.now().strftime("%Y-%m-%d %H:%M"))
     html = html.replace("__GEN_TS__", str(int(datetime.now().timestamp())))
     html = html.replace("__DATA_TIME__", latest_data_time or "-")
+    html = html.replace("__POOL_TOTAL__", _pool_total)
+    html = html.replace("__POOL_SELECTED__", _pool_selected)
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
     _write_merged_data_files(data_out_dir, all_data)
@@ -3261,6 +3273,11 @@ def generate_mobile_dashboard(data_dir: str = None,
 
     gen_time = datetime.now().strftime("%Y-%m-%d %H:%M")
     data_time = latest_data_time or "-"
+
+    # Extract filter stats for display
+    filter_stats = cache.get("filter_stats") if cache else None
+    pool_total = filter_stats["total"] if filter_stats else len(indices)
+    pool_selected = filter_stats["selected"] if filter_stats else len(indices)
 
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
@@ -3619,7 +3636,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 <body>
 <div class="container">
 <h1>缠论交易系统 v2</h1>
-<div class="subtitle">移动版 · 数据 {data_time} · 生成 {gen_time} · DF→30F→5F</div>
+<div class="subtitle">移动版 · 数据 {data_time} · 生成 {gen_time} · DF→30F→5F · 股票池 {pool_selected}/{pool_total}（年线上方）</div>
 
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 

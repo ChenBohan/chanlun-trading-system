@@ -149,8 +149,50 @@ def cmd_batch(args):
     print(f"Total lines: {len(lines)}")
 
 
+def _filter_by_ma250(indices, data_dir: str) -> tuple[list, dict]:
+    """Filter indices by MA250: only keep those with latest close >= MA250.
+
+    Returns (filtered_indices, filter_stats) where filter_stats contains
+    total_count, selected_count, and per-symbol details.
+    """
+    import csv as _csv
+
+    MA_PERIOD = 250
+    selected = []
+    stats = {"total": len(indices), "selected": 0, "above": [], "below": []}
+
+    for idx in indices:
+        idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}")
+        csv_path = os.path.join(idx_dir, "daily.csv")
+        if not os.path.exists(csv_path):
+            selected.append(idx)
+            continue
+
+        closes = []
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = _csv.DictReader(f)
+            for row in reader:
+                closes.append(float(row["close"]))
+
+        if len(closes) < MA_PERIOD:
+            selected.append(idx)
+            continue
+
+        latest_close = closes[-1]
+        ma250 = sum(closes[-MA_PERIOD:]) / MA_PERIOD
+
+        if latest_close >= ma250:
+            selected.append(idx)
+            stats["above"].append((idx.etf_code, idx.etf_name, latest_close, ma250))
+        else:
+            stats["below"].append((idx.etf_code, idx.etf_name, latest_close, ma250))
+
+    stats["selected"] = len(selected)
+    return selected, stats
+
+
 def cmd_run(args):
-    """Full pipeline: fetch → analyze → dashboard."""
+    """Full pipeline: filter(MA250) → fetch filtered → analyze → dashboard."""
     import time as _time
     from src.data_fetcher import (
         load_index_watchlist, fetch_all_indices,
@@ -173,39 +215,51 @@ def cmd_run(args):
 
     t_start = _time.perf_counter()
 
-    # Step 1: Fetch (Tencent bulk, fast)
-    print("\n[Step 1/4] 数据拉取...")
-    t0 = _time.perf_counter()
+    # Step 1: MA250 filter using existing data on disk
+    print("\n[Step 1/4] 年线过滤（MA250）...")
     indices = load_index_watchlist()
+    data_dir = os.path.join(PROJECT_ROOT, "data")
+    filtered_indices, filter_stats = _filter_by_ma250(indices, data_dir)
+    print(f"  总股票池: {filter_stats['total']} | "
+          f"年线上方（入选）: {filter_stats['selected']} | "
+          f"年线下方（排除）: {len(filter_stats['below'])}")
+
+    # Step 2: Fetch only filtered stocks
+    print(f"\n[Step 2/4] 数据拉取（{filter_stats['selected']} 标的）...")
+    t0 = _time.perf_counter()
     results = fetch_all_indices(
-        indices=indices, beg=args.beg,
+        indices=filtered_indices, beg=args.beg,
         delay=args.delay, max_workers=args.workers,
         force=args.force,
     )
     print_fetch_summary(results)
 
-    # Step 1b: Sina supplement for shallow data (skip during trading hours)
+    # Step 2b: Sina supplement for shallow data (skip during trading hours)
     if not getattr(args, 'no_supplement', False):
         from src.data_fetcher import _is_cn_market_closed
         if _is_cn_market_closed():
-            print("\n[Step 1b/4] Sina 深度补充（日线 + 分钟线）...")
+            print("\n[Step 2b/4] Sina 深度补充（日线 + 分钟线）...")
             supplement_daily_with_sina(results)
             supplement_intraday_with_sina(results)
         else:
-            print("\n[Step 1b/4] Sina 深度补充... 盘中跳过（收盘后自动执行）")
+            print("\n[Step 2b/4] Sina 深度补充... 盘中跳过（收盘后自动执行）")
 
     save_fetch_results(results, fmt="csv")
     t_fetch = _time.perf_counter() - t0
 
-    # Step 2: Analyze all
-    print("\n[Step 2/4] 缠论分析（多进程）...")
+    # Step 3: Analyze filtered pool
+    print(f"\n[Step 3/4] 缠论分析（{filter_stats['selected']} 标的，多进程）...")
     t0 = _time.perf_counter()
-    analyze_workers = min(args.analyze_workers, len(indices))
-    cache = run_analysis_pipeline(max_workers=analyze_workers)
+    analyze_workers = min(args.analyze_workers, len(filtered_indices))
+    cache = run_analysis_pipeline(
+        max_workers=analyze_workers,
+        indices_override=filtered_indices,
+    )
+    cache["filter_stats"] = filter_stats
     t_analyze = _time.perf_counter() - t0
 
-    # Step 3: Mobile dashboard (reuses analysis cache)
-    print("\n[Step 3/4] 生成移动版仪表盘...")
+    # Step 4: Mobile dashboard (reuses analysis cache)
+    print("\n[Step 4/4] 生成移动版仪表盘...")
     t0 = _time.perf_counter()
     generate_mobile_dashboard(cache=cache)
     t_mobile = _time.perf_counter() - t0
