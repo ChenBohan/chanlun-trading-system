@@ -333,6 +333,9 @@ def cmd_run(args):
             print(f"\n[Step 3b/5] Sina 深度补充...")
             supplement_daily_with_sina(daily_results)
             supplement_intraday_with_sina(intraday_results)
+            print("  保存补充后的数据...")
+            save_fetch_results(daily_results, fmt="csv")
+            save_fetch_results(intraday_results, fmt="csv")
         else:
             print(f"\n[Step 3b/5] Sina 深度补充... 盘中跳过")
 

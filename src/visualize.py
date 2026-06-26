@@ -1071,7 +1071,9 @@ function renderSignalsPanel() {
     r += '<td style="padding:6px 8px;font-weight:600;' + strike + '">' + trendIcon + ' <a href="javascript:void(0)" onclick="selectIndex(\'' + s.etf_code + '\');selectLevel(\'' + (s.level_key||'daily') + '\')" style="color:#58a6ff;text-decoration:none;cursor:pointer" title="DF:' + trend + '">' + s.etf_name + '</a></td>';
     r += '<td style="padding:6px 8px;text-align:center;font-weight:bold;color:' + tClr + ';' + strike + '">' + s.label + snapBadge + '</td>';
     const htClr = s.hub_type === '线段中枢' ? '#ffd700' : '#58a6ff';
-    const htLabel = s.hub_type === '线段中枢' ? '当前级别' : '次级别';
+    const _slvl = s.signal_level || '';
+    const _lpfx = _slvl.replace(/[一二三][买卖]$/, '');
+    const htLabel = _lpfx ? _lpfx + '中枢' : (s.hub_type || '');
     r += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:' + htClr + '">' + htLabel + '</td>';
     if (!isType3) r += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#e3b341;' + strike + '">' + (s.signal_level || '-') + '</td>';
     r += '<td style="padding:6px 8px;text-align:center">' + statusHtml + '</td>';
@@ -1555,15 +1557,15 @@ function renderChart(data) {
 
   // Hub direction color map: 1=up(red), -1=down(green), 0=consolidation(blue)
   const hubDirColors = {
-    1:  { fill: 'rgba(248,81,73,0.10)',  border: 'rgba(248,81,73,0.45)' },
-    '-1': { fill: 'rgba(63,185,80,0.10)',  border: 'rgba(63,185,80,0.45)' },
-    0:  { fill: 'rgba(88,166,255,0.08)', border: 'rgba(88,166,255,0.40)' },
+    1:  { fill: 'rgba(248,81,73,0.18)',  border: 'rgba(248,81,73,0.50)' },
+    '-1': { fill: 'rgba(63,185,80,0.18)',  border: 'rgba(63,185,80,0.50)' },
+    0:  { fill: 'rgba(88,166,255,0.12)', border: 'rgba(88,166,255,0.45)' },
   };
   // Segment hub direction colors: higher opacity + solid border to distinguish from stroke hubs
   const segHubDirColors = {
-    1:  { fill: 'rgba(248,81,73,0.08)',  border: 'rgba(248,81,73,0.55)' },
-    '-1': { fill: 'rgba(63,185,80,0.08)',  border: 'rgba(63,185,80,0.55)' },
-    0:  { fill: 'rgba(88,166,255,0.06)', border: 'rgba(88,166,255,0.45)' },
+    1:  { fill: 'rgba(248,81,73,0.12)',  border: 'rgba(248,81,73,0.60)' },
+    '-1': { fill: 'rgba(63,185,80,0.12)',  border: 'rgba(63,185,80,0.60)' },
+    0:  { fill: 'rgba(88,166,255,0.10)', border: 'rgba(88,166,255,0.50)' },
   };
 
   // Stroke lines as markLine data with index labels + volume trend + divergence color
@@ -3883,7 +3885,9 @@ function renderMobileGlobalSignals() {{
     r += `<td style="padding:3px 4px;font-weight:600;${{strike}}">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{s.etf_code}}');switchLevel('${{s.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{s.etf_name}}</a></td>`;
     r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{tc}};${{strike}}">${{s.label}}${{statusTag}}</td>`;
     const mHtClr = s.hub_type === '线段中枢' ? '#ffd700' : '#58a6ff';
-    const mHtLabel = s.hub_type === '线段中枢' ? '当前' : '次级';
+    const _mSlvl = s.signal_level || '';
+    const _mLpfx = _mSlvl.replace(/[一二三][买卖]$/, '');
+    const mHtLabel = _mLpfx ? _mLpfx + '枢' : (s.hub_type === '线段中枢' ? '段枢' : '笔枢');
     r += `<td style="padding:3px 4px;text-align:center;font-size:9px;color:${{mHtClr}}">${{mHtLabel}}</td>`;
     if (!isType3) {{
       r += `<td style="padding:3px 4px;text-align:center;font-size:9px;color:#e3b341;${{strike}}">${{s.signal_level || '-'}}</td>`;
@@ -4288,7 +4292,7 @@ function renderKline(data) {{
   }}
 
   const evoColors = {{'延伸': '#8b949e', '新生（上）': '#f85149', '新生（下）': '#3fb950', '扩展': '#d29922', '延伸升级': '#e3b341', '扩张': '#e3b341', '扩展合并': '#d29922', '扩张合并': '#d29922'}};
-  const mHubDirClr = {{1: {{f:'rgba(248,81,73,0.10)', s:'rgba(248,81,73,0.50)'}}, '-1': {{f:'rgba(63,185,80,0.10)', s:'rgba(63,185,80,0.50)'}}, 0: {{f:'rgba(88,166,255,0.08)', s:'rgba(88,166,255,0.4)'}}}};
+  const mHubDirClr = {{1: {{f:'rgba(248,81,73,0.18)', s:'rgba(248,81,73,0.55)'}}, '-1': {{f:'rgba(63,185,80,0.18)', s:'rgba(63,185,80,0.55)'}}, 0: {{f:'rgba(88,166,255,0.12)', s:'rgba(88,166,255,0.45)'}}}};
   // Stroke-level hubs (笔中枢, drawn behind candlesticks)
   data.hubs.forEach(h => {{
     if (h.x1 < viewStart || h.x0 >= viewEnd) return;
@@ -4299,8 +4303,7 @@ function renderKline(data) {{
     ctx.fillRect(x0, scaleY(h.zg), x1 - x0, scaleY(h.zd) - scaleY(h.zg));
     ctx.strokeStyle = hdc.s; ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(x0, scaleY(h.zg)); ctx.lineTo(x1, scaleY(h.zg)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x0, scaleY(h.zd)); ctx.lineTo(x1, scaleY(h.zd)); ctx.stroke();
+    ctx.strokeRect(x0, scaleY(h.zg), x1 - x0, scaleY(h.zd) - scaleY(h.zg));
     ctx.setLineDash([]);
     const evoClr = evoColors[h.evo] || '#58a6ff';
     const mVolIcons = {{'shrink': '📉', 'expand': '📈'}};
@@ -4316,9 +4319,9 @@ function renderKline(data) {{
   }});
 
   // Segment-level hubs (线段中枢, direction-colored, drawn behind stroke hubs)
-  const canvasSegHubClr = {{1: ['rgba(248,81,73,0.06)', 'rgba(248,81,73,0.55)', 'rgba(248,81,73,0.85)'],
-                            '-1': ['rgba(63,185,80,0.06)', 'rgba(63,185,80,0.55)', 'rgba(63,185,80,0.85)'],
-                            0: ['rgba(88,166,255,0.05)', 'rgba(88,166,255,0.45)', '#8b949e']}};
+  const canvasSegHubClr = {{1: ['rgba(248,81,73,0.10)', 'rgba(248,81,73,0.60)', 'rgba(248,81,73,0.85)'],
+                            '-1': ['rgba(63,185,80,0.10)', 'rgba(63,185,80,0.60)', 'rgba(63,185,80,0.85)'],
+                            0: ['rgba(88,166,255,0.08)', 'rgba(88,166,255,0.50)', '#8b949e']}};
   (data.seg_hubs || []).forEach(sh => {{
     if (sh.x1 < viewStart || sh.x0 >= viewEnd) return;
     const x0 = scaleX(Math.max(sh.x0, viewStart)) - cw / 2;

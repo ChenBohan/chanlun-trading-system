@@ -1200,12 +1200,12 @@ def supplement_daily_with_sina(results: list[FetchResult],
 
 def supplement_intraday_with_sina(results: list[FetchResult],
                                   data_dir: str = None,
-                                  min_bars: int = 800,
-                                  datalen: int = 1500) -> int:
+                                  min_bars: int = 1800,
+                                  datalen: int = 2000) -> int:
     """Supplement shallow intraday (30min/5min) data with Sina.
 
     Tencent caps minute data at 320 bars (~40 trading days for 30min).
-    Sina can return up to 1500 bars (~187 trading days for 30min).
+    Sina can return up to 2000 bars (~250 trading days for 30min).
     This function fills the gap by calling Sina one-by-one.
 
     Returns the total number of period-index pairs supplemented.
