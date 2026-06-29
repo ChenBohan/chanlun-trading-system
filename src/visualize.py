@@ -3216,6 +3216,7 @@ def generate_dashboard(data_dir: str = None,
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
     _write_merged_data_files(data_out_dir, all_data)
+    save_deploy_baseline(data_out_dir, all_data)
 
     data_js_files = [f for f in os.listdir(data_out_dir) if f.endswith(".js") and f != "live.js"]
     total_data_kb = sum(
@@ -3288,6 +3289,10 @@ def generate_mobile_dashboard(data_dir: str = None,
     data_out_dir = os.path.join(os.path.dirname(output_path), "data")
     os.makedirs(data_out_dir, exist_ok=True)
     _write_merged_data_files(data_out_dir, all_data)
+
+    # Keep baseline in sync with base data files so that subsequent delta
+    # deploys don't produce duplicate bars in live.js.
+    save_deploy_baseline(data_out_dir, all_data)
 
     # Remove stale live.js to prevent delta corruption when viewing locally.
     # live.js is now generated only by the deploy script (delta deploy path).
