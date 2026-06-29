@@ -4420,7 +4420,7 @@ function renderKline(data) {{
     ctx.fillText('D' + lb.idx, scaleX(lb.x), scaleY(lb.y) - 8);
   }});
 
-  // Fractal markers: small triangles near K-lines
+  // Fractal markers: same triangle style as BSP
   (data.fractals || []).forEach(f => {{
     if (f.idx < viewStart || f.idx >= viewEnd) return;
     const x = scaleX(f.idx);
@@ -4429,13 +4429,12 @@ function renderKline(data) {{
     const price = isTop ? (kBar ? Math.max(kBar[1], kBar[2], kBar[3], kBar[0]) : f.price)
                         : (kBar ? Math.min(kBar[1], kBar[2], kBar[3], kBar[0]) : f.price);
     const y = scaleY(price);
-    const sz = 3;
     ctx.fillStyle = isTop ? 'rgba(248,81,73,0.7)' : 'rgba(63,185,80,0.7)';
     ctx.beginPath();
     if (isTop) {{
-      ctx.moveTo(x, y - sz - 2); ctx.lineTo(x - sz, y - 2); ctx.lineTo(x + sz, y - 2);
+      ctx.moveTo(x, y - 6); ctx.lineTo(x - 4, y - 12); ctx.lineTo(x + 4, y - 12);
     }} else {{
-      ctx.moveTo(x, y + sz + 2); ctx.lineTo(x - sz, y + 2); ctx.lineTo(x + sz, y + 2);
+      ctx.moveTo(x, y + 6); ctx.lineTo(x - 4, y + 12); ctx.lineTo(x + 4, y + 12);
     }}
     ctx.closePath(); ctx.fill();
   }});
@@ -4457,7 +4456,7 @@ function renderKline(data) {{
     ctx.fillText('S' + s.idx + volSuf, mx, (scaleY(s.coords[0][1]) + scaleY(s.coords[1][1])) / 2 - 6);
   }});
 
-  // Buy/Sell markers
+  // Buy/Sell markers (compact)
   bspHitAreas = [];
   data.bsp.forEach(p => {{
     if (p.idx < viewStart || p.idx >= viewEnd) return;
@@ -4467,43 +4466,36 @@ function renderKline(data) {{
     const mIsPending = p.status === 'pending';
     const mIsT3 = p.type === '3B' || p.type === '3S';
     const triColor = mIsInv ? '#484f58' : (mIsPending ? '#f0883e' : (p.is_buy ? '#f85149' : '#3fb950'));
-    const markerSize = mIsT3 && !mIsInv ? 8 : (mIsPending ? 7 : 6);
-    ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
+    const markerSize = mIsT3 && !mIsInv ? 5 : 4;
+    const mOff = 6;
+    ctx.globalAlpha = mIsInv ? 0.35 : 1.0;
     ctx.beginPath();
     if (mIsT3 && !mIsInv) {{
-      ctx.moveTo(x, y + (p.is_buy ? 10 : -10) - markerSize);
-      ctx.lineTo(x + markerSize, y + (p.is_buy ? 10 : -10));
-      ctx.lineTo(x, y + (p.is_buy ? 10 : -10) + markerSize);
-      ctx.lineTo(x - markerSize, y + (p.is_buy ? 10 : -10));
+      const cy = y + (p.is_buy ? mOff : -mOff);
+      ctx.moveTo(x, cy - markerSize);
+      ctx.lineTo(x + markerSize, cy);
+      ctx.lineTo(x, cy + markerSize);
+      ctx.lineTo(x - markerSize, cy);
       ctx.closePath();
       ctx.fillStyle = triColor; ctx.fill();
-      ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1; ctx.stroke();
     }} else if (p.is_buy) {{
-      ctx.moveTo(x, y + 10); ctx.lineTo(x - 6, y + 18); ctx.lineTo(x + 6, y + 18); ctx.closePath();
+      ctx.moveTo(x, y + mOff); ctx.lineTo(x - 4, y + mOff + 6); ctx.lineTo(x + 4, y + mOff + 6); ctx.closePath();
       ctx.fillStyle = triColor; ctx.fill();
     }} else {{
-      ctx.moveTo(x, y - 10); ctx.lineTo(x - 6, y - 18); ctx.lineTo(x + 6, y - 18); ctx.closePath();
+      ctx.moveTo(x, y - mOff); ctx.lineTo(x - 4, y - mOff - 6); ctx.lineTo(x + 4, y - mOff - 6); ctx.closePath();
       ctx.fillStyle = triColor; ctx.fill();
     }}
-    bspHitAreas.push({{cx: x, cy: p.is_buy ? y + 14 : y - 14, bp: p}});
+    bspHitAreas.push({{cx: x, cy: p.is_buy ? y + 10 : y - 10, bp: p}});
     ctx.fillStyle = mIsInv ? '#484f58' : (mIsPending ? '#d29922' : (p.is_buy ? '#f85149' : '#3fb950'));
-    ctx.globalAlpha = mIsInv ? 0.4 : 1.0;
-    ctx.font = mIsT3 ? 'bold 9px sans-serif' : 'bold 8px sans-serif'; ctx.textAlign = 'center';
-    const mConfIcons = {{'high': '🔴', 'medium': '🟡', 'low': '⚪'}};
-    const mPrefix = mIsT3 ? '◆' : '#';
-    const mIdxStr = p.bsp_idx >= 0 ? p.bsp_idx : '';
-    let bspText = mPrefix + mIdxStr + ' ' + p.label.substring(0, 2);
-    if (p.conf) bspText += (mConfIcons[p.conf] || '');
+    ctx.globalAlpha = mIsInv ? 0.35 : 0.9;
+    ctx.font = '7px sans-serif'; ctx.textAlign = 'center';
+    const mLabel = p.label.substring(0, 2);
+    let bspText = mLabel;
     if (mIsInv) bspText += '✗';
     else if (mIsPending) bspText += '⏳';
-    ctx.fillText(bspText, x, p.is_buy ? y + 28 : y - 20);
+    ctx.fillText(bspText, x, p.is_buy ? y + 20 : y - 14);
     ctx.globalAlpha = 1.0;
-    if (p.ranges && p.ranges.length >= 2) {{
-      const r0 = p.ranges[0], r1 = p.ranges[1];
-      const ratio = r0.area > 0 ? Math.round(r1.area / r0.area * 100) : 0;
-      ctx.font = '7px sans-serif';
-      ctx.fillText(r0.label + '↔' + r1.label + ' 背驰 ' + ratio + '%', x, p.is_buy ? y + 36 : y - 12);
-    }}
   }});
 
   // X-axis dates
