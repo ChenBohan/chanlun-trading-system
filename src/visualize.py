@@ -922,6 +922,19 @@ function applyLiveDelta(key, base) {
   const merged = Object.assign({}, base);
   if (live.drop_head) {
     const drop = live.drop_head;
+    const baseDates = base.dates || [];
+    const liveDates = live.dates || [];
+    // Guard: if base already contains the live data (stale cache), skip merge
+    if (liveDates.length > 0 && baseDates.length > 0) {
+      const lastBase = baseDates[baseDates.length - 1];
+      const lastLive = liveDates[liveDates.length - 1];
+      if (lastBase === lastLive) {
+        for (const f of replaceFields) {
+          if (live[f] !== undefined) merged[f] = live[f];
+        }
+        return merged;
+      }
+    }
     for (const f of arrFields) {
       merged[f] = (base[f] || []).slice(drop).concat(live[f] || []);
     }
@@ -978,7 +991,7 @@ let _liveReady = false;
 function _loadLiveJs() {
   if (_liveReady) return;
   const ls = document.createElement('script');
-  ls.src = 'data/live.js';
+  ls.src = 'data/live.js?v=' + Date.now();
   ls.onload = () => {
     _liveReady = true;
     if (typeof LIVE_DATA !== 'undefined') {
@@ -3740,6 +3753,19 @@ function applyLiveDelta(key, base) {{
   const merged = Object.assign({{}}, base);
   if (live.drop_head) {{
     const drop = live.drop_head;
+    const baseDates = base.dates || [];
+    const liveDates = live.dates || [];
+    // Guard: if base already contains the live data (stale cache), skip merge
+    if (liveDates.length > 0 && baseDates.length > 0) {{
+      const lastBase = baseDates[baseDates.length - 1];
+      const lastLive = liveDates[liveDates.length - 1];
+      if (lastBase === lastLive) {{
+        for (const f of replaceFields) {{
+          if (live[f] !== undefined) merged[f] = live[f];
+        }}
+        return merged;
+      }}
+    }}
     for (const f of arrFields) {{
       merged[f] = (base[f] || []).slice(drop).concat(live[f] || []);
     }}
@@ -3795,7 +3821,7 @@ function loadChartData(key) {{
 let _liveReady = false;
 (function() {{
   const ls = document.createElement('script');
-  ls.src = 'data/live.js';
+  ls.src = 'data/live.js?v=' + Date.now();
   ls.onload = () => {{
     _liveReady = true;
     // Re-apply delta to any chart data that loaded before live.js
