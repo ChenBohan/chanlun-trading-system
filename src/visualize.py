@@ -1245,7 +1245,7 @@ function renderSignalsPanel() {
         const statusColor = p.status === '回抽已至ZG附近' ? '#f85149' : p.status === '回抽进行中' ? '#d29922' : '#8b949e';
         const marginColor = p.margin_pct < 15 ? '#f85149' : p.margin_pct < 50 ? '#d29922' : '#3fb950';
         const lvMap = {daily: 'DF', '30min': '30F', '5min': '5F'};
-        t += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d" onclick="navigateToIndex(\'' + p.etf_code + '\')" title="' + (p.note||'') + '">';
+        t += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;cursor:pointer" onclick="selectIndex(\'' + p.etf_code + '\')" title="' + (p.note||'').replace(/"/g,'&amp;quot;') + '">';
         t += '<td style="padding:6px 8px;white-space:nowrap;cursor:pointer;color:#58a6ff">' + (p.etf_name||p.etf_code) + '</td>';
         t += '<td style="padding:6px 8px;text-align:center">' + (lvMap[p.level]||p.level) + '</td>';
         t += '<td style="padding:6px 8px;text-align:center;color:' + statusColor + ';font-size:11px">' + p.status + '</td>';
@@ -4074,6 +4074,7 @@ let mgsT1Open = false;
 let mgsT2Open = false;
 let mgsT3Open = true;
 let mgsTrendHubOpen = true;
+let mgsPending3bOpen = true;
 let mgsCat = 'stock';
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
@@ -4326,6 +4327,45 @@ function renderMobileGlobalSignals() {{
   h += mgsTable('🟠 第二类买卖点', gT2, false, 'mgsT2Open', mgsT2Open);
   h += mgsTable('🔵 第三类买卖点', gT3, true, 'mgsT3Open', mgsT3Open);
   h += mgsTrendHubTable('🏗 趋势中枢（位次≥2）', gTH, 'mgsTrendHubOpen', mgsTrendHubOpen);
+
+  // Pending 3B table (independent of category/level tabs)
+  (function() {{
+    const items = PENDING_3B || [];
+    if (items.length === 0) return;
+    const arrow = mgsPending3bOpen ? '▼' : '▶';
+    let t = '<div style="margin-bottom:4px">';
+    t += '<div onclick="mgsPending3bOpen=!mgsPending3bOpen;renderMobileGlobalSignals()" style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px">';
+    t += '<span style="font-size:9px;color:#8b949e">' + arrow + '</span> 👁 三买观察 (' + items.length + ')</div>';
+    if (mgsPending3bOpen) {{
+      t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+      t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px;white-space:nowrap">';
+      t += '<th style="padding:4px;text-align:left">标的</th>';
+      t += '<th style="padding:4px;text-align:center">级别</th>';
+      t += '<th style="padding:4px;text-align:center">状态</th>';
+      t += '<th style="padding:4px;text-align:center">ZG</th>';
+      t += '<th style="padding:4px;text-align:center">余量</th>';
+      t += '</tr></thead><tbody>';
+      const lvMap = {{daily:'DF','30min':'30F','5min':'5F'}};
+      items.forEach((p, i) => {{
+        const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+        const statusColor = p.status === '回抽已至ZG附近' ? '#f85149' : p.status === '回抽进行中' ? '#d29922' : '#8b949e';
+        const marginColor = p.margin_pct < 15 ? '#f85149' : p.margin_pct < 50 ? '#d29922' : '#3fb950';
+        t += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;white-space:nowrap;cursor:pointer" onclick="switchIndex(\'' + p.etf_code + '\')">';
+        t += '<td style="padding:3px 4px;color:#58a6ff;font-weight:600">' + (p.etf_name||p.etf_code) + '</td>';
+        t += '<td style="padding:3px 4px;text-align:center">' + (lvMap[p.level]||p.level) + '</td>';
+        t += '<td style="padding:3px 4px;text-align:center;color:' + statusColor + ';font-size:10px">' + p.status + '</td>';
+        t += '<td style="padding:3px 4px;text-align:center;font-weight:600">' + (p.hub_zg||0).toFixed(2) + '</td>';
+        t += '<td style="padding:3px 4px;text-align:center;color:' + marginColor + ';font-weight:600">' + (p.margin_pct||0).toFixed(0) + '%</td>';
+        t += '</tr>';
+      }});
+      t += '</tbody></table></div>';
+      t += '<div style="margin-top:2px;font-size:9px;color:#484f58">余量=距ZG距离，越小越接近三买确认</div>';
+    }}
+    t += '</div>';
+    h += t;
+  }})();
+
   if (gTotalPages > 1) {{
     h += '<div style="display:flex;justify-content:center;align-items:center;gap:6px;margin:8px 0 4px">';
     for (let pg = 1; pg <= gTotalPages; pg++) {{
