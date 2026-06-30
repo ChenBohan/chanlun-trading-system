@@ -2321,7 +2321,6 @@ const mgsPageSize = 10;
 let mgsT1Open = false;
 let mgsT2Open = false;
 let mgsT3Open = true;
-let mgsTrendHubOpen = true;
 let mgsPending3bOpen = true;
 let mgsCat = 'stock';
 function renderMobileGlobalSignals() {{
@@ -2343,7 +2342,7 @@ function renderMobileGlobalSignals() {{
     return WATCHLIST_SIGNALS || {{}};
   }}
 
-  let totalAll = 0, buyCnt = 0, sellCnt = 0, hubCnt = 0;
+  let totalAll = 0, buyCnt = 0, sellCnt = 0;
   categories.forEach(cat => {{
     const src = getMobileSrc(cat.id);
     levels.forEach(lv => {{
@@ -2353,10 +2352,8 @@ function renderMobileGlobalSignals() {{
         totalAll += arr.length;
         arr.forEach(s => {{ if (s.type && s.type.endsWith('B')) buyCnt++; else sellCnt++; }});
       }});
-      hubCnt += (d.trend_hubs || []).length;
     }});
   }});
-  totalAll += hubCnt;
   function mgsRow(s, i, isType3) {{
     const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
     const tc = tClrs[s.type] || '#c9d1d9';
@@ -2452,74 +2449,12 @@ function renderMobileGlobalSignals() {{
     return t;
   }}
 
-  function mgsTrendHubRow(th, i) {{
-    const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
-    const isUp = th.direction === '上涨';
-    const dirClr = isUp ? '#f85149' : '#3fb950';
-    const dirIcon = isUp ? '📈' : '📉';
-    const mIdxInfo = INDEX_LIST.find(x => x.etf_code === th.etf_code);
-    const mTrend = mIdxInfo ? (mIdxInfo.trend || '') : '';
-    const _mBk = mTrend.includes('破坏');
-    const _mUp = !_mBk && mTrend.includes('上涨');
-    const _mDn = !_mBk && mTrend.includes('下跌');
-    const mTrendIcon = _mBk ? '<span style="color:#e3b341">⚠</span>'
-      : _mUp ? '<span style="color:#f85149">▲</span>'
-      : _mDn ? '<span style="color:#3fb950">▼</span>'
-      : '<span style="color:#8b949e">—</span>';
-    const rkL = {{2:'②', 3:'③', 4:'④', 5:'⑤'}};
-    const rkC = {{2:'#e3b341', 3:'#d29922', 4:'#da3633', 5:'#da3633'}};
-    const rkS = rkL[th.rank] || '⑥+';
-    const rkClr = rkC[th.rank] || '#6e7681';
-    const dtShort = th.end_dt ? th.end_dt.substring(5) : '-';
-    const zRange = th.zd.toFixed(2) + '~' + th.zg.toFixed(2);
-    let r = `<tr style="background:${{bg}};border-bottom:1px solid #21262d;white-space:nowrap">`;
-    r += `<td style="padding:3px 4px;font-family:monospace;font-size:10px">${{dtShort}}</td>`;
-    r += `<td style="padding:3px 4px;font-weight:600">${{mTrendIcon}} <a href="javascript:void(0)" onclick="switchIndex('${{th.etf_code}}');switchLevel('${{th.level_key||'daily'}}')" style="color:#58a6ff;text-decoration:none">${{th.etf_name}}</a></td>`;
-    r += `<td style="padding:3px 4px;text-align:center;font-weight:bold;color:${{dirClr}};font-size:10px">${{dirIcon}}${{th.direction}}</td>`;
-    r += `<td style="padding:3px 4px;text-align:center;font-weight:600;color:${{rkClr}};font-size:10px">${{rkS}}</td>`;
-    r += `<td style="padding:3px 4px;text-align:center;font-size:9px;color:#8b949e">${{zRange}}</td>`;
-    r += '</tr>';
-    return r;
-  }}
-
-  function mgsTrendHubTable(title, hubs, toggleVar, isOpen) {{
-    const cnt = hubs.length;
-    const arrow = isOpen ? '▼' : '▶';
-    let upC = 0, dnC = 0;
-    hubs.forEach(th => {{ if (th.direction === '上涨') upC++; else dnC++; }});
-    let dirBadge = '';
-    if (upC > 0) dirBadge += ' <span style="color:#f85149;font-size:10px">' + upC + '↑</span>';
-    if (dnC > 0) dirBadge += ' <span style="color:#3fb950;font-size:10px">' + dnC + '↓</span>';
-    let t = '<div style="margin-bottom:4px">';
-    t += '<div onclick="' + toggleVar + '=!' + toggleVar + ';renderMobileGlobalSignals()" style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px">';
-    t += '<span style="font-size:9px;color:#8b949e">' + arrow + '</span> ' + title + ' (' + cnt + ')' + dirBadge + '</div>';
-    if (isOpen) {{
-      t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
-      t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
-      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px;white-space:nowrap">';
-      t += '<th style="padding:4px;text-align:left">时间</th>';
-      t += '<th style="padding:4px;text-align:left">标的</th>';
-      t += '<th style="padding:4px;text-align:center">方向</th>';
-      t += '<th style="padding:4px;text-align:center">位次</th>';
-      t += '<th style="padding:4px;text-align:center">中枢区间</th>';
-      t += '</tr></thead><tbody>';
-      hubs.forEach((th, i) => {{ t += mgsTrendHubRow(th, i); }});
-      if (hubs.length === 0) {{
-        t += '<tr><td colspan="5" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无趋势中枢</td></tr>';
-      }}
-      t += '</tbody></table></div>';
-    }}
-    t += '</div>';
-    return t;
-  }}
-
   let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden">';
   h += '<div onclick="mgsExpanded=!mgsExpanded;renderMobileGlobalSignals()" style="display:flex;align-items:center;padding:8px 10px;cursor:pointer;user-select:none">';
   h += '<span style="color:#c9d1d9;font-size:12px;font-weight:bold;flex:1">📡 最新买卖点';
   h += ' <span style="font-size:10px;color:#8b949e;font-weight:400">' + totalAll + '个';
   if (buyCnt > 0) h += ' · <span style="color:#f85149">' + buyCnt + '买</span>';
   if (sellCnt > 0) h += ' · <span style="color:#3fb950">' + sellCnt + '卖</span>';
-  if (hubCnt > 0) h += ' · <span style="color:#e3b341">' + hubCnt + '中枢</span>';
   h += '</span></span>';
   h += '<span style="color:#8b949e;font-size:10px;transition:transform 0.2s;transform:rotate(' + (mgsExpanded ? '180' : '0') + 'deg)">▼</span>';
   h += '</div>';
@@ -2534,7 +2469,7 @@ function renderMobileGlobalSignals() {{
     let catTotal = 0;
     levels.forEach(lv => {{
       const d = src[lv] || {{}};
-      catTotal += (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length + (d.trend_hubs||[]).length;
+      catTotal += (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
     }});
     const active = cat.id === mgsCat;
     const bg = active ? '#21262d' : 'transparent';
@@ -2549,7 +2484,7 @@ function renderMobileGlobalSignals() {{
   h += '<div style="display:flex;gap:4px;margin-bottom:6px">';
   levels.forEach(lv => {{
     const d = currentSrc[lv] || {{}};
-    const total = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length + (d.trend_hubs||[]).length;
+    const total = (d.type1||[]).length + (d.type2||[]).length + (d.type3||[]).length;
     const active = lv === mgsTab;
     const bg = active ? '#21262d' : 'transparent';
     const clr = active ? '#58a6ff' : '#8b949e';
@@ -2562,19 +2497,16 @@ function renderMobileGlobalSignals() {{
   const gAllT1 = data.type1 || [];
   const gAllT2 = data.type2 || [];
   const gAllT3 = data.type3 || [];
-  const gAllTH = data.trend_hubs || [];
-  const gMaxItems = Math.max(gAllT1.length, gAllT2.length, gAllT3.length, gAllTH.length);
-  const gTotalPages = Math.min(5, Math.max(1, Math.ceil(gMaxItems / mgsPageSize)));
+  const gMaxItems = Math.max(gAllT1.length, gAllT2.length, gAllT3.length);
+  const gTotalPages = Math.min(10, Math.max(1, Math.ceil(gMaxItems / mgsPageSize)));
   if (mgsPage > gTotalPages) mgsPage = gTotalPages;
   const gOff = (mgsPage - 1) * mgsPageSize;
   const gT1 = gAllT1.slice(gOff, gOff + mgsPageSize);
   const gT2 = gAllT2.slice(gOff, gOff + mgsPageSize);
   const gT3 = gAllT3.slice(gOff, gOff + mgsPageSize);
-  const gTH = gAllTH.slice(gOff, gOff + mgsPageSize);
   h += mgsTable('🔴 第一类买卖点', gT1, false, 'mgsT1Open', mgsT1Open);
   h += mgsTable('🟠 第二类买卖点', gT2, false, 'mgsT2Open', mgsT2Open);
   h += mgsTable('🔵 第三类买卖点', gT3, true, 'mgsT3Open', mgsT3Open);
-  h += mgsTrendHubTable('🏗 趋势中枢（位次≥2）', gTH, 'mgsTrendHubOpen', mgsTrendHubOpen);
 
   // Pending 3B table (independent of category/level tabs)
   (function() {{
