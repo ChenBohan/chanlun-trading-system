@@ -44,7 +44,6 @@ from .chanlun_engine import (
 )
 
 from .visualize import (
-    generate_dashboard,
     generate_mobile_dashboard,
     run_analysis_pipeline,
     parse_merged_data_files,
@@ -65,7 +64,6 @@ __all__ = [
     "cross_level_filter",
     "format_report", "format_synthesis_report",
     # visualize
-    "generate_dashboard",
     "generate_mobile_dashboard",
     "run_analysis_pipeline",
     "parse_merged_data_files",
