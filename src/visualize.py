@@ -1245,7 +1245,7 @@ function renderSignalsPanel() {
         const statusColor = p.status === '回抽已至ZG附近' ? '#f85149' : p.status === '回抽进行中' ? '#d29922' : '#8b949e';
         const marginColor = p.margin_pct < 15 ? '#f85149' : p.margin_pct < 50 ? '#d29922' : '#3fb950';
         const lvMap = {daily: 'DF', '30min': '30F', '5min': '5F'};
-        t += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;cursor:pointer" onclick="selectIndex(\'' + p.etf_code + '\')" title="' + (p.note||'').replace(/"/g,'&amp;quot;') + '">';
+        t += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;cursor:pointer" onclick="selectIndex(\'' + p.etf_code + '\')" title="' + (p.note||'').replace(/"/g,'&quot;') + '">';
         t += '<td style="padding:6px 8px;white-space:nowrap;cursor:pointer;color:#58a6ff">' + (p.etf_name||p.etf_code) + '</td>';
         t += '<td style="padding:6px 8px;text-align:center">' + (lvMap[p.level]||p.level) + '</td>';
         t += '<td style="padding:6px 8px;text-align:center;color:' + statusColor + ';font-size:11px">' + p.status + '</td>';
@@ -4351,12 +4351,12 @@ function renderMobileGlobalSignals() {{
         const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
         const statusColor = p.status === '回抽已至ZG附近' ? '#f85149' : p.status === '回抽进行中' ? '#d29922' : '#8b949e';
         const marginColor = p.margin_pct < 15 ? '#f85149' : p.margin_pct < 50 ? '#d29922' : '#3fb950';
-        t += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d;white-space:nowrap;cursor:pointer" onclick="switchIndex(\'' + p.etf_code + '\')">';
-        t += '<td style="padding:3px 4px;color:#58a6ff;font-weight:600">' + (p.etf_name||p.etf_code) + '</td>';
-        t += '<td style="padding:3px 4px;text-align:center">' + (lvMap[p.level]||p.level) + '</td>';
-        t += '<td style="padding:3px 4px;text-align:center;color:' + statusColor + ';font-size:10px">' + p.status + '</td>';
-        t += '<td style="padding:3px 4px;text-align:center;font-weight:600">' + (p.hub_zg||0).toFixed(2) + '</td>';
-        t += '<td style="padding:3px 4px;text-align:center;color:' + marginColor + ';font-weight:600">' + (p.margin_pct||0).toFixed(0) + '%</td>';
+        t += `<tr style="background:${{bg}};border-bottom:1px solid #21262d;white-space:nowrap;cursor:pointer" onclick="switchIndex('${{p.etf_code}}')">`;
+        t += `<td style="padding:3px 4px;color:#58a6ff;font-weight:600">${{p.etf_name||p.etf_code}}</td>`;
+        t += `<td style="padding:3px 4px;text-align:center">${{lvMap[p.level]||p.level}}</td>`;
+        t += `<td style="padding:3px 4px;text-align:center;color:${{statusColor}};font-size:10px">${{p.status}}</td>`;
+        t += `<td style="padding:3px 4px;text-align:center;font-weight:600">${{(p.hub_zg||0).toFixed(2)}}</td>`;
+        t += `<td style="padding:3px 4px;text-align:center;color:${{marginColor}};font-weight:600">${{(p.margin_pct||0).toFixed(0)}}%</td>`;
         t += '</tr>';
       }});
       t += '</tbody></table></div>';
