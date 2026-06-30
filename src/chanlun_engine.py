@@ -267,6 +267,35 @@ class AnalysisResult:
     # {"activity": "active"|"normal"|"inactive",
     #  "recent_avg": float, "ma20_avg": float, "ratio": float,
     #  "trend": "expanding"|"shrinking"|"flat"}
+    pending_3b: list = field(default_factory=list)
+    # List of Pending3B objects: hubs that have been broken upward but
+    # pullback is not yet complete (or still in progress).
+
+
+@dataclass
+class Pending3B:
+    """A hub that has been broken upward but pullback confirmation is pending.
+
+    States:
+      "突破等待回抽" — breakout completed, no pullback stroke started yet
+      "回抽进行中"   — pullback stroke is in progress (current bar in down-stroke)
+      "回抽已至ZG附近" — pullback is near ZG, high tension zone
+    """
+    hub_idx: int
+    hub_zg: float
+    hub_zd: float
+    hub_strokes: int = 0
+    breakout_dt: str = ""
+    breakout_high: float = 0.0
+    breakout_pct: float = 0.0
+    current_low: float = 0.0
+    margin_to_zg: float = 0.0
+    margin_pct: float = 0.0
+    status: str = ""
+    level: str = ""
+    stop_loss: float = 0.0
+    hub_rank: int = 1
+    note: str = ""
 
 
 @dataclass
@@ -293,6 +322,32 @@ class IntervalNest:
 
 
 @dataclass
+class ThreeBuyConfirmation:
+    """Sub-level divergence confirmation for a Type-3 Buy signal (三买次级别确认).
+
+    Theory: 三买筛选与评价体系 §七 — 30min三买的回抽段是5min下跌走势，
+    用区间套在5min内部找该下跌走势的结束点（5min一买）= 30min三买精确入场。
+    """
+    source_level: str = ""
+    source_3b_dt: str = ""
+    source_3b_price: float = 0.0
+    source_3b_hub_idx: int = -1
+    source_3b_strength: str = ""
+    pullback_start_dt: str = ""
+    pullback_end_dt: str = ""
+    sub_level: str = ""
+    confirmed: bool = False
+    confirmation_type: str = ""
+    confirmation_dt: str = ""
+    confirmation_price: float = 0.0
+    daily_env: str = ""
+    overall_status: str = ""
+    note: str = ""
+    sub_divergences: list = field(default_factory=list)
+    sub_buy_signals: list = field(default_factory=list)
+
+
+@dataclass
 class MultiLevelSynthesis:
     """Multi-level synthesis result (多级别联立分析).
 
@@ -304,6 +359,7 @@ class MultiLevelSynthesis:
     resonance_signals: list[dict] = field(default_factory=list)
     enriched_signals: list[dict] = field(default_factory=list)
     interval_nests: list[IntervalNest] = field(default_factory=list)
+    three_buy_confirmations: list[ThreeBuyConfirmation] = field(default_factory=list)
     overall_bias: str = ""
     action_advice: str = ""
     summary: str = ""
@@ -5144,6 +5200,383 @@ def find_interval_nests(
     return nests
 
 
+def find_pending_3b(result: AnalysisResult) -> list[Pending3B]:
+    """Find hubs that have been broken upward but pullback is not yet confirmed.
+
+    These are "three-buy candidates" — the breakout has occurred but:
+      - No pullback stroke has started yet (price still rising), OR
+      - A pullback stroke is in progress but hasn't completed yet
+
+    Excludes hubs that already produced a confirmed 3B signal.
+    """
+    pending = []
+    hubs = result.hubs
+    strokes = result.strokes
+    bars = result.raw_bars
+
+    if not hubs or not strokes or not bars:
+        return pending
+
+    confirmed_hub_idxs = set()
+    for p in result.buy_sell_points:
+        if p.type == "3B":
+            confirmed_hub_idxs.add(p.hub_idx)
+
+    last_bar = bars[-1]
+    last_price = last_bar.close
+    last_dt = last_bar.dt
+
+    for hub in hubs:
+        if hub.idx in confirmed_hub_idxs:
+            continue
+
+        hub_range = hub.zg - hub.zd if hub.zg > hub.zd else 1e-9
+
+        hub_end_idx = hub.strokes[-1].idx
+        post_hub = [s for s in strokes if s.idx > hub_end_idx]
+        if not post_hub:
+            continue
+
+        breakout_stroke = None
+        for s in post_hub:
+            if s.direction == 1 and s.end.high > hub.zg:
+                breakout_stroke = s
+                break
+
+        if not breakout_stroke:
+            continue
+
+        breakout_pct = (breakout_stroke.end.high - hub.zg) / hub_range * 100
+
+        # Check what happened after the breakout
+        post_breakout = [s for s in strokes if s.idx > breakout_stroke.idx]
+
+        # Is there a completed down-stroke after the breakout?
+        pullback_stroke = None
+        for s in post_breakout:
+            if s.direction == -1:
+                pullback_stroke = s
+                break
+
+        if pullback_stroke and pullback_stroke.end.low <= hub.zg:
+            # Pullback already broke ZG → 3B failed, not pending
+            continue
+
+        if pullback_stroke:
+            # Down-stroke exists but didn't break ZG → check if it's the LAST stroke
+            later_strokes = [s for s in strokes if s.idx > pullback_stroke.idx]
+            if later_strokes:
+                # More strokes after pullback → should already be a confirmed 3B
+                continue
+            # The pullback is the last completed stroke → "回抽进行中"
+            current_low = pullback_stroke.end.low
+            margin = current_low - hub.zg
+            margin_pct = margin / hub_range * 100
+            if margin < 0:
+                # Already broke ZG → failed, not pending
+                continue
+            if margin_pct < 5:
+                status = "回抽已至ZG附近"
+            else:
+                status = "回抽进行中"
+        else:
+            # No confirmed pullback stroke yet
+            current_low = last_price
+            margin = last_price - hub.zg
+            margin_pct = margin / hub_range * 100
+            if margin < 0:
+                # Price fell below ZG without a proper structure → failed
+                continue
+            # Check if price has dropped from breakout high (pullback forming but not confirmed)
+            drop_from_peak = breakout_stroke.end.high - last_price
+            drop_ratio = drop_from_peak / hub_range if hub_range > 0 else 0
+            if drop_ratio > 0.3:
+                status = "回抽进行中"
+            else:
+                status = "突破等待回抽"
+
+        # Filter: breakout too far from current price (hub is stale/irrelevant)
+        if breakout_pct > 300:
+            continue
+
+        # Only report recent pending 3B (breakout is within last 15% of bars)
+        breakout_bar_idx = next(
+            (i for i, b in enumerate(bars) if b.dt >= breakout_stroke.end.dt),
+            len(bars) - 1
+        )
+        recency_threshold = int(len(bars) * 0.85)
+        if breakout_bar_idx < recency_threshold:
+            continue
+
+        # Hub rank (position in trend sequence)
+        hub_rank = hub.trend_seq + 1 if hub.trend_seq >= 0 else 1
+
+        p3b = Pending3B(
+            hub_idx=hub.idx,
+            hub_zg=hub.zg,
+            hub_zd=hub.zd,
+            hub_strokes=len(hub.strokes),
+            breakout_dt=breakout_stroke.end.dt,
+            breakout_high=breakout_stroke.end.high,
+            breakout_pct=breakout_pct,
+            current_low=current_low,
+            margin_to_zg=margin,
+            margin_pct=margin_pct,
+            status=status,
+            level=result.level,
+            stop_loss=hub.zg,
+            hub_rank=hub_rank,
+            note=(
+                f"中枢{hub.idx+1}(ZG={hub.zg:.3f})已突破"
+                f"{breakout_pct:.0f}%@{breakout_stroke.end.dt}，"
+                f"{status}，余量{margin_pct:.0f}%"
+            ),
+        )
+        pending.append(p3b)
+
+    return pending
+
+
+def _confirm_3b_sub_level(
+    signal_level_result: AnalysisResult,
+    sub_level_result: AnalysisResult,
+    daily: AnalysisResult,
+) -> list[ThreeBuyConfirmation]:
+    """Check sub-level divergence/buy for each 3B signal in signal_level_result.
+
+    Theory (三买筛选与评价体系 §八):
+      The pullback stroke of a 3B is a sub-level decline. Use interval nesting
+      to find where that decline ENDS (sub-level 1B / consolidation divergence)
+      = the precise entry point for the parent-level 3B.
+
+    Confirmation hierarchy (strict interval nesting priority):
+      Tier 1 - 区间套确认 (signals near pullback END, within last 30% of window):
+        1B (一买): sub-level trend divergence ending the decline
+        PB (盘整一买): sub-level consolidation divergence
+        Divergence (趋势背驰/盘整背驰): raw divergence signal
+      Tier 2 - 二买确认 (2B after a prior 1B/PB in window):
+        Confirms the reversal is real
+      Tier 3 - 共振确认 (structural buy signals not at pullback end):
+        3B (三买): sub-level also shows breakout structure (resonance)
+        Other signals early in the window
+
+    For each 3B signal in signal_level_result:
+      1. Identify the pullback stroke's time window (start_dt → end_dt)
+      2. Search sub_level_result for divergences and buy signals within that window
+      3. Classify by proximity to pullback end and signal type
+      4. Assign confirmation tier and type
+    """
+    confirmations = []
+    daily_dir = _classify_trend_direction(daily.trend)
+    daily_env_map = {1: "日线多头", -1: "日线空头", 0: "日线中性"}
+    daily_env = daily_env_map.get(daily_dir, "日线中性")
+
+    strokes = signal_level_result.strokes
+
+    for p in signal_level_result.buy_sell_points:
+        if p.type != "3B":
+            continue
+
+        conf = ThreeBuyConfirmation(
+            source_level=signal_level_result.level,
+            source_3b_dt=p.dt,
+            source_3b_price=p.price,
+            source_3b_hub_idx=p.hub_idx,
+            source_3b_strength=p.strength,
+            daily_env=daily_env,
+        )
+
+        pullback_idx = p.stroke_idx - 1
+        pullback_stroke = None
+        for s in strokes:
+            if s.idx == pullback_idx and s.direction == -1:
+                pullback_stroke = s
+                break
+
+        if not pullback_stroke:
+            for s in strokes:
+                if (s.direction == -1 and s.end.dt == p.dt
+                        and abs(s.end.low - p.price) < 1e-6):
+                    pullback_stroke = s
+                    break
+
+        if not pullback_stroke:
+            conf.overall_status = "pending"
+            conf.note = "未能定位回抽笔，无法执行次级别确认"
+            confirmations.append(conf)
+            continue
+
+        conf.pullback_start_dt = pullback_stroke.start.dt
+        conf.pullback_end_dt = pullback_stroke.end.dt
+        conf.sub_level = sub_level_result.level
+
+        range_start = pullback_stroke.start.dt
+        range_end = pullback_stroke.end.dt
+
+        sub_divs = _find_divs_in_range(
+            sub_level_result, range_start, range_end, direction=-1
+        )
+        sub_bsps = _find_bsp_in_range(
+            sub_level_result, range_start, range_end, direction=-1
+        )
+
+        conf.sub_divergences = [
+            {"type": d["type"], "dt": d["dt"],
+             "price": d.get("price", 0), "direction": d["direction"]}
+            for d in sub_divs
+        ]
+        conf.sub_buy_signals = [
+            {"type": bp.type, "label": bp.label, "dt": bp.dt,
+             "price": bp.price, "confidence": bp.confidence}
+            for bp in sub_bsps
+        ]
+
+        # --- Interval nesting logic: classify signals by tier ---
+        # Compute the "last 30%" time threshold for proximity to pullback end
+        # Signals near the end are true interval-nesting confirmations;
+        # signals early in the window are structural resonance at best.
+        _last_30pct_dt = _compute_time_threshold(
+            range_start, range_end, ratio=0.5
+        )
+
+        # Tier 1: 区间套确认 — 1B/PB/divergence near pullback end
+        tier1_bsps = [
+            bp for bp in sub_bsps
+            if bp.type in ("1B", "PB") and bp.dt >= _last_30pct_dt
+        ]
+        tier1_divs = [
+            d for d in sub_divs if d["dt"] >= _last_30pct_dt
+        ]
+
+        # Tier 2: 二买确认 — 2B anywhere in window (confirms prior reversal)
+        tier2_bsps = [bp for bp in sub_bsps if bp.type == "2B"]
+
+        # Tier 3: 共振确认 — 3B or early 1B/PB (structural, not interval nesting)
+        tier3_bsps = [
+            bp for bp in sub_bsps
+            if bp.type == "3B" or (bp.type in ("1B", "PB") and bp.dt < _last_30pct_dt)
+        ]
+
+        # Also check: divergence early in window → weaker confirmation
+        tier3_divs = [d for d in sub_divs if d["dt"] < _last_30pct_dt]
+
+        # --- Assign confirmation result by priority ---
+        if tier1_bsps:
+            best = tier1_bsps[-1]
+            conf.confirmed = True
+            if best.type == "1B":
+                conf.confirmation_type = "区间套一买"
+            else:
+                conf.confirmation_type = "区间套盘背"
+            conf.confirmation_dt = best.dt
+            conf.confirmation_price = best.price
+            conf.overall_status = "confirmed"
+            conf.note = (
+                f"{conf.sub_level}{conf.confirmation_type}"
+                f"（{conf.confirmation_dt}，价{conf.confirmation_price:.3f}）"
+            )
+        elif tier1_divs:
+            best = tier1_divs[-1]
+            conf.confirmed = True
+            conf.confirmation_type = (
+                "区间套趋势背驰" if best["type"] == "trend" else "区间套盘整背驰"
+            )
+            conf.confirmation_dt = best["dt"]
+            conf.confirmation_price = best.get("price", 0)
+            conf.overall_status = "confirmed"
+            conf.note = (
+                f"{conf.sub_level}{conf.confirmation_type}"
+                f"（{conf.confirmation_dt}）"
+            )
+        elif tier2_bsps:
+            best = tier2_bsps[-1]
+            conf.confirmed = True
+            conf.confirmation_type = "二买确认"
+            conf.confirmation_dt = best.dt
+            conf.confirmation_price = best.price
+            conf.overall_status = "confirmed"
+            conf.note = (
+                f"{conf.sub_level}{conf.confirmation_type}"
+                f"（{conf.confirmation_dt}，价{conf.confirmation_price:.3f}）"
+            )
+        elif tier3_bsps:
+            best = tier3_bsps[-1]
+            conf.confirmed = True
+            if best.type == "3B":
+                conf.confirmation_type = "共振三买"
+            elif best.type == "1B":
+                conf.confirmation_type = "共振一买"
+            else:
+                conf.confirmation_type = "共振盘背"
+            conf.confirmation_dt = best.dt
+            conf.confirmation_price = best.price
+            conf.overall_status = "confirmed"
+            conf.note = (
+                f"{conf.sub_level}{conf.confirmation_type}"
+                f"（{conf.confirmation_dt}，价{conf.confirmation_price:.3f}）"
+                f"（非区间套：信号位于回抽段前半段）"
+            )
+        elif tier3_divs:
+            best = tier3_divs[-1]
+            conf.confirmed = True
+            div_label = "趋势背驰" if best["type"] == "trend" else "盘整背驰"
+            conf.confirmation_type = f"共振{div_label}"
+            conf.confirmation_dt = best["dt"]
+            conf.confirmation_price = best.get("price", 0)
+            conf.overall_status = "confirmed"
+            conf.note = (
+                f"{conf.sub_level}{conf.confirmation_type}"
+                f"（{conf.confirmation_dt}）"
+                f"（非区间套：背驰位于回抽段前半段）"
+            )
+        else:
+            conf.overall_status = "pending"
+            conf.note = (
+                f"回抽段（{range_start}~{range_end}）内"
+                f"未发现{conf.sub_level}背驰/买点信号"
+            )
+
+        confirmations.append(conf)
+
+    return confirmations
+
+
+def _compute_time_threshold(start_dt: str, end_dt: str, ratio: float = 0.5) -> str:
+    """Compute a time point at `ratio` of the way from start to end.
+
+    Used to split the pullback time window into "early" and "late" portions.
+    Signals in the late portion (near pullback end) are interval-nesting confirmations;
+    signals in the early portion are structural resonance.
+    """
+    from datetime import datetime
+
+    fmt_full = "%Y-%m-%d %H:%M:%S"
+    fmt_date = "%Y-%m-%d"
+
+    try:
+        t_start = datetime.strptime(start_dt, fmt_full)
+    except ValueError:
+        try:
+            t_start = datetime.strptime(start_dt, fmt_date)
+        except ValueError:
+            return start_dt
+
+    try:
+        t_end = datetime.strptime(end_dt, fmt_full)
+    except ValueError:
+        try:
+            t_end = datetime.strptime(end_dt, fmt_date)
+        except ValueError:
+            return start_dt
+
+    delta = t_end - t_start
+    threshold = t_start + delta * ratio
+
+    if " " in start_dt or " " in end_dt:
+        return threshold.strftime(fmt_full)
+    return threshold.strftime(fmt_date)
+
+
 def synthesize_multi_level(
     daily: AnalysisResult,
     min30: Optional[AnalysisResult] = None,
@@ -5177,6 +5610,17 @@ def synthesize_multi_level(
 
     syn.interval_nests = find_interval_nests(daily, min30, min5)
 
+    # Three-Buy sub-level confirmation (三买次级别背驰确认)
+    # Check 30min 3B signals against 5min divergences/buy signals
+    if min30 and min5:
+        syn.three_buy_confirmations = _confirm_3b_sub_level(min30, min5, daily)
+    # Also check daily 3B signals against 30min divergences/buy signals
+    if min30:
+        daily_3b_confs = _confirm_3b_sub_level(daily, min30, daily)
+        syn.three_buy_confirmations = (
+            syn.three_buy_confirmations + daily_3b_confs
+        )
+
     syn.overall_bias, syn.action_advice = _determine_overall_bias(
         syn.level_summary, syn.direction_alignment,
     )
@@ -5191,6 +5635,13 @@ def synthesize_multi_level(
         deep = [n for n in syn.interval_nests if n.depth >= 2]
         parts.append(f"区间套：{len(syn.interval_nests)} 个背驰段，"
                      f"{len(deep)} 个完成嵌套定位")
+    if syn.three_buy_confirmations:
+        confirmed = [c for c in syn.three_buy_confirmations if c.confirmed]
+        pending = [c for c in syn.three_buy_confirmations if not c.confirmed]
+        if confirmed:
+            parts.append(f"三买确认：{len(confirmed)} 个已确认")
+        if pending:
+            parts.append(f"三买待确认：{len(pending)} 个")
     syn.summary = "；".join(parts)
 
     return syn
@@ -5324,6 +5775,9 @@ def analyze(bars: list[RawBar], level: str = "daily") -> AnalysisResult:
 
     for i, p in enumerate(result.buy_sell_points):
         p.idx = i
+
+    # [10b2] Pending 3B detection (三买预备信号)
+    result.pending_3b = find_pending_3b(result)
 
     # [10c] Segment-level buy/sell points (线段级别买卖点)
     result.seg_buy_sell_points = find_seg_buy_sell_points(
@@ -5670,6 +6124,47 @@ def format_synthesis_report(syn: MultiLevelSynthesis) -> str:
             lines.append(f"- {n.note}")
             lines.append("")
         lines.append("")
+
+    if syn.three_buy_confirmations:
+        confirmed = [c for c in syn.three_buy_confirmations if c.confirmed]
+        pending = [c for c in syn.three_buy_confirmations if not c.confirmed]
+
+        lines.append(f"## 三买次级别确认（{len(confirmed)} 已确认 / "
+                     f"{len(pending)} 待确认）")
+        lines.append("")
+        lines.append("> 理论：30分钟三买的回抽段是5分钟下跌走势，"
+                     "5分钟背驰/一买 = 30分钟三买精确入场点")
+        lines.append("")
+
+        if confirmed:
+            lines.append("### ✅ 已确认（次级别背驰/买点已出现）")
+            lines.append("")
+            lines.append("| 级别 | 三买时间 | 价格 | 强度 | 确认类型 | "
+                         "确认时间 | 确认价格 | 日线环境 |")
+            lines.append("|------|---------|------|------|---------|"
+                         "---------|---------|---------|")
+            for c in confirmed:
+                lines.append(
+                    f"| {c.source_level} | {c.source_3b_dt} "
+                    f"| {c.source_3b_price:.3f} | {c.source_3b_strength} "
+                    f"| {c.sub_level}{c.confirmation_type} "
+                    f"| {c.confirmation_dt} | {c.confirmation_price:.3f} "
+                    f"| {c.daily_env} |"
+                )
+            lines.append("")
+            for c in confirmed:
+                lines.append(f"- **{c.source_level}三买** @ {c.source_3b_dt}：{c.note}")
+            lines.append("")
+
+        if pending:
+            lines.append("### ⏳ 待确认（回抽段内未见次级别背驰）")
+            lines.append("")
+            for c in pending:
+                lines.append(
+                    f"- {c.source_level}三买 @ {c.source_3b_dt}"
+                    f"（{c.source_3b_strength}）— {c.note}"
+                )
+            lines.append("")
 
     return "\n".join(lines)
 

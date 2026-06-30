@@ -905,6 +905,7 @@ const INDEX_LIST = __INDEX_LIST_JSON__;
 const SIGNAL_DATA = __GLOBAL_SIGNALS_JSON__;
 const WATCHLIST_SIGNALS = __WATCHLIST_SIGNALS_JSON__;
 const WATCHLIST_CODES = __WATCHLIST_CODES_JSON__;
+const PENDING_3B = __PENDING_3B_JSON__;
 
 function applyLiveDelta(key, base) {
   if (!LIVE_DATA || !LIVE_DATA[key]) return base;
@@ -1021,6 +1022,7 @@ let spT1Open = false;
 let spT2Open = false;
 let spT3Open = true;
 let spTrendHubOpen = true;
+let spPending3bOpen = true;
 let spPage = 1;
 const SP_PAGE_SIZE = 10;
 
@@ -1106,6 +1108,16 @@ function renderSignalsPanel() {
       r += '<td style="padding:6px 8px;text-align:center;font-size:12px;font-weight:600;color:' + rkClr + '">' + rkStr + '</td>';
       const hw = s.hub_width;
       r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + (hw > 0 ? hw + '笔' : '-') + '</td>';
+      // Sub-level confirmation for 3B
+      let tbcCell = '-';
+      if (s.type === '3B' && s.tbc) {
+        if (s.tbc.confirmed) {
+          tbcCell = '<span style="color:#3fb950;font-weight:600" title="' + (s.tbc.note||'').replace(/"/g,'&quot;') + '">✅' + s.tbc.type + '</span>';
+        } else {
+          tbcCell = '<span style="color:#d29922">⏳待确认</span>';
+        }
+      }
+      r += '<td style="padding:6px 8px;text-align:center;font-size:12px">' + tbcCell + '</td>';
     }
     r += '</tr>';
     return r;
@@ -1132,10 +1144,10 @@ function renderSignalsPanel() {
       if (!isType3) t += '<th style="padding:8px;text-align:center">强弱</th>';
       t += '<th style="padding:8px;text-align:left">仓位建议</th>';
       t += '<th style="padding:8px;text-align:center">防狼</th>';
-      if (isType3) { t += '<th style="padding:8px;text-align:center">位次</th>'; t += '<th style="padding:8px;text-align:center">笔数</th>'; }
+      if (isType3) { t += '<th style="padding:8px;text-align:center">位次</th>'; t += '<th style="padding:8px;text-align:center">笔数</th>'; t += '<th style="padding:8px;text-align:center">次级确认</th>'; }
       t += '</tr></thead><tbody>';
       signals.forEach((s, i) => { t += sigRow(s, i, isType3); });
-      const cols = isType3 ? 8 : 9;
+      const cols = isType3 ? 9 : 9;
       if (signals.length === 0) {
         t += '<tr><td colspan="' + cols + '" style="padding:12px;text-align:center;color:#484f58">暂无信号</td></tr>';
       }
@@ -1203,6 +1215,49 @@ function renderSignalsPanel() {
         t += '<tr><td colspan="6" style="padding:12px;text-align:center;color:#484f58">暂无趋势中枢</td></tr>';
       }
       t += '</tbody></table>';
+    }
+    t += '</div>';
+    return t;
+  }
+
+  function pending3bTable() {
+    const items = PENDING_3B || [];
+    if (items.length === 0) return '';
+    const arrow = spPending3bOpen ? '▼' : '▶';
+    let t = '<div style="margin-bottom:6px;overflow-x:auto">';
+    t += '<h4 onclick="spPending3bOpen=!spPending3bOpen;renderSignalsPanel()" style="color:#c9d1d9;margin:12px 0 6px;font-size:14px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px">';
+    t += '<span style="font-size:10px;color:#8b949e;transition:transform 0.2s">' + arrow + '</span> 👁 三买观察（突破等待回抽） <span style="font-size:11px;color:#8b949e;font-weight:400">' + items.length + '个</span>';
+    t += '</h4>';
+    if (spPending3bOpen) {
+      t += '<table style="width:100%;border-collapse:collapse;font-size:13px;color:#c9d1d9;background:#161b22;border-radius:8px;overflow:hidden">';
+      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:12px;white-space:nowrap">';
+      t += '<th style="padding:8px;text-align:left">标的</th>';
+      t += '<th style="padding:8px;text-align:center">级别</th>';
+      t += '<th style="padding:8px;text-align:center">状态</th>';
+      t += '<th style="padding:8px;text-align:center">ZG(止损)</th>';
+      t += '<th style="padding:8px;text-align:center">突破%</th>';
+      t += '<th style="padding:8px;text-align:center">距ZG余量</th>';
+      t += '<th style="padding:8px;text-align:center">突破时间</th>';
+      t += '<th style="padding:8px;text-align:center">位次</th>';
+      t += '</tr></thead><tbody>';
+      items.forEach((p, i) => {
+        const bg = i % 2 === 0 ? '#161b22' : '#1c2128';
+        const statusColor = p.status === '回抽已至ZG附近' ? '#f85149' : p.status === '回抽进行中' ? '#d29922' : '#8b949e';
+        const marginColor = p.margin_pct < 15 ? '#f85149' : p.margin_pct < 50 ? '#d29922' : '#3fb950';
+        const lvMap = {daily: 'DF', '30min': '30F', '5min': '5F'};
+        t += '<tr style="background:' + bg + ';border-bottom:1px solid #21262d" onclick="navigateToIndex(\'' + p.etf_code + '\')" title="' + (p.note||'') + '">';
+        t += '<td style="padding:6px 8px;white-space:nowrap;cursor:pointer;color:#58a6ff">' + (p.etf_name||p.etf_code) + '</td>';
+        t += '<td style="padding:6px 8px;text-align:center">' + (lvMap[p.level]||p.level) + '</td>';
+        t += '<td style="padding:6px 8px;text-align:center;color:' + statusColor + ';font-size:11px">' + p.status + '</td>';
+        t += '<td style="padding:6px 8px;text-align:center;font-weight:600">' + (p.hub_zg||0).toFixed(2) + '</td>';
+        t += '<td style="padding:6px 8px;text-align:center">+' + (p.breakout_pct||0).toFixed(0) + '%</td>';
+        t += '<td style="padding:6px 8px;text-align:center;color:' + marginColor + ';font-weight:600">' + (p.margin_pct||0).toFixed(0) + '%</td>';
+        t += '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#8b949e">' + (p.breakout_dt||'').slice(0,10) + '</td>';
+        t += '<td style="padding:6px 8px;text-align:center">' + (p.hub_rank||'-') + '</td>';
+        t += '</tr>';
+      });
+      t += '</tbody></table>';
+      t += '<div style="margin-top:4px;font-size:11px;color:#484f58">余量 = 当前价格距ZG的距离。越小越接近三买确认（或失败）。点击行查看详情。</div>';
     }
     t += '</div>';
     return t;
@@ -1288,6 +1343,7 @@ function renderSignalsPanel() {
     h += spTable('🟠 第二类买卖点（回调确认）', pgT2, false, 'spT2Open', spT2Open);
     h += spTable('🔵 第三类买卖点（中枢突破）', pgT3, true, 'spT3Open', spT3Open);
     h += trendHubTable('🏗 趋势中枢监控（位次≥2）', pgTH, 'spTrendHubOpen', spTrendHubOpen);
+    h += pending3bTable();
 
     if (spTotalPages > 1) {
       h += '<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin:12px 0 6px">';
@@ -1497,6 +1553,28 @@ function updateConclusionBar(data) {
 
   const notesLabel = idx.notes ? `<span style="color:#8b949e;font-size:12px;margin-left:6px">${idx.notes}</span>` : '';
 
+  // Three-buy sub-level confirmation badge
+  const tbs = idx.three_buy_status;
+  let tbcHtml = '';
+  if (tbs) {
+    if (tbs.has_confirmed && tbs.latest) {
+      const lt = tbs.latest;
+      const tbcTitle = `${lt.level}三买 @ ${lt.dt}\n强度: ${lt.strength}\n${lt.note}`;
+      tbcHtml = `
+    <div class="concl-group" title="${tbcTitle.replace(/"/g,'&quot;')}">
+      <span class="concl-label">三买确认</span>
+      <span style="background:#1a2a1a;color:#3fb950;padding:4px 12px;border-radius:6px;font-weight:700;font-size:13px;border:1px solid #3fb950">✅ ${lt.level}${lt.confirmation_type}</span>
+      <span style="font-size:11px;color:#8b949e">${lt.confirmation_dt.slice(5)}</span>
+    </div>`;
+    } else if (tbs.count_pending > 0) {
+      tbcHtml = `
+    <div class="concl-group" title="${tbs.count_pending}个三买待次级别确认">
+      <span class="concl-label">三买确认</span>
+      <span style="background:#2a2a1a;color:#d29922;padding:4px 12px;border-radius:6px;font-size:13px;border:1px solid #d29922">⏳ 待确认(${tbs.count_pending})</span>
+    </div>`;
+    }
+  }
+
   bar.innerHTML = `
     <div class="concl-group">
       <span class="concl-label">评分</span>
@@ -1507,7 +1585,7 @@ function updateConclusionBar(data) {
       <span class="concl-label">DF环境</span>
       <span style="background:rgba(0,0,0,0.3);color:${envColor};padding:4px 12px;border-radius:6px;font-weight:700;font-size:14px;border:1px solid ${envColor}">${envIcon} ${envLabel}</span>
       <span style="font-size:12px;color:${envColor}">${envAdvice}</span>
-    </div>
+    </div>${tbcHtml}
     <div class="concl-group">
       <span class="concl-label">长线</span>
       <span class="tag ${trendCls}">${(idx.trend||'-').replace('趋势','')}</span>
@@ -2212,6 +2290,24 @@ def _synthesis_to_dict(syn: MultiLevelSynthesis) -> dict:
             s for s in syn.enriched_signals if s["confidence_changed"]
         ],
         "interval_nests": [_nest_to_dict(n) for n in syn.interval_nests],
+        "three_buy_confirmations": [
+            {
+                "source_level": c.source_level,
+                "dt": c.source_3b_dt,
+                "price": c.source_3b_price,
+                "strength": c.source_3b_strength,
+                "pullback_range": f"{c.pullback_start_dt}~{c.pullback_end_dt}",
+                "sub_level": c.sub_level,
+                "confirmed": c.confirmed,
+                "confirmation_type": c.confirmation_type,
+                "confirmation_dt": c.confirmation_dt,
+                "confirmation_price": c.confirmation_price,
+                "daily_env": c.daily_env,
+                "status": c.overall_status,
+                "note": c.note,
+            }
+            for c in syn.three_buy_confirmations
+        ],
     }
 
 
@@ -2407,6 +2503,35 @@ def _build_index_overview(daily_data: dict, m30_data: dict, syn: dict) -> dict:
         "factors": env_factors,
     }
 
+    # Three-buy sub-level confirmation summary
+    tbc_list = syn.get("three_buy_confirmations", [])
+    tbc_confirmed = [c for c in tbc_list if c.get("confirmed")]
+    tbc_pending = [c for c in tbc_list if not c.get("confirmed")]
+    three_buy_status = None
+    if tbc_confirmed:
+        latest_conf = max(tbc_confirmed, key=lambda c: c.get("dt", ""))
+        three_buy_status = {
+            "has_confirmed": True,
+            "count_confirmed": len(tbc_confirmed),
+            "count_pending": len(tbc_pending),
+            "latest": {
+                "level": latest_conf.get("source_level", ""),
+                "dt": latest_conf.get("dt", ""),
+                "price": latest_conf.get("price", 0),
+                "strength": latest_conf.get("strength", ""),
+                "confirmation_type": latest_conf.get("confirmation_type", ""),
+                "confirmation_dt": latest_conf.get("confirmation_dt", ""),
+                "note": latest_conf.get("note", ""),
+            },
+        }
+    elif tbc_pending:
+        three_buy_status = {
+            "has_confirmed": False,
+            "count_confirmed": 0,
+            "count_pending": len(tbc_pending),
+            "latest": None,
+        }
+
     return {
         "trend": trend,
         "status": status,
@@ -2423,6 +2548,7 @@ def _build_index_overview(daily_data: dict, m30_data: dict, syn: dict) -> dict:
         "bias": bias,
         "conclusion": conclusion,
         "daily_env": daily_env,
+        "three_buy_status": three_buy_status,
     }
 
 
@@ -2608,6 +2734,27 @@ def _analyze_one_index_worker(args: tuple) -> dict:
             level_results.get("5min"),
         )
         syn_dict = _synthesis_to_dict(syn)
+        # Collect pending_3b from all levels
+        all_pending = []
+        for lk, lr in level_results.items():
+            for p3b in lr.pending_3b:
+                all_pending.append({
+                    "level": p3b.level,
+                    "hub_idx": p3b.hub_idx,
+                    "hub_zg": p3b.hub_zg,
+                    "hub_zd": p3b.hub_zd,
+                    "hub_strokes": p3b.hub_strokes,
+                    "breakout_dt": p3b.breakout_dt,
+                    "breakout_high": p3b.breakout_high,
+                    "breakout_pct": p3b.breakout_pct,
+                    "current_low": p3b.current_low,
+                    "margin_pct": p3b.margin_pct,
+                    "status": p3b.status,
+                    "stop_loss": p3b.stop_loss,
+                    "hub_rank": p3b.hub_rank,
+                    "note": p3b.note,
+                })
+        syn_dict["pending_3b"] = all_pending
         syn_text = f"{syn.direction_alignment} | {syn.overall_bias}"
 
     return {
@@ -2695,7 +2842,29 @@ def run_analysis_pipeline(data_dir: str = None,
                     level_results.get("30min"),
                     level_results.get("5min"),
                 )
-                synthesis_data[idx.etf_code] = _synthesis_to_dict(syn)
+                syn_dict = _synthesis_to_dict(syn)
+                # Collect pending_3b from all analyzed levels
+                all_pending = []
+                for lk, lr in level_results.items():
+                    for p3b in lr.pending_3b:
+                        all_pending.append({
+                            "level": p3b.level,
+                            "hub_idx": p3b.hub_idx,
+                            "hub_zg": p3b.hub_zg,
+                            "hub_zd": p3b.hub_zd,
+                            "hub_strokes": p3b.hub_strokes,
+                            "breakout_dt": p3b.breakout_dt,
+                            "breakout_high": p3b.breakout_high,
+                            "breakout_pct": p3b.breakout_pct,
+                            "current_low": p3b.current_low,
+                            "margin_pct": p3b.margin_pct,
+                            "status": p3b.status,
+                            "stop_loss": p3b.stop_loss,
+                            "hub_rank": p3b.hub_rank,
+                            "note": p3b.note,
+                        })
+                syn_dict["pending_3b"] = all_pending
+                synthesis_data[idx.etf_code] = syn_dict
                 print(f"  → 联立: {syn.direction_alignment} | {syn.overall_bias}")
 
     elapsed = time.perf_counter() - t0
@@ -3142,6 +3311,24 @@ def generate_dashboard(data_dir: str = None,
             }
             global_signals.append(entry)
 
+    # Annotate 3B signals with sub-level confirmation status
+    _level_key_map = {"DF": "daily", "30F": "30min", "5F": "5min"}
+    for s in global_signals:
+        if s["type"] != "3B":
+            continue
+        syn = synthesis_data.get(s["etf_code"], {})
+        tbcs = syn.get("three_buy_confirmations", [])
+        lk = s["level_key"]
+        for c in tbcs:
+            if c.get("source_level") == lk and c.get("dt") == s["dt"]:
+                s["tbc"] = {
+                    "confirmed": c.get("confirmed", False),
+                    "type": c.get("confirmation_type", ""),
+                    "dt": c.get("confirmation_dt", ""),
+                    "note": c.get("note", ""),
+                }
+                break
+
     global_signals.sort(key=lambda x: x["dt"], reverse=True)
     type_limits = {"type1": 50, "type2": 50, "type3": 50}
     levels = ["DF", "30F", "5F"]
@@ -3237,11 +3424,22 @@ def generate_dashboard(data_dir: str = None,
     ) / 1024
     num_data_files = len(data_js_files)
 
+    # Collect all pending_3b across all stocks/ETFs
+    pending_3b_list = []
+    for code, syn in synthesis_data.items():
+        for p3b in syn.get("pending_3b", []):
+            p3b_entry = dict(p3b)
+            p3b_entry["etf_code"] = code
+            p3b_entry["etf_name"] = idx_name_map.get(code, code)
+            pending_3b_list.append(p3b_entry)
+    pending_3b_list.sort(key=lambda x: x.get("margin_pct", 999))
+
     html = html.replace("__ALL_DATA_JSON__",
                          json.dumps(sorted(all_data.keys()), ensure_ascii=False))
     html = html.replace("__INDEX_LIST_JSON__", json.dumps(index_list, ensure_ascii=False))
     html = html.replace("__GLOBAL_SIGNALS_JSON__", json.dumps({"stock": stock_signals_by_level, "etf": etf_signals_by_level}, ensure_ascii=False))
     html = html.replace("__WATCHLIST_SIGNALS_JSON__", json.dumps(watchlist_signals_by_level, ensure_ascii=False))
+    html = html.replace("__PENDING_3B_JSON__", json.dumps(pending_3b_list, ensure_ascii=False))
 
     # Watchlist codes injection
     watchlist_codes = list(_wl_codes_set)
@@ -3392,6 +3590,23 @@ def generate_mobile_dashboard(data_dir: str = None,
                 "area_cmp": "",
             }
             mobile_global_signals.append(entry_m)
+
+    # Annotate 3B signals with sub-level confirmation status (mobile)
+    for s in mobile_global_signals:
+        if s["type"] != "3B":
+            continue
+        syn = synthesis_data.get(s["etf_code"], {})
+        tbcs = syn.get("three_buy_confirmations", [])
+        lk = s["level_key"]
+        for c in tbcs:
+            if c.get("source_level") == lk and c.get("dt") == s["dt"]:
+                s["tbc"] = {
+                    "confirmed": c.get("confirmed", False),
+                    "type": c.get("confirmation_type", ""),
+                    "dt": c.get("confirmation_dt", ""),
+                    "note": c.get("note", ""),
+                }
+                break
 
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
     mobile_type_limits = {"type1": 50, "type2": 50, "type3": 50}
@@ -3557,6 +3772,17 @@ def generate_mobile_dashboard(data_dir: str = None,
         "history": thermo_hist_recent,
     }
     market_thermo_json = json.dumps(thermo_data, ensure_ascii=False)
+
+    # Collect pending_3b for mobile
+    mobile_pending_3b = []
+    for code, syn in synthesis_data.items():
+        for p3b in syn.get("pending_3b", []):
+            p3b_entry = dict(p3b)
+            p3b_entry["etf_code"] = code
+            p3b_entry["etf_name"] = idx_name_map_m.get(code, code)
+            mobile_pending_3b.append(p3b_entry)
+    mobile_pending_3b.sort(key=lambda x: x.get("margin_pct", 999))
+    mobile_pending_3b_json = json.dumps(mobile_pending_3b, ensure_ascii=False)
 
     tab_parts = []
     last_type = None
@@ -3736,6 +3962,7 @@ const SIGNAL_DATA = {mobile_global_signals_json};
 const WATCHLIST_SIGNALS = {mobile_watchlist_signals_json};
 const WATCHLIST_CODES = {watchlist_codes_json};
 const MARKET_THERMO = {market_thermo_json};
+const PENDING_3B = {mobile_pending_3b_json};
 
 function applyLiveDelta(key, base) {{
   if (!LIVE_DATA || !LIVE_DATA[key]) return base;
@@ -3937,6 +4164,12 @@ function renderMobileGlobalSignals() {{
       r += `<td style="padding:3px 4px;text-align:center;font-size:10px;font-weight:600;color:${{rkClr}}">${{rkS}}</td>`;
       const hw = s.hub_width;
       r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{hw > 0 ? hw + '笔' : '-'}}</td>`;
+      // Sub-level confirmation for 3B
+      let tbcM = '-';
+      if (s.type === '3B' && s.tbc) {{
+        tbcM = s.tbc.confirmed ? `<span style="color:#3fb950;font-size:9px">✅${{s.tbc.type}}</span>` : '<span style="color:#d29922;font-size:9px">⏳</span>';
+      }}
+      r += `<td style="padding:3px 4px;text-align:center;font-size:10px">${{tbcM}}</td>`;
     }}
     r += '</tr>';
     return r;
@@ -3957,9 +4190,9 @@ function renderMobileGlobalSignals() {{
       t += '<th style="padding:4px;text-align:center">类型</th>';
       t += '<th style="padding:4px;text-align:center">中枢</th>';
       if (!isType3) {{ t += '<th style="padding:4px;text-align:center">级别</th>'; t += '<th style="padding:4px;text-align:center">强度</th>'; t += '<th style="padding:4px;text-align:center">置信</th>'; }}
-      if (isType3) {{ t += '<th style="padding:4px;text-align:center">位次</th>'; t += '<th style="padding:4px;text-align:center">笔数</th>'; }}
+      if (isType3) {{ t += '<th style="padding:4px;text-align:center">位次</th>'; t += '<th style="padding:4px;text-align:center">笔数</th>'; t += '<th style="padding:4px;text-align:center">次级</th>'; }}
       t += '</tr></thead><tbody>';
-      const cols = isType3 ? 6 : 7;
+      const cols = isType3 ? 7 : 7;
       signals.forEach((s, i) => {{ t += mgsRow(s, i, isType3); }});
       if (signals.length === 0) {{
         t += `<tr><td colspan="${{cols}}" style="padding:8px;text-align:center;color:#484f58;font-size:10px">暂无信号</td></tr>`;
@@ -4272,10 +4505,23 @@ function updateInfoBar(data) {{
 
   const notesHtml = idx.notes ? `<span style="color:#6e7681;font-size:10px">${{idx.notes}}</span>` : '';
 
+  // Three-buy sub-level confirmation badge (mobile)
+  const tbs = idx.three_buy_status;
+  let tbcTag = '';
+  if (tbs) {{
+    if (tbs.has_confirmed && tbs.latest) {{
+      const lt = tbs.latest;
+      tbcTag = `<span style="background:#1a2a1a;color:#3fb950;padding:1px 5px;border-radius:3px;font-size:10px;border:1px solid #3fb950" title="${{lt.level}}三买@${{lt.dt}} ${{lt.note}}">✅三买${{lt.confirmation_type}}</span>`;
+    }} else if (tbs.count_pending > 0) {{
+      tbcTag = `<span style="background:#2a2a1a;color:#d29922;padding:1px 5px;border-radius:3px;font-size:10px;border:1px solid #d29922">⏳三买待确认(${{tbs.count_pending}})</span>`;
+    }}
+  }}
+
   bar.innerHTML = `
     <span style="background:${{scoreBg}};color:${{scoreClr}};padding:1px 6px;border-radius:3px;font-weight:700">${{sc}}</span>
     <span style="color:${{mEnvColor}};font-size:11px" title="${{mEnvAdvice}}">${{mEnvAdvice || '-'}}</span>
     <span style="color:${{actionColor}};font-size:11px;font-weight:600">${{actionText}}</span>${{tentTag}}
+    ${{tbcTag}}
     <br>
     <span class="tag ${{tCls}}" style="font-size:10px">${{(idx.trend||'-').replace('趋势','')}}</span>
     ${{idx.latest_signal && idx.latest_signal !== '-' ? '<span class="tag ' + dSigCls + '" style="font-size:10px">' + idx.latest_signal + '</span>' : ''}}

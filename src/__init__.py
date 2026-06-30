@@ -31,6 +31,7 @@ from .chanlun_engine import (
     BuySellPoint,
     AnalysisResult,
     IntervalNest,
+    ThreeBuyConfirmation,
     MultiLevelSynthesis,
     load_bars_from_csv,
     analyze,
@@ -58,7 +59,7 @@ __all__ = [
     # chanlun_engine
     "RawBar", "MergedBar", "Fractal", "Stroke", "Segment",
     "Hub", "SegHub", "BuySellPoint", "AnalysisResult",
-    "IntervalNest", "MultiLevelSynthesis",
+    "IntervalNest", "ThreeBuyConfirmation", "MultiLevelSynthesis",
     "load_bars_from_csv", "analyze", "analyze_from_csv",
     "find_interval_nests", "synthesize_multi_level",
     "cross_level_filter",
