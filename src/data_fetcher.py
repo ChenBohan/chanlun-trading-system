@@ -528,8 +528,14 @@ def _bs_login():
     global _bs_logged_in
     with _bs_lock:
         if not _bs_logged_in:
-            bs.login()
-            _bs_logged_in = True
+            import socket
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(30)
+            try:
+                bs.login()
+                _bs_logged_in = True
+            finally:
+                socket.setdefaulttimeout(old_timeout)
 
 
 def _bs_symbol(code: str, market: str = "") -> str:
@@ -564,11 +570,17 @@ def _fetch_baostock(code: str, period: str, market: str = "",
         fields = "date,time,open,high,low,close,volume,amount"
 
     try:
-        rs = bs.query_history_k_data_plus(
-            bs_sym, fields,
-            start_date=start_date, end_date=end_date,
-            frequency=freq, adjustflag="2",
-        )
+        import socket
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(30)
+        try:
+            rs = bs.query_history_k_data_plus(
+                bs_sym, fields,
+                start_date=start_date, end_date=end_date,
+                frequency=freq, adjustflag="2",
+            )
+        finally:
+            socket.setdefaulttimeout(old_timeout)
         if rs.error_code != "0":
             print(f"    [BaoStock] error: {rs.error_msg}")
             return []

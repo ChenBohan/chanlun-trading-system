@@ -296,7 +296,7 @@ def cmd_run(args):
     # Step 1: Fetch data for ALL stocks (needed for MA250 calculation)
     # Weekly data changes slowly — only fetch after market close to save time
     from src.data_fetcher import _is_cn_market_closed
-    if _is_cn_market_closed():
+    if getattr(args, 'weekly', False) or _is_cn_market_closed():
         step1_periods = ["weekly", "daily"]
         step1_label = "周线+日线"
     else:
@@ -425,6 +425,8 @@ def main():
                         help="跳过增量检查，强制全量拉取")
     p_run.add_argument("--source", choices=["sina", "eastmoney"], default=None,
                         help="主数据源 (默认: 代码中的配置)")
+    p_run.add_argument("--weekly", action="store_true",
+                        help="强制拉取周线数据（默认仅收盘后自动拉取）")
 
     # backfill
     p_backfill = sub.add_parser("backfill", help="回填历史信号快照")
