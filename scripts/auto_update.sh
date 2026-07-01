@@ -75,7 +75,7 @@ if [[ "${1:-}" == "--remove" ]]; then
     exit 0
 fi
 
-TIMEOUT_SEC=660  # 11 minutes max (475 daily ~6min + MA250 filter + ~300 intraday ~3min + analyze + dashboard)
+TIMEOUT_SEC=900  # 15 minutes max (475 daily ~3min + MA250 filter + ~300 intraday ~3min + analyze + dashboard + post-close weekly)
 
 # ─── Lock to prevent concurrent runs ───────────────────────────────
 if [[ -f "$LOCK_FILE" ]]; then

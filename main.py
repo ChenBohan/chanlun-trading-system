@@ -293,18 +293,26 @@ def cmd_run(args):
     indices = load_index_watchlist()
     data_dir = os.path.join(PROJECT_ROOT, "data")
 
-    # Step 1: Fetch weekly + daily data for ALL stocks (needed for MA250 calculation)
-    print(f"\n[Step 1/5] 拉取全量周线+日线数据（{len(indices)} 标的）...")
+    # Step 1: Fetch data for ALL stocks (needed for MA250 calculation)
+    # Weekly data changes slowly — only fetch after market close to save time
+    from src.data_fetcher import _is_cn_market_closed
+    if _is_cn_market_closed():
+        step1_periods = ["weekly", "daily"]
+        step1_label = "周线+日线"
+    else:
+        step1_periods = ["daily"]
+        step1_label = "日线"
+    print(f"\n[Step 1/5] 拉取全量{step1_label}数据（{len(indices)} 标的）...")
     t0 = _time.perf_counter()
     daily_results = fetch_all_indices(
         indices=indices, beg=args.beg,
         delay=args.delay, max_workers=args.workers,
         force=args.force,
-        periods=["weekly", "daily"],
+        periods=step1_periods,
     )
     save_fetch_results(daily_results, fmt="csv")
     t_daily = _time.perf_counter() - t0
-    print(f"  周线+日线拉取完成: {t_daily:.1f}s")
+    print(f"  {step1_label}拉取完成: {t_daily:.1f}s")
 
     # Step 2: MA250 filter (real-time price vs MA250 from daily data)
     print("\n[Step 2/5] 年线过滤（实时价格 vs MA250）...")
