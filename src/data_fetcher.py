@@ -81,6 +81,7 @@ class IndexConfig:
 class FetchResult:
     """Result of a data fetch operation for one index, all timeframes."""
     index_cfg: IndexConfig
+    weekly: list[KlineBar] = field(default_factory=list)
     daily: list[KlineBar] = field(default_factory=list)
     min30: list[KlineBar] = field(default_factory=list)
     min5: list[KlineBar] = field(default_factory=list)
@@ -119,7 +120,9 @@ def _eastmoney_secid(code: str, market: str = "") -> str:
 
 
 # Sina uses "scale" parameter: 240=daily, 60=60min, 30=30min, 15=15min, 5=5min
+# Weekly has no Sina scale; use Tencent/EastMoney only.
 PERIOD_MAP = {
+    "weekly": {"sina_scale": None, "em_klt": "102"},
     "daily": {"sina_scale": "240", "em_klt": "101"},
     "30min": {"sina_scale": "30", "em_klt": "30"},
     "5min":  {"sina_scale": "5",  "em_klt": "5"},
@@ -301,6 +304,7 @@ def _fetch_eastmoney(secid: str, klt: str, beg: str, end: str,
 # ════════════════════════════════════════════════════════════════════
 
 _TENCENT_PERIOD_MAP = {
+    "weekly": {"url_type": "daily", "key": "qfqweek"},
     "daily": {"url_type": "daily", "key": "qfqday"},
     "30min": {"url_type": "minute", "param": "m30", "key": "m30"},
     "5min":  {"url_type": "minute", "param": "m5",  "key": "m5"},
@@ -397,14 +401,14 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
                    datalen: int = 800, max_retries: int = 3) -> list[KlineBar]:
     """Fetch K-line from Tencent Finance API.
 
-    For daily data, uses multi-window fetch to get up to ~2400 bars
+    For daily/weekly data, uses multi-window fetch to get up to ~2400 bars
     (3 windows × 800 bars each) when datalen > 800.
 
     Args:
         sina_sym: symbol in sh/sz format (e.g. "sh510300")
-        period: "daily", "30min", or "5min"
-        beg: start date YYYYMMDD (only used for daily)
-        datalen: desired total bars (daily auto-splits into windows)
+        period: "weekly", "daily", "30min", or "5min"
+        beg: start date YYYYMMDD (only used for daily/weekly)
+        datalen: desired total bars (daily/weekly auto-splits into windows)
         max_retries: retry count on failure
     """
     tcfg = _TENCENT_PERIOD_MAP.get(period)
@@ -419,7 +423,8 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
         )
         return _fetch_tencent_single(sina_sym, url, tcfg["key"], "minute", max_retries)
 
-    # Daily: multi-window fetch to overcome 800-bar limit
+    # Daily/Weekly: multi-window fetch to overcome 800-bar limit
+    url_period = "week" if period == "weekly" else "day"
     start_iso = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}" if beg else "2010-01-01"
     end_now = datetime.now(_TZ_CHINA).strftime("%Y-%m-%d")
     num_windows = max(1, min(len(_TENCENT_DAILY_WINDOWS), datalen // _TENCENT_MAX_PER_REQ + 1))
@@ -431,7 +436,7 @@ def _fetch_tencent(sina_sym: str, period: str, beg: str = "",
         end_iso = _TENCENT_DAILY_WINDOWS[i] or end_now
         url = (
             f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?"
-            f"param={sina_sym},day,{start_iso},{end_iso},{_TENCENT_MAX_PER_REQ},qfq"
+            f"param={sina_sym},{url_period},{start_iso},{end_iso},{_TENCENT_MAX_PER_REQ},qfq"
         )
         batch = _fetch_tencent_single(sina_sym, url, data_key, "daily", max_retries)
         for b in batch:
@@ -513,7 +518,7 @@ def _fetch_realtime_bar(sina_sym: str) -> Optional[KlineBar]:
 # BaoStock API (Fallback for individual stocks)
 # ════════════════════════════════════════════════════════════════════
 
-_BS_FREQ_MAP = {"daily": "d", "30min": "30", "5min": "5"}
+_BS_FREQ_MAP = {"weekly": "w", "daily": "d", "30min": "30", "5min": "5"}
 _bs_logged_in = False
 _bs_lock = threading.Lock()
 
@@ -660,6 +665,8 @@ def fetch_kline(code: str, period: str, market: str = "",
                 source_used = "eastmoney"
                 break
         elif source == "sina":
+            if cfg["sina_scale"] is None:
+                continue
             bars = _fetch_sina(sina_sym, cfg["sina_scale"], datalen=datalen)
             if bars:
                 source_used = "sina"
@@ -697,10 +704,13 @@ def _build_source_order(primary: str, period: str = "daily") -> list[str]:
     For minute periods (5min, 30min), EastMoney is always first because it
     supports forward-adjusted prices (fqt=1) which is required for Chanlun
     analysis.  Tencent minute API returns unadjusted prices only.
-    For daily, Tencent is first (most stable, qfq available).
+    For daily/weekly, Tencent is first (most stable, qfq available).
+    Weekly has no Sina support, so Sina is excluded.
     """
     if period in ("5min", "30min"):
         return ["eastmoney", "tencent", "sina"]
+    if period == "weekly":
+        return ["tencent", "eastmoney"]
     all_sources = ["tencent", "eastmoney", "sina"]
     if primary in all_sources:
         all_sources.remove(primary)
@@ -891,31 +901,51 @@ def _normalize_volume_units(bars: list[KlineBar],
                             daily_csv_path: str = "") -> list[KlineBar]:
     """Fix volume unit discontinuity caused by Tencent API changes.
 
-    Around 2026-03-19, the Tencent intraday API changed volume units.
-    The exact unit ratio varies per symbol (e.g., daily/30m_sum can be 44x or 100x).
-    Uses daily CSV data as ground truth to compute the precise scaling factor.
-    Falls back to median comparison when daily data is unavailable.
+    Around 2026-03-19, the Tencent API changed volume units.
+    Handles two directions:
+      - Intraday: OLD (amount=0) → NEW (amount>0), scale OLD up
+      - Daily:    OLD (amount>0) → NEW (amount=0), scale NEW down
+    Uses daily CSV as ground truth for intraday, median comparison as fallback.
     """
     if len(bars) < 20:
         return bars
 
+    # Direction 1: intraday pattern — amount=0 → amount>0
+    # Only valid when there are substantial bars on both sides of the boundary
     boundary = -1
     for i in range(1, len(bars)):
         if bars[i].amount > 0 and bars[i - 1].amount == 0:
             boundary = i
             break
 
-    if boundary < 0:
+    if boundary > 0 and boundary > 10 and boundary < len(bars) - 10:
+        scale = _calc_scale_from_daily(bars, boundary, daily_csv_path)
+        if scale is None:
+            scale = _calc_scale_from_median(bars, boundary)
+        if scale is not None and scale > 0:
+            for b in bars[:boundary]:
+                b.volume = int(b.volume * scale)
         return bars
 
-    scale = _calc_scale_from_daily(bars, boundary, daily_csv_path)
+    # Direction 2: daily pattern — amount>0 → amount=0 (Tencent daily API change)
+    rev_boundary = -1
+    for i in range(1, len(bars)):
+        if bars[i].amount == 0 and bars[i - 1].amount > 0:
+            rev_boundary = i
+            break
 
-    if scale is None:
-        scale = _calc_scale_from_median(bars, boundary)
-
-    if scale is not None and scale > 0:
-        for b in bars[:boundary]:
-            b.volume = int(b.volume * scale)
+    if rev_boundary > 0 and rev_boundary < len(bars) - 5:
+        old_vols = [b.volume for b in bars[:rev_boundary] if b.volume > 0]
+        new_vols = [b.volume for b in bars[rev_boundary:] if b.volume > 0 and b.amount == 0]
+        if len(old_vols) >= 10 and len(new_vols) >= 10:
+            old_median = sorted(old_vols)[len(old_vols) // 2]
+            new_median = sorted(new_vols)[len(new_vols) // 2]
+            if old_median > 0 and new_median > 0:
+                ratio = new_median / old_median
+                if ratio > 5:
+                    for b in bars[rev_boundary:]:
+                        if b.amount == 0:
+                            b.volume = int(b.volume / ratio)
 
     return bars
 
@@ -1031,8 +1061,8 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
     bar_counts = {}
     skipped_all = True
 
-    csv_names = {"daily": "daily.csv", "30min": "30min.csv", "5min": "5min.csv"}
-    all_periods = [("daily", "DF"), ("30min", "30F"), ("5min", "5F")]
+    csv_names = {"weekly": "weekly.csv", "daily": "daily.csv", "30min": "30min.csv", "5min": "5min.csv"}
+    all_periods = [("weekly", "WF"), ("daily", "DF"), ("30min", "30F"), ("5min", "5F")]
     if periods:
         all_periods = [(p, l) for p, l in all_periods if p in periods]
     idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}") if data_dir else ""
@@ -1049,16 +1079,18 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
         skipped_all = False
         try:
             if strategy == _SMALL:
-                dl = _SMALL_DATALEN_DAILY if period == "daily" else _SMALL_DATALEN_INTRADAY
+                dl = _SMALL_DATALEN_DAILY if period in ("daily", "weekly") else _SMALL_DATALEN_INTRADAY
             else:
-                dl = datalen_daily if period == "daily" else datalen_intraday
+                dl = datalen_daily if period in ("daily", "weekly") else datalen_intraday
             bars = fetch_kline(
                 idx.etf_code, period,
                 market=idx.market, beg=beg, datalen=dl,
             )
             if csv_path and bars:
                 bars = _merge_bars(csv_path, bars)
-            if period == "daily":
+            if period == "weekly":
+                result.weekly = bars
+            elif period == "daily":
                 result.daily = bars
             elif period == "30min":
                 result.min30 = bars
@@ -1352,6 +1384,7 @@ def save_fetch_results(results: list[FetchResult],
 
         idx_paths = {}
         for period, bars, label in [
+            ("weekly", res.weekly, "WF"),
             ("daily", res.daily, "DF"),
             ("30min", res.min30, "30F"),
             ("5min", res.min5, "5F"),

@@ -9,7 +9,7 @@ Generates a self-contained HTML dashboard with ECharts showing:
   - MACD histogram subplot
   - Segments (线段) as thick lines
 
-Supports 8 indices × 3 timeframes with tab switching.
+Supports 8 indices × 4 timeframes with tab switching.
 """
 
 from __future__ import annotations
@@ -339,8 +339,8 @@ def backfill_signal_snapshots(data_dir: str = None, max_workers: int = 8) -> int
         data_dir = os.path.join(_PROJECT_ROOT, "data")
 
     indices = load_index_watchlist()
-    level_labels = {"daily": "DF", "30min": "30F", "5min": "5F"}
-    step_sizes = {"daily": 20, "30min": 8, "5min": 48}
+    level_labels = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F"}
+    step_sizes = {"weekly": 10, "daily": 20, "30min": 8, "5min": 48}
     min_bars = 200
 
     tasks = []
@@ -348,14 +348,14 @@ def backfill_signal_snapshots(data_dir: str = None, max_workers: int = 8) -> int
         sym_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}")
         if not os.path.isdir(sym_dir):
             continue
-        for level_key in ["daily", "30min", "5min"]:
+        for level_key in ["weekly", "daily", "30min", "5min"]:
             csv_path = os.path.join(sym_dir, f"{level_key}.csv")
             if os.path.isfile(csv_path):
                 tasks.append((idx.etf_code, idx.etf_name, level_key, csv_path,
                               step_sizes[level_key], min_bars))
 
-    print(f"Backfill: {len(tasks)} tasks ({len(indices)} symbols × 3 levels)")
-    print(f"Step sizes: DF={step_sizes['daily']}, 30F={step_sizes['30min']}, 5F={step_sizes['5min']}")
+    print(f"Backfill: {len(tasks)} tasks ({len(indices)} symbols × 4 levels)")
+    print(f"Step sizes: WF={step_sizes['weekly']}, DF={step_sizes['daily']}, 30F={step_sizes['30min']}, 5F={step_sizes['5min']}")
 
     all_discovered: dict[str, dict] = {}
     done = 0
@@ -395,7 +395,7 @@ def _backfill_one(etf_code: str, etf_name: str, level_key: str,
     if len(bars) < min_bars:
         return []
 
-    level_cn = {"daily": "DF", "30min": "30F", "5min": "5F"}.get(level_key, level_key)
+    level_cn = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F"}.get(level_key, level_key)
     all_seen: dict[str, dict] = {}
 
     for end_idx in range(min_bars, len(bars) + 1, step):
@@ -1244,6 +1244,7 @@ def _analyze_one_index_worker(args: tuple) -> dict:
             level_results["daily"],
             level_results.get("30min"),
             level_results.get("5min"),
+            weekly=level_results.get("weekly"),
         )
         syn_dict = _synthesis_to_dict(syn)
         # Collect pending_3b from all levels
@@ -1297,7 +1298,8 @@ def run_analysis_pipeline(data_dir: str = None,
         data_dir = os.path.join(_PROJECT_ROOT, "data")
 
     indices = indices_override if indices_override is not None else load_index_watchlist()
-    levels_cfg = [("daily", "daily.csv", "DF"),
+    levels_cfg = [("weekly", "weekly.csv", "WF"),
+                  ("daily", "daily.csv", "DF"),
                   ("30min", "30min.csv", "30F"),
                   ("5min", "5min.csv", "5F")]
 
@@ -1353,6 +1355,7 @@ def run_analysis_pipeline(data_dir: str = None,
                     level_results["daily"],
                     level_results.get("30min"),
                     level_results.get("5min"),
+                    weekly=level_results.get("weekly"),
                 )
                 syn_dict = _synthesis_to_dict(syn)
                 # Collect pending_3b from all analyzed levels
@@ -1773,7 +1776,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     _wl_codes_set_m = set(watchlist_codes_m)
 
     # Collect global signals for mobile (same logic as desktop)
-    level_labels_m = {"daily": "DF", "30min": "30F", "5min": "5F"}
+    level_labels_m = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F"}
     idx_name_map_m = {i.etf_code: i.etf_name for i in indices}
     idx_type_map_m = {i.etf_code: i.type for i in indices}
     mobile_global_signals: list[dict] = []
@@ -1857,8 +1860,8 @@ def generate_mobile_dashboard(data_dir: str = None,
                 break
 
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
-    mobile_type_limits = {"type1": 50, "type2": 50, "type3": 50}
-    mobile_levels = ["DF", "30F", "5F"]
+    mobile_type_limits = {"type1": 100, "type2": 100, "type3": 100}
+    mobile_levels = ["WF", "DF", "30F", "5F"]
 
     # Split mobile signals into stock vs ETF
     mobile_stock_by_level: dict[str, dict[str, list]] = {
@@ -1895,7 +1898,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     mobile_global_signals_json = json.dumps({"stock": mobile_stock_by_level, "etf": mobile_etf_by_level}, ensure_ascii=False)
 
     # Build watchlist-specific signals for mobile (pre-filtered)
-    mobile_wl_type_limits = {"type1": 50, "type2": 50, "type3": 50}
+    mobile_wl_type_limits = {"type1": 100, "type2": 100, "type3": 100}
     mobile_wl_signals: dict[str, dict[str, list]] = {
         lv: {"type1": [], "type2": [], "type3": [], "trend_hubs": []} for lv in mobile_levels
     }
@@ -1924,7 +1927,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     mobile_watchlist_signals_json = json.dumps(mobile_wl_signals, ensure_ascii=False)
 
     # ── Market Thermometer data ──
-    thermo_levels = {"daily": "DF", "30min": "30F", "5min": "5F"}
+    thermo_levels = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F"}
     thermo = {}
     total_stocks = len(indices)
     for lk, lv_label in thermo_levels.items():
@@ -2157,6 +2160,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     </div>
   </div>
   <div class="level-tabs" id="levelTabs">
+    <div class="level-tab" onclick="switchLevel('weekly')">WF</div>
     <div class="level-tab" onclick="switchLevel('daily')">DF</div>
     <div class="level-tab active" onclick="switchLevel('30min')">30F</div>
     <div class="level-tab" onclick="switchLevel('5min')">5F</div>
@@ -2322,10 +2326,11 @@ let mgsT1Open = false;
 let mgsT2Open = false;
 let mgsT3Open = true;
 let mgsPending3bOpen = true;
+let mgsPending3bLv = 'all';
 let mgsCat = 'stock';
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
-  const levels = ['DF', '30F', '5F'];
+  const levels = ['WF', 'DF', '30F', '5F'];
   const categories = [
     {{id:'stock', label:'📊 个股'}},
     {{id:'etf', label:'📈 ETF'}},
@@ -2497,7 +2502,8 @@ function renderMobileGlobalSignals() {{
   const gAllT1 = data.type1 || [];
   const gAllT2 = data.type2 || [];
   const gAllT3 = data.type3 || [];
-  const gMaxItems = Math.max(gAllT1.length, gAllT2.length, gAllT3.length);
+  const gAllP3B = (PENDING_3B || []).filter(p => p.status !== '突破等待回抽');
+  const gMaxItems = Math.max(gAllT1.length, gAllT2.length, gAllT3.length, gAllP3B.length);
   const gTotalPages = Math.min(10, Math.max(1, Math.ceil(gMaxItems / mgsPageSize)));
   if (mgsPage > gTotalPages) mgsPage = gTotalPages;
   const gOff = (mgsPage - 1) * mgsPageSize;
@@ -2508,39 +2514,56 @@ function renderMobileGlobalSignals() {{
   h += mgsTable('🟠 第二类买卖点', gT2, false, 'mgsT2Open', mgsT2Open);
   h += mgsTable('🔵 第三类买卖点', gT3, true, 'mgsT3Open', mgsT3Open);
 
-  // Pending 3B table (independent of category/level tabs)
+  // Pending 3B table with level tabs
   (function() {{
-    const items = PENDING_3B || [];
-    if (items.length === 0) return;
+    if (gAllP3B.length === 0) return;
+    const lvMap = {{weekly:'WF',daily:'DF','30min':'30F','5min':'5F'}};
+    const lvReverse = {{'WF':'weekly','DF':'daily','30F':'30min','5F':'5min'}};
+    const p3bLevels = ['all', 'WF', 'DF', '30F', '5F'];
+    const p3bFiltered = mgsPending3bLv === 'all' ? gAllP3B : gAllP3B.filter(p => lvMap[p.level] === mgsPending3bLv || p.level === mgsPending3bLv);
     const arrow = mgsPending3bOpen ? '▼' : '▶';
     let t = '<div style="margin-bottom:4px">';
-    t += '<div onclick="mgsPending3bOpen=!mgsPending3bOpen;renderMobileGlobalSignals()" style="font-size:11px;font-weight:bold;color:#c9d1d9;margin:6px 0 3px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px">';
-    t += '<span style="font-size:9px;color:#8b949e">' + arrow + '</span> 👁 三买观察 (' + items.length + ')</div>';
+    t += '<div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 3px">';
+    t += '<div onclick="mgsPending3bOpen=!mgsPending3bOpen;renderMobileGlobalSignals()" style="font-size:11px;font-weight:bold;color:#c9d1d9;cursor:pointer;user-select:none;display:flex;align-items:center;gap:4px">';
+    t += '<span style="font-size:9px;color:#8b949e">' + arrow + '</span> 👁 三买观察 (' + p3bFiltered.length + ')</div>';
+    t += '<div style="display:flex;gap:2px">';
+    p3bLevels.forEach(lv => {{
+      const cnt = lv === 'all' ? gAllP3B.length : gAllP3B.filter(p => lvMap[p.level] === lv || p.level === lv).length;
+      if (cnt === 0 && lv !== 'all') return;
+      const active = lv === mgsPending3bLv;
+      const bg = active ? '#21262d' : 'transparent';
+      const clr = active ? '#58a6ff' : '#8b949e';
+      const label = lv === 'all' ? '全部' : lv;
+      t += `<button onclick="mgsPending3bLv='${{lv}}';renderMobileGlobalSignals()" style="padding:2px 6px;border:1px solid ${{active?'#58a6ff':'#30363d'}};border-radius:3px;background:${{bg}};color:${{clr}};cursor:pointer;font-size:9px">${{label}}(${{cnt}})</button>`;
+    }});
+    t += '</div></div>';
     if (mgsPending3bOpen) {{
-      t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
-      t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
-      t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px;white-space:nowrap">';
-      t += '<th style="padding:4px;text-align:left">标的</th>';
-      t += '<th style="padding:4px;text-align:center">级别</th>';
-      t += '<th style="padding:4px;text-align:center">状态</th>';
-      t += '<th style="padding:4px;text-align:center">ZG</th>';
-      t += '<th style="padding:4px;text-align:center">余量</th>';
-      t += '</tr></thead><tbody>';
-      const lvMap = {{daily:'DF','30min':'30F','5min':'5F'}};
-      items.forEach((p, i) => {{
-        const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
-        const statusColor = p.status === '回抽已至ZG附近' ? '#f85149' : p.status === '回抽进行中' ? '#d29922' : '#8b949e';
-        const marginColor = p.margin_pct < 15 ? '#f85149' : p.margin_pct < 50 ? '#d29922' : '#3fb950';
-        t += `<tr style="background:${{bg}};border-bottom:1px solid #21262d;white-space:nowrap;cursor:pointer" onclick="switchIndex('${{p.etf_code}}')">`;
-        t += `<td style="padding:3px 4px;color:#58a6ff;font-weight:600">${{p.etf_name||p.etf_code}}</td>`;
-        t += `<td style="padding:3px 4px;text-align:center">${{lvMap[p.level]||p.level}}</td>`;
-        t += `<td style="padding:3px 4px;text-align:center;color:${{statusColor}};font-size:10px">${{p.status}}</td>`;
-        t += `<td style="padding:3px 4px;text-align:center;font-weight:600">${{(p.hub_zg||0).toFixed(2)}}</td>`;
-        t += `<td style="padding:3px 4px;text-align:center;color:${{marginColor}};font-weight:600">${{(p.margin_pct||0).toFixed(0)}}%</td>`;
-        t += '</tr>';
-      }});
-      t += '</tbody></table></div>';
-      t += '<div style="margin-top:2px;font-size:9px;color:#484f58">余量=距ZG距离，越小越接近三买确认</div>';
+      const items = p3bFiltered.slice(gOff, gOff + mgsPageSize);
+      if (items.length > 0) {{
+        t += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+        t += '<table style="width:100%;border-collapse:collapse;font-size:11px;color:#c9d1d9;background:#161b22">';
+        t += '<thead><tr style="background:#21262d;color:#8b949e;font-size:10px;white-space:nowrap">';
+        t += '<th style="padding:4px;text-align:left">标的</th>';
+        t += '<th style="padding:4px;text-align:center">级别</th>';
+        t += '<th style="padding:4px;text-align:center">状态</th>';
+        t += '<th style="padding:4px;text-align:center">ZG</th>';
+        t += '<th style="padding:4px;text-align:center">余量</th>';
+        t += '</tr></thead><tbody>';
+        items.forEach((p, i) => {{
+          const bg = i % 2 === 0 ? '#0d1117' : '#161b22';
+          const statusColor = p.status === '回抽已至ZG附近' ? '#f85149' : p.status === '回抽进行中' ? '#d29922' : '#8b949e';
+          const marginColor = p.margin_pct < 15 ? '#f85149' : p.margin_pct < 50 ? '#d29922' : '#3fb950';
+          t += `<tr style="background:${{bg}};border-bottom:1px solid #21262d;white-space:nowrap;cursor:pointer" onclick="switchIndex('${{p.etf_code}}')">`;
+          t += `<td style="padding:3px 4px;color:#58a6ff;font-weight:600">${{p.etf_name||p.etf_code}}</td>`;
+          t += `<td style="padding:3px 4px;text-align:center">${{lvMap[p.level]||p.level}}</td>`;
+          t += `<td style="padding:3px 4px;text-align:center;color:${{statusColor}};font-size:10px">${{p.status}}</td>`;
+          t += `<td style="padding:3px 4px;text-align:center;font-weight:600">${{(p.hub_zg||0).toFixed(2)}}</td>`;
+          t += `<td style="padding:3px 4px;text-align:center;color:${{marginColor}};font-weight:600">${{(p.margin_pct||0).toFixed(0)}}%</td>`;
+          t += '</tr>';
+        }});
+        t += '</tbody></table></div>';
+        t += '<div style="margin-top:2px;font-size:9px;color:#484f58">余量=距ZG距离，越小越接近三买确认</div>';
+      }}
     }}
     t += '</div>';
     h += t;
@@ -2652,7 +2675,7 @@ function filterIdxTabs(query) {{
 async function switchLevel(level) {{
   currentLevel = level;
   document.querySelectorAll('.level-tab').forEach(t => t.classList.remove('active'));
-  const order = ['daily', '30min', '5min'];
+  const order = ['weekly', 'daily', '30min', '5min'];
   const tabs = document.querySelectorAll('.level-tab');
   const i = order.indexOf(level);
   if (i >= 0 && tabs[i]) tabs[i].classList.add('active');
@@ -3282,7 +3305,7 @@ function renderThermo() {{
   const el = document.getElementById('marketThermo');
   if (!MARKET_THERMO || !MARKET_THERMO.levels) {{ el.innerHTML = ''; return; }}
   const T = MARKET_THERMO;
-  const levels = ['DF', '30F', '5F'];
+  const levels = ['WF', 'DF', '30F', '5F'];
 
   let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden">';
   h += '<div onclick="thermoExpanded=!thermoExpanded;renderThermo()" style="display:flex;align-items:center;padding:8px 10px;cursor:pointer;user-select:none">';

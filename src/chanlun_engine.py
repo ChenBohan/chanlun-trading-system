@@ -5581,6 +5581,7 @@ def synthesize_multi_level(
     daily: AnalysisResult,
     min30: Optional[AnalysisResult] = None,
     min5: Optional[AnalysisResult] = None,
+    weekly: Optional[AnalysisResult] = None,
 ) -> MultiLevelSynthesis:
     """Synthesize signals across multiple timeframes.
 
@@ -5591,7 +5592,10 @@ def synthesize_multi_level(
     """
     syn = MultiLevelSynthesis()
 
-    results = [daily]
+    results = []
+    if weekly:
+        results.append(weekly)
+    results.append(daily)
     if min30:
         results.append(min30)
     if min5:
@@ -5619,6 +5623,12 @@ def synthesize_multi_level(
         daily_3b_confs = _confirm_3b_sub_level(daily, min30, daily)
         syn.three_buy_confirmations = (
             syn.three_buy_confirmations + daily_3b_confs
+        )
+    # Check weekly 3B signals against daily divergences/buy signals
+    if weekly and daily:
+        weekly_3b_confs = _confirm_3b_sub_level(weekly, daily, weekly)
+        syn.three_buy_confirmations = (
+            syn.three_buy_confirmations + weekly_3b_confs
         )
 
     syn.overall_bias, syn.action_advice = _determine_overall_bias(
@@ -6185,7 +6195,7 @@ def main():
     parser = argparse.ArgumentParser(description="Chanlun Analysis Engine v2")
     parser.add_argument("csv_file", help="Path to K-line CSV file")
     parser.add_argument("--level", default="daily",
-                        choices=["daily", "30min", "5min"],
+                        choices=["weekly", "daily", "30min", "5min"],
                         help="Analysis level (default: daily)")
     args = parser.parse_args()
 

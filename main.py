@@ -2,7 +2,7 @@
 """
 Chanlun Trading System v2 — Unified Entry Point.
 
-Three-level analysis: Daily (direction) → 30min (buy/sell points) → 5min (timing).
+Four-level analysis: Weekly (macro) → Daily (direction) → 30min (buy/sell points) → 5min (timing).
 
 Usage:
   python main.py fetch                    # Fetch K-line data for all indices
@@ -106,6 +106,7 @@ def cmd_batch(args):
     os.makedirs(os.path.dirname(output), exist_ok=True)
 
     levels = [
+        ("weekly", "weekly.csv", "WF"),
         ("daily", "daily.csv", "DF"),
         ("30min", "30min.csv", "30F"),
         ("5min", "5min.csv", "5F"),
@@ -135,6 +136,7 @@ def cmd_batch(args):
                 level_results["daily"],
                 level_results.get("30min"),
                 level_results.get("5min"),
+                weekly=level_results.get("weekly"),
             )
             lines.append(f"=== {idx.etf_code}_{idx.etf_name} 多级别联立 ===")
             lines.append(format_synthesis_report(syn))
@@ -291,18 +293,18 @@ def cmd_run(args):
     indices = load_index_watchlist()
     data_dir = os.path.join(PROJECT_ROOT, "data")
 
-    # Step 1: Fetch daily data for ALL stocks (needed for MA250 calculation)
-    print(f"\n[Step 1/5] 拉取全量日线数据（{len(indices)} 标的）...")
+    # Step 1: Fetch weekly + daily data for ALL stocks (needed for MA250 calculation)
+    print(f"\n[Step 1/5] 拉取全量周线+日线数据（{len(indices)} 标的）...")
     t0 = _time.perf_counter()
     daily_results = fetch_all_indices(
         indices=indices, beg=args.beg,
         delay=args.delay, max_workers=args.workers,
         force=args.force,
-        periods=["daily"],
+        periods=["weekly", "daily"],
     )
     save_fetch_results(daily_results, fmt="csv")
     t_daily = _time.perf_counter() - t0
-    print(f"  日线拉取完成: {t_daily:.1f}s")
+    print(f"  周线+日线拉取完成: {t_daily:.1f}s")
 
     # Step 2: MA250 filter (real-time price vs MA250 from daily data)
     print("\n[Step 2/5] 年线过滤（实时价格 vs MA250）...")
