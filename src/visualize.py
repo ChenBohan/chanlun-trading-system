@@ -2325,7 +2325,7 @@ const mgsPageSize = 10;
 let mgsT1Open = false;
 let mgsT2Open = false;
 let mgsT3Open = true;
-let mgsPending3bOpen = true;
+let mgsPending3bOpen = false;
 let mgsPending3bLv = 'all';
 let mgsCat = 'stock';
 function renderMobileGlobalSignals() {{

@@ -42,6 +42,52 @@ _TZ_CHINA = timezone(timedelta(hours=8))
 DATA_SOURCE_PRIMARY = "tencent"
 
 
+# ── Circuit breaker for data sources ──────────────────────────────
+# Trips after _CB_THRESHOLD consecutive failures; skips the source
+# for the remainder of the batch to avoid wasting time on retries.
+_CB_THRESHOLD = 5
+
+class _CircuitBreaker:
+    """Thread-safe per-source circuit breaker."""
+    def __init__(self, threshold: int = _CB_THRESHOLD):
+        self._threshold = threshold
+        self._failures: dict[str, int] = {}
+        self._tripped: dict[str, bool] = {}
+        self._lock = threading.Lock()
+
+    def is_open(self, source: str) -> bool:
+        with self._lock:
+            return self._tripped.get(source, False)
+
+    def record_success(self, source: str):
+        with self._lock:
+            self._failures[source] = 0
+
+    def record_failure(self, source: str):
+        with self._lock:
+            self._failures[source] = self._failures.get(source, 0) + 1
+            if self._failures[source] >= self._threshold:
+                if not self._tripped.get(source, False):
+                    self._tripped[source] = True
+                    print(f"    [CircuitBreaker] {source} tripped after "
+                          f"{self._threshold} consecutive failures, skipping")
+
+    def reset(self):
+        with self._lock:
+            self._failures.clear()
+            self._tripped.clear()
+
+_circuit_breaker = _CircuitBreaker()
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    """Return True if the error is transient and worth retrying."""
+    from urllib.error import HTTPError
+    if isinstance(exc, HTTPError):
+        return exc.code in (429, 502, 503, 504)
+    return True
+
+
 # ════════════════════════════════════════════════════════════════════
 # Data Structures
 # ════════════════════════════════════════════════════════════════════
@@ -187,7 +233,10 @@ def _fetch_sina(sina_sym: str, scale: str, datalen: int = 1500,
                 raw = json.loads(resp.read().decode())
             break
         except Exception as e:
-            wait = 2 ** attempt
+            if not _is_transient_error(e):
+                print(f"    [Sina] FAILED (non-retryable): {e}")
+                return []
+            wait = min(2 ** attempt, 3)
             if attempt < max_retries - 1:
                 print(f"    [Sina] retry {attempt+1}/{max_retries} in {wait}s: {e}")
                 time.sleep(wait)
@@ -266,7 +315,10 @@ def _fetch_eastmoney(secid: str, klt: str, beg: str, end: str,
                 data = json.loads(resp.read().decode())
             break
         except Exception as e:
-            wait = 2 ** attempt
+            if not _is_transient_error(e):
+                print(f"    [EastMoney] FAILED (non-retryable): {e}")
+                return []
+            wait = min(2 ** attempt, 3)
             if attempt < max_retries - 1:
                 print(f"    [EastMoney] retry {attempt+1}/{max_retries} in {wait}s: {e}")
                 time.sleep(wait)
@@ -326,7 +378,10 @@ def _fetch_tencent_single(sina_sym: str, url: str, data_key: str,
                 raw_json = json.loads(resp.read().decode())
             break
         except Exception as e:
-            wait = 2 ** attempt
+            if not _is_transient_error(e):
+                print(f"    [Tencent] FAILED (non-retryable): {e}")
+                return []
+            wait = min(2 ** attempt, 3)
             if attempt < max_retries - 1:
                 print(f"    [Tencent] retry {attempt+1}/{max_retries} in {wait}s: {e}")
                 time.sleep(wait)
@@ -638,6 +693,46 @@ def _is_etf(code: str) -> bool:
     return code.startswith(("5", "1"))
 
 
+# Volume unit: target is 手 (lots, 1手 = 100股).
+# Tencent old API and realtime supplement return 手; Tencent new API is
+# inconsistent (手 for some stocks, 股 for others, amount=0 for all).
+# EastMoney and BaoStock return 股.
+# Heuristic: if median(close * volume) > _VOL_TURNOVER_CAP, volume is
+# likely in 股 — divide by 100 to convert to 手.
+_VOL_TURNOVER_CAP = 5_000_000_000  # 50亿 RMB daily turnover threshold
+
+
+def _auto_normalize_volume(bars: list[KlineBar]):
+    """Detect and fix volume unit to 手 (lots) using price heuristic.
+
+    Handles two scenarios:
+    1. Bulk: entire series is in 股 → divide all by 100
+    2. Mixed: series switches unit mid-way → normalize the mismatched segment
+    """
+    if len(bars) < 5:
+        return
+
+    recent = bars[-min(20, len(bars)):]
+    turnovers = [b.close * b.volume for b in recent if b.volume > 0 and b.close > 0]
+    if not turnovers:
+        return
+    median_to = sorted(turnovers)[len(turnovers) // 2]
+
+    if median_to > _VOL_TURNOVER_CAP:
+        for b in bars:
+            b.volume = int(b.volume / 100)
+        return
+
+    # Mixed: check for sudden 100x jumps within the series
+    for i in range(1, len(bars)):
+        if bars[i].volume > 0 and bars[i - 1].volume > 0:
+            ratio = bars[i].volume / bars[i - 1].volume
+            if ratio > 50:
+                bars[i].volume = int(bars[i].volume / 100)
+            elif ratio < 0.02:
+                bars[i].volume = int(bars[i].volume * 100)
+
+
 def fetch_kline(code: str, period: str, market: str = "",
                 beg: str = "", datalen: int = 1500) -> list[KlineBar]:
     """Fetch K-line data for an ETF or stock.
@@ -666,15 +761,19 @@ def fetch_kline(code: str, period: str, market: str = "",
     source_order = _build_source_order(DATA_SOURCE_PRIMARY, period)
 
     for source in source_order:
+        if _circuit_breaker.is_open(source):
+            continue
         if source == "tencent":
             bars = _fetch_tencent(sina_sym, period, beg=beg, datalen=datalen)
             if bars:
                 source_used = "tencent"
+                _circuit_breaker.record_success(source)
                 break
         elif source == "eastmoney":
             bars = _fetch_eastmoney(secid, cfg["em_klt"], em_beg, end_date)
             if bars:
                 source_used = "eastmoney"
+                _circuit_breaker.record_success(source)
                 break
         elif source == "sina":
             if cfg["sina_scale"] is None:
@@ -682,9 +781,11 @@ def fetch_kline(code: str, period: str, market: str = "",
             bars = _fetch_sina(sina_sym, cfg["sina_scale"], datalen=datalen)
             if bars:
                 source_used = "sina"
+                _circuit_breaker.record_success(source)
                 break
 
         if not bars:
+            _circuit_breaker.record_failure(source)
             print(f"    {source} empty for {code}/{period}, trying next...")
 
     if not bars and not _is_etf(code):
@@ -702,6 +803,9 @@ def fetch_kline(code: str, period: str, market: str = "",
             rt_bar = _fetch_realtime_bar(sina_sym)
             if rt_bar and rt_bar.datetime == today_str:
                 bars.append(rt_bar)
+
+    if bars:
+        _auto_normalize_volume(bars)
 
     if beg and bars:
         beg_iso = f"{beg[:4]}-{beg[4:6]}-{beg[6:8]}"
@@ -1146,6 +1250,7 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
         force: bypass incremental mode, always full fetch
         periods: list of periods to fetch (e.g. ["daily"] or ["daily","30min","5min"])
     """
+    _circuit_breaker.reset()
     if indices is None:
         indices = load_index_watchlist()
     settings = load_settings()

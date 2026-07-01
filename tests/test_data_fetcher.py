@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 from src.data_fetcher import (  # noqa: E402
     KlineBar,
+    _auto_normalize_volume,
     _bars_to_csv,
     _calc_scale_from_median,
     _merge_bars,
@@ -383,3 +384,61 @@ class TestMergeBars:
 
         assert datetimes == sorted(datetimes)
         assert len(merged) == 4
+
+
+class TestAutoNormalizeVolume:
+    """Tests for _auto_normalize_volume — heuristic volume unit detection."""
+
+    def _make_bars(self, close: float, volumes: list[int]) -> list[KlineBar]:
+        return [
+            KlineBar(
+                datetime=_day_str("2026-06-01", i),
+                open=close, close=close, high=close + 0.01, low=close - 0.01,
+                volume=v, amount=0.0,
+            )
+            for i, v in enumerate(volumes)
+        ]
+
+    def test_bulk_shares_to_lots(self):
+        """588000-like: low price + huge volume → volume is in 股, should /100."""
+        # close=2.3, volume=3B → turnover = 6.9B >> 5B threshold
+        bars = self._make_bars(2.3, [3_000_000_000] * 20)
+        _auto_normalize_volume(bars)
+        assert all(b.volume == 30_000_000 for b in bars)
+
+    def test_lots_unchanged(self):
+        """510300-like: moderate price + normal volume → already in 手, no change."""
+        # close=5.0, volume=10M → turnover = 50M << 5B threshold
+        bars = self._make_bars(5.0, [10_000_000] * 20)
+        _auto_normalize_volume(bars)
+        assert all(b.volume == 10_000_000 for b in bars)
+
+    def test_mixed_single_bar_spike(self):
+        """Single bar has 100x volume spike → normalize just that bar."""
+        vols = [10_000] * 19 + [1_000_000]
+        bars = self._make_bars(5.0, vols)
+        _auto_normalize_volume(bars)
+        assert bars[-1].volume == 10_000
+        assert bars[0].volume == 10_000
+
+    def test_mixed_single_bar_drop(self):
+        """Single bar has 100x volume drop → scale up that bar."""
+        vols = [1_000_000] * 19 + [10_000]
+        bars = self._make_bars(5.0, vols)
+        _auto_normalize_volume(bars)
+        assert bars[-1].volume == 1_000_000
+        assert bars[0].volume == 1_000_000
+
+    def test_too_few_bars_no_change(self):
+        """With < 5 bars, no normalization should be attempted."""
+        bars = self._make_bars(2.3, [3_000_000_000] * 3)
+        original = [b.volume for b in bars]
+        _auto_normalize_volume(bars)
+        assert [b.volume for b in bars] == original
+
+    def test_zero_volume_bars_ignored(self):
+        """Bars with zero volume should not cause division errors."""
+        vols = [0, 10_000_000, 0, 10_000_000, 10_000_000]
+        bars = self._make_bars(5.0, vols)
+        _auto_normalize_volume(bars)
+        assert bars[1].volume == 10_000_000
