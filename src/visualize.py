@@ -2153,7 +2153,9 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
              style="width:100%;padding:6px 10px;font-size:13px;border:1px solid #30363d;
                     border-radius:6px;background:#0d1117;color:#c9d1d9;outline:none;
                     box-sizing:border-box"
-             oninput="filterIdxTabs(this.value)">
+             oninput="if(!window._imeComposing)filterIdxTabs(this.value)"
+             oncompositionstart="window._imeComposing=true"
+             oncompositionend="window._imeComposing=false;filterIdxTabs(this.value)">
     </div>
     <div class="idx-tabs" id="idxTabs">
       {idx_tabs_html}
