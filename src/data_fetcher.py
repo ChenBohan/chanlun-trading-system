@@ -1036,6 +1036,12 @@ def _fetch_strategy(csv_path: str, period: str) -> tuple[str, int]:
             pass
         return _SKIP, 0
 
+    # --- Intraday freshness check for daily/weekly ---
+    # If CSV already has today's date and market is open, only need to refresh
+    # today's incomplete bar (dl=5 instead of 80)
+    if period in ("daily", "weekly") and last_date == latest_td and not market_closed:
+        return _SMALL, 5
+
     # --- Intraday freshness check for minute data ---
     bar_min = _BAR_MINUTES.get(period, 0)
     if bar_min and " " in last_dt and last_date == latest_td:
@@ -1314,7 +1320,7 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
         try:
             if strategy == _SMALL:
                 if period in ("daily", "weekly"):
-                    dl = _SMALL_DATALEN_DAILY
+                    dl = dl_hint if dl_hint > 0 else _SMALL_DATALEN_DAILY
                 elif dl_hint > 0:
                     dl = min(dl_hint, 320)
                 else:
