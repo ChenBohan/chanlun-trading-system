@@ -1043,8 +1043,8 @@ def _fetch_strategy(csv_path: str, period: str) -> tuple[str, int]:
             last_time = datetime.strptime(last_dt.split(".")[0], "%Y-%m-%d %H:%M:%S")
             last_time = last_time.replace(tzinfo=_TZ_CHINA)
             trading_min = _count_trading_minutes_between(last_time, now)
-            # If fewer than 2 bar periods of trading have elapsed, data is fresh
-            if trading_min < bar_min * 2:
+            # SKIP only if less than 1 bar period has elapsed (no new completed bar)
+            if trading_min < bar_min:
                 return _SKIP, 0
         except (ValueError, IndexError):
             pass
