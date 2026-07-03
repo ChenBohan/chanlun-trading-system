@@ -292,7 +292,7 @@ _EM_MIN_INTERVAL = 0.15
 
 
 def _fetch_eastmoney(secid: str, klt: str, beg: str, end: str,
-                     max_retries: int = 3) -> list[KlineBar]:
+                     max_retries: int = 3, limit: int = 10000) -> list[KlineBar]:
     """Fetch K-line from East Money API."""
     global _em_last_call
     with _em_lock:
@@ -308,7 +308,7 @@ def _fetch_eastmoney(secid: str, klt: str, beg: str, end: str,
         "secid": secid,
         "beg": beg,
         "end": end,
-        "lmt": "10000",
+        "lmt": str(limit),
         "ut": "fa5fd1943c7b386f172d6893dbfba10b",
     }
     url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{urlencode(params)}"
@@ -761,7 +761,13 @@ def fetch_kline(code: str, period: str, market: str = "",
     sina_sym = _sina_symbol(code, market)
     secid = _eastmoney_secid(code, market)
     end_date = datetime.now().strftime("%Y%m%d")
-    em_beg = beg or "20250101"
+    # For small requests (refresh mode), narrow the date range for EastMoney
+    if datalen <= 100:
+        from datetime import timedelta
+        recent = (datetime.now() - timedelta(days=max(datalen * 2, 30))).strftime("%Y%m%d")
+        em_beg = recent
+    else:
+        em_beg = beg or "20250101"
     source_used = None
     bars = []
 
@@ -777,7 +783,8 @@ def fetch_kline(code: str, period: str, market: str = "",
                 _circuit_breaker.record_success(source)
                 break
         elif source == "eastmoney":
-            bars = _fetch_eastmoney(secid, cfg["em_klt"], em_beg, end_date)
+            bars = _fetch_eastmoney(secid, cfg["em_klt"], em_beg, end_date,
+                                    limit=datalen)
             if bars:
                 source_used = "eastmoney"
                 _circuit_breaker.record_success(source)
