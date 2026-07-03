@@ -824,13 +824,16 @@ def fetch_kline(code: str, period: str, market: str = "",
 def _build_source_order(primary: str, period: str = "daily") -> list[str]:
     """Build the data source fallback chain.
 
-    For minute periods (1min, 5min, 30min), EastMoney is always first because
+    For minute periods (5min, 30min), EastMoney is always first because
     it supports forward-adjusted prices (fqt=1) which is required for Chanlun
     analysis.  Tencent minute API returns unadjusted prices only.
+    For 1min, Tencent is first (EastMoney 1min is unreliable; connection drops).
     For daily/weekly, Tencent is first (most stable, qfq available).
     Weekly and 1min have no Sina support, so Sina is excluded for those.
     """
-    if period in ("1min", "5min", "30min"):
+    if period == "1min":
+        return ["tencent", "eastmoney"]
+    if period in ("5min", "30min"):
         return ["eastmoney", "tencent", "sina"]
     if period == "weekly":
         return ["tencent", "eastmoney"]
@@ -935,44 +938,135 @@ _FULL = "full"
 _SMALL_DATALEN_DAILY = 80
 _SMALL_DATALEN_INTRADAY = 300
 
+_BAR_MINUTES = {"1min": 1, "5min": 5, "30min": 30}
 
-def _fetch_strategy(csv_path: str, period: str) -> str:
+# Trading sessions: morning 9:30-11:30 (120min), afternoon 13:00-15:00 (120min)
+_TRADING_SESSIONS = [(9, 30, 11, 30), (13, 0, 15, 0)]
+_TRADING_MINUTES_PER_DAY = 240
+
+
+def _count_trading_minutes_between(start: datetime, end: datetime) -> int:
+    """Count A-share trading minutes between two datetimes.
+
+    Accounts for lunch break (11:30-13:00) and non-trading hours.
+    Both start and end should be tz-aware (China timezone).
+    """
+    if end <= start:
+        return 0
+
+    total_min = 0
+    current = start.replace(second=0, microsecond=0)
+
+    while current.date() <= end.date():
+        day_start = current if current.date() == start.date() else current.replace(
+            hour=9, minute=30)
+        day_end = end if current.date() == end.date() else current.replace(
+            hour=15, minute=0)
+
+        if current.weekday() < 5:
+            for sh, sm, eh, em in _TRADING_SESSIONS:
+                sess_start = current.replace(hour=sh, minute=sm)
+                sess_end = current.replace(hour=eh, minute=em)
+                overlap_start = max(day_start, sess_start)
+                overlap_end = min(day_end, sess_end)
+                if overlap_end > overlap_start:
+                    total_min += int((overlap_end - overlap_start).total_seconds()) // 60
+
+        current = (current + timedelta(days=1)).replace(hour=0, minute=0)
+
+    return total_min
+
+
+def _calc_bars_needed(last_dt: str, period: str) -> int:
+    """Calculate how many new bars have formed since last_dt.
+
+    Returns the number of bars to request (with safety buffer).
+    Minimum return value is 5 to cover edge cases.
+    """
+    bar_min = _BAR_MINUTES.get(period)
+    if not bar_min:
+        return 0
+
+    now = datetime.now(_TZ_CHINA)
+
+    try:
+        if " " in last_dt:
+            last_time = datetime.strptime(last_dt.split(".")[0], "%Y-%m-%d %H:%M:%S")
+        else:
+            last_time = datetime.strptime(last_dt, "%Y-%m-%d").replace(hour=15, minute=0)
+        last_time = last_time.replace(tzinfo=_TZ_CHINA)
+    except (ValueError, IndexError):
+        return _SMALL_DATALEN_INTRADAY
+
+    trading_min = _count_trading_minutes_between(last_time, now)
+    bars_elapsed = trading_min // bar_min
+
+    # +5 buffer for safety (overlap handling, partial bars, off-by-one)
+    return max(5, bars_elapsed + 5)
+
+
+def _fetch_strategy(csv_path: str, period: str) -> tuple[str, int]:
     """Determine fetch strategy based on existing CSV freshness.
 
-    Returns _SKIP / _SMALL / _FULL.
-    - SKIP: data already complete, no API call needed
-    - SMALL: data is recent but may have incomplete last bar, fetch small window
-    - FULL: no data or very old, full fetch needed
+    Returns (strategy, datalen_hint):
+    - (_SKIP, 0): data already complete, no API call needed
+    - (_SMALL, N): data is recent, fetch N bars to fill the gap
+    - (_FULL, 0): no data or very old, full fetch needed
+
+    For daily/weekly, datalen_hint is ignored (uses global config).
+    For minute periods, datalen_hint gives a precise bar count.
     """
     last_dt = _csv_last_datetime(csv_path)
     if not last_dt:
-        return _FULL
+        return _FULL, 0
 
     last_date = last_dt.split(" ")[0]
     latest_td = _latest_trading_date()
     market_closed = _is_cn_market_closed()
+    now = datetime.now(_TZ_CHINA)
 
+    # --- Complete SKIP: today's session ended and data covers today ---
     if last_date == latest_td and market_closed:
         try:
             mtime = os.path.getmtime(csv_path)
             mdt = datetime.fromtimestamp(mtime, tz=_TZ_CHINA)
             if mdt.strftime("%Y-%m-%d") == latest_td and mdt.hour < 15:
-                return _SMALL
+                return _SMALL, _SMALL_DATALEN_DAILY if period in ("daily", "weekly") else 10
         except Exception:
             pass
-        return _SKIP
+        return _SKIP, 0
 
+    # --- Intraday freshness check for minute data ---
+    bar_min = _BAR_MINUTES.get(period, 0)
+    if bar_min and " " in last_dt and last_date == latest_td:
+        try:
+            last_time = datetime.strptime(last_dt.split(".")[0], "%Y-%m-%d %H:%M:%S")
+            last_time = last_time.replace(tzinfo=_TZ_CHINA)
+            trading_min = _count_trading_minutes_between(last_time, now)
+            # If fewer than 2 bar periods of trading have elapsed, data is fresh
+            if trading_min < bar_min * 2:
+                return _SKIP, 0
+        except (ValueError, IndexError):
+            pass
+
+    # --- SMALL: data is somewhat recent ---
     if last_date >= latest_td:
-        return _SMALL
+        dl = _calc_bars_needed(last_dt, period) if bar_min else _SMALL_DATALEN_DAILY
+        return _SMALL, dl
 
     try:
         ld = datetime.strptime(last_date, "%Y-%m-%d")
         ltd = datetime.strptime(latest_td, "%Y-%m-%d")
-        if (ltd - ld).days <= 5:
-            return _SMALL
+        gap_days = (ltd - ld).days
+        if gap_days <= 5:
+            if bar_min:
+                dl = _calc_bars_needed(last_dt, period)
+                return _SMALL, dl
+            return _SMALL, _SMALL_DATALEN_DAILY
     except ValueError:
         pass
-    return _FULL
+
+    return _FULL, 0
 
 
 def _merge_bars(existing_csv_path: str, new_bars: list[KlineBar]) -> list[KlineBar]:
@@ -1210,7 +1304,7 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
     for period, label in all_periods:
         csv_path = os.path.join(idx_dir, csv_names[period]) if idx_dir else ""
 
-        strategy = _FULL if force else _fetch_strategy(csv_path, period)
+        strategy, dl_hint = (_FULL, 0) if force else _fetch_strategy(csv_path, period)
 
         if strategy == _SKIP:
             bar_counts[label] = "✓"
@@ -1219,7 +1313,12 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
         skipped_all = False
         try:
             if strategy == _SMALL:
-                dl = _SMALL_DATALEN_DAILY if period in ("daily", "weekly") else _SMALL_DATALEN_INTRADAY
+                if period in ("daily", "weekly"):
+                    dl = _SMALL_DATALEN_DAILY
+                elif dl_hint > 0:
+                    dl = min(dl_hint, 320)
+                else:
+                    dl = _SMALL_DATALEN_INTRADAY
             elif period == "1min":
                 dl = _1MIN_MAX_RETAIN_DAYS * 241
             else:
