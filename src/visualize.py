@@ -157,6 +157,29 @@ def generate_live_js(data_out_dir: str, all_data: dict) -> Optional[str]:
     size_kb = os.path.getsize(live_js_path) / 1024
     print(f"  live.js: {size_kb:.0f} KB ({len(live_entries)} keys)")
     return live_js_path
+
+
+def generate_live_js_from_cache(cache: dict, data_dir: str = None) -> Optional[str]:
+    """Generate live.js from analysis cache without rewriting main .js files.
+
+    This is the intraday mode: uses the existing deploy baseline to compute
+    the delta, and writes only live.js. The main per-symbol .js files and
+    baseline are left untouched.
+
+    Returns path to live.js, or None if no baseline exists.
+    """
+    if data_dir is None:
+        data_dir = os.path.join(_PROJECT_ROOT, "reports", "data")
+
+    baseline_path = os.path.join(data_dir, _BASELINE_FILE)
+    if not os.path.exists(baseline_path):
+        return None
+
+    all_data = cache.get("all_data", {})
+    if not all_data:
+        return None
+
+    return generate_live_js(data_dir, all_data)
 _SNAPSHOT_DISPLAY_DAYS = 5     # only show disappeared signals from last N days in dashboard
 
 

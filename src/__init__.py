@@ -45,6 +45,7 @@ from .chanlun_engine import (
 
 from .visualize import (
     generate_mobile_dashboard,
+    generate_live_js_from_cache,
     run_analysis_pipeline,
     parse_merged_data_files,
 )

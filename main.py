@@ -280,14 +280,20 @@ def cmd_run(args):
     import src.data_fetcher as _df
     from src.visualize import (
         generate_mobile_dashboard,
+        generate_live_js_from_cache,
         run_analysis_pipeline,
     )
 
     if getattr(args, 'source', None):
         _df.DATA_SOURCE_PRIMARY = args.source
 
+    from src.data_fetcher import _is_cn_market_closed
+    is_full_mode = getattr(args, 'full', False) or _is_cn_market_closed()
+    mode_label = "全量(盘后)" if is_full_mode else "增量(盘中)"
+
     print("=" * 60)
     print(f"缠论交易系统 v2 — 完整流水线  |  数据源：{_df.DATA_SOURCE_PRIMARY}")
+    print(f"模式：{mode_label}")
     print("=" * 60)
 
     t_start = _time.perf_counter()
@@ -295,9 +301,8 @@ def cmd_run(args):
     data_dir = os.path.join(PROJECT_ROOT, "data")
 
     # Step 1: Fetch data for ALL stocks (needed for MA250 calculation)
-    # Weekly data changes slowly — only fetch after market close to save time
-    from src.data_fetcher import _is_cn_market_closed
-    if getattr(args, 'weekly', False) or _is_cn_market_closed():
+    # Weekly data only in full mode (after market close)
+    if is_full_mode:
         step1_periods = ["weekly", "daily"]
         step1_label = "周线+日线"
     else:
@@ -324,7 +329,7 @@ def cmd_run(args):
           f"个股年线下方（排除）: {len(filter_stats['below'])} | "
           f"入选: {filter_stats['selected']}")
 
-    # Step 3: Fetch 30min + 5min for filtered stocks only
+    # Step 3: Fetch 30min + 5min + 1min for filtered stocks only
     print(f"\n[Step 3/5] 拉取入选标的分钟线（{filter_stats['selected']} 标的）...")
     t0 = _time.perf_counter()
     intraday_results = fetch_all_indices(
@@ -336,18 +341,16 @@ def cmd_run(args):
     save_fetch_results(intraday_results, fmt="csv")
     t_intraday = _time.perf_counter() - t0
 
-    # Step 3b: Sina supplement for shallow data (skip during trading hours)
-    if not getattr(args, 'no_supplement', False):
-        from src.data_fetcher import _is_cn_market_closed
-        if _is_cn_market_closed():
-            print(f"\n[Step 3b/5] Sina 深度补充...")
-            supplement_daily_with_sina(daily_results)
-            supplement_intraday_with_sina(intraday_results)
-            print("  保存补充后的数据...")
-            save_fetch_results(daily_results, fmt="csv")
-            save_fetch_results(intraday_results, fmt="csv")
-        else:
-            print(f"\n[Step 3b/5] Sina 深度补充... 盘中跳过")
+    # Step 3b: Sina supplement for shallow data (only in full mode)
+    if not getattr(args, 'no_supplement', False) and is_full_mode:
+        print(f"\n[Step 3b/5] Sina 深度补充...")
+        supplement_daily_with_sina(daily_results)
+        supplement_intraday_with_sina(intraday_results)
+        print("  保存补充后的数据...")
+        save_fetch_results(daily_results, fmt="csv")
+        save_fetch_results(intraday_results, fmt="csv")
+    elif not is_full_mode:
+        print(f"\n[Step 3b/5] Sina 深度补充... 盘中模式跳过")
 
     # Step 4: Analyze filtered pool
     print(f"\n[Step 4/5] 缠论分析（{filter_stats['selected']} 标的，多进程）...")
@@ -360,16 +363,32 @@ def cmd_run(args):
     cache["filter_stats"] = filter_stats
     t_analyze = _time.perf_counter() - t0
 
-    # Step 5: Mobile dashboard (reuses analysis cache)
-    print("\n[Step 5/5] 生成移动版仪表盘...")
+    # Step 5: Generate output
     t0 = _time.perf_counter()
-    generate_mobile_dashboard(cache=cache)
-    t_mobile = _time.perf_counter() - t0
+    if is_full_mode:
+        # Full mode: rewrite all .js files, save baseline, remove live.js
+        print("\n[Step 5/5] 全量模式 — 重写主数据文件 + 仪表盘...")
+        generate_mobile_dashboard(cache=cache)
+        t_output = _time.perf_counter() - t0
+        print(f"  主.js文件 + baseline 已更新，live.js 已清理")
+    else:
+        # Intraday mode: only generate live.js (delta from last full deploy baseline)
+        print("\n[Step 5/5] 盘中模式 — 生成 live.js（增量delta）...")
+        live_path = generate_live_js_from_cache(cache=cache)
+        t_output = _time.perf_counter() - t0
+        if live_path:
+            size_kb = os.path.getsize(live_path) / 1024
+            print(f"  live.js 已生成: {size_kb:.0f} KB")
+        else:
+            print("  无 baseline，回退到全量模式...")
+            t0b = _time.perf_counter()
+            generate_mobile_dashboard(cache=cache)
+            t_output += _time.perf_counter() - t0b
 
     t_total = _time.perf_counter() - t_start
-    print(f"\n完整流水线执行完毕。")
+    print(f"\n完整流水线执行完毕。（{mode_label}）")
     print(f"  日线拉取: {t_daily:.1f}s | 分钟线拉取: {t_intraday:.1f}s | "
-          f"缠论分析: {t_analyze:.1f}s | 仪表盘: {t_mobile:.1f}s | 总计: {t_total:.1f}s")
+          f"缠论分析: {t_analyze:.1f}s | 输出: {t_output:.1f}s | 总计: {t_total:.1f}s")
 
 
 def main():
@@ -426,8 +445,8 @@ def main():
                         help="跳过增量检查，强制全量拉取")
     p_run.add_argument("--source", choices=["sina", "eastmoney"], default=None,
                         help="主数据源 (默认: 代码中的配置)")
-    p_run.add_argument("--weekly", action="store_true",
-                        help="强制拉取周线数据（默认仅收盘后自动拉取）")
+    p_run.add_argument("--full", action="store_true",
+                        help="强制全量模式（重写主.js+baseline，默认收盘后自动触发）")
 
     # backfill
     p_backfill = sub.add_parser("backfill", help="回填历史信号快照")
