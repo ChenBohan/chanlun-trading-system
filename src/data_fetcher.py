@@ -1,10 +1,11 @@
 """
 Data fetcher for Chanlun Trading System v2.
 
-Fetches K-line data for index ETFs at three timeframes:
+Fetches K-line data for index ETFs at four timeframes:
   - Daily   (direction level)
   - 30-min  (operation level)
   - 5-min   (precision level)
+  - 1-min   (interval-nesting level, max 5 trading days retained)
 
 Data source priority is configurable via DATA_SOURCE_PRIMARY:
   "tencent"    (default) — Tencent Finance (ifzq.gtimg.cn), stable, no IP blocking
@@ -131,6 +132,7 @@ class FetchResult:
     daily: list[KlineBar] = field(default_factory=list)
     min30: list[KlineBar] = field(default_factory=list)
     min5: list[KlineBar] = field(default_factory=list)
+    min1: list[KlineBar] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
     @property
@@ -167,12 +169,16 @@ def _eastmoney_secid(code: str, market: str = "") -> str:
 
 # Sina uses "scale" parameter: 240=daily, 60=60min, 30=30min, 15=15min, 5=5min
 # Weekly has no Sina scale; use Tencent/EastMoney only.
+# Sina does NOT support scale=1 (returns null); 1min uses Tencent/EastMoney only.
 PERIOD_MAP = {
     "weekly": {"sina_scale": None, "em_klt": "102"},
     "daily": {"sina_scale": "240", "em_klt": "101"},
     "30min": {"sina_scale": "30", "em_klt": "30"},
     "5min":  {"sina_scale": "5",  "em_klt": "5"},
+    "1min":  {"sina_scale": None, "em_klt": "1"},
 }
+
+_1MIN_MAX_RETAIN_DAYS = 5
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -360,6 +366,7 @@ _TENCENT_PERIOD_MAP = {
     "daily": {"url_type": "daily", "key": "qfqday"},
     "30min": {"url_type": "minute", "param": "m30", "key": "m30"},
     "5min":  {"url_type": "minute", "param": "m5",  "key": "m5"},
+    "1min":  {"url_type": "minute", "param": "m1",  "key": "m1"},
 }
 
 
@@ -573,7 +580,7 @@ def _fetch_realtime_bar(sina_sym: str) -> Optional[KlineBar]:
 # BaoStock API (Fallback for individual stocks)
 # ════════════════════════════════════════════════════════════════════
 
-_BS_FREQ_MAP = {"weekly": "w", "daily": "d", "30min": "30", "5min": "5"}
+_BS_FREQ_MAP = {"weekly": "w", "daily": "d", "30min": "30", "5min": "5", "1min": "1"}
 _bs_logged_in = False
 _bs_lock = threading.Lock()
 
@@ -742,7 +749,7 @@ def fetch_kline(code: str, period: str, market: str = "",
 
     Args:
         code: ETF/stock code, e.g. "510300"
-        period: one of "daily", "30min", "5min"
+        period: one of "daily", "weekly", "30min", "5min", "1min"
         market: "SH" or "SZ" (auto-detect if empty)
         beg: start date YYYYMMDD (filter applied after fetch)
         datalen: max bars for Sina (default 1500)
@@ -817,13 +824,13 @@ def fetch_kline(code: str, period: str, market: str = "",
 def _build_source_order(primary: str, period: str = "daily") -> list[str]:
     """Build the data source fallback chain.
 
-    For minute periods (5min, 30min), EastMoney is always first because it
-    supports forward-adjusted prices (fqt=1) which is required for Chanlun
+    For minute periods (1min, 5min, 30min), EastMoney is always first because
+    it supports forward-adjusted prices (fqt=1) which is required for Chanlun
     analysis.  Tencent minute API returns unadjusted prices only.
     For daily/weekly, Tencent is first (most stable, qfq available).
-    Weekly has no Sina support, so Sina is excluded.
+    Weekly and 1min have no Sina support, so Sina is excluded for those.
     """
-    if period in ("5min", "30min"):
+    if period in ("1min", "5min", "30min"):
         return ["eastmoney", "tencent", "sina"]
     if period == "weekly":
         return ["tencent", "eastmoney"]
@@ -1154,6 +1161,23 @@ def _calc_scale_from_median(bars: list[KlineBar], boundary: int) -> float | None
     return new_median / old_median
 
 
+def _trim_to_trading_days(bars: list[KlineBar], max_days: int) -> list[KlineBar]:
+    """Keep only the most recent *max_days* trading days of bars."""
+    if not bars:
+        return bars
+    dates: list[str] = []
+    seen: set[str] = set()
+    for b in reversed(bars):
+        d = b.datetime.split(" ")[0]
+        if d not in seen:
+            seen.add(d)
+            dates.append(d)
+    if len(dates) <= max_days:
+        return bars
+    cutoff = dates[max_days - 1]
+    return [b for b in bars if b.datetime.split(" ")[0] >= cutoff]
+
+
 # ════════════════════════════════════════════════════════════════════
 # Batch Fetch for All Indices
 # ════════════════════════════════════════════════════════════════════
@@ -1177,8 +1201,8 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
     bar_counts = {}
     skipped_all = True
 
-    csv_names = {"weekly": "weekly.csv", "daily": "daily.csv", "30min": "30min.csv", "5min": "5min.csv"}
-    all_periods = [("weekly", "WF"), ("daily", "DF"), ("30min", "30F"), ("5min", "5F")]
+    csv_names = {"weekly": "weekly.csv", "daily": "daily.csv", "30min": "30min.csv", "5min": "5min.csv", "1min": "1min.csv"}
+    all_periods = [("weekly", "WF"), ("daily", "DF"), ("30min", "30F"), ("5min", "5F"), ("1min", "1F")]
     if periods:
         all_periods = [(p, l) for p, l in all_periods if p in periods]
     idx_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}") if data_dir else ""
@@ -1196,6 +1220,8 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
         try:
             if strategy == _SMALL:
                 dl = _SMALL_DATALEN_DAILY if period in ("daily", "weekly") else _SMALL_DATALEN_INTRADAY
+            elif period == "1min":
+                dl = _1MIN_MAX_RETAIN_DAYS * 241
             else:
                 dl = datalen_daily if period in ("daily", "weekly") else datalen_intraday
             bars = fetch_kline(
@@ -1204,14 +1230,18 @@ def _fetch_one_index(idx: IndexConfig, seq: int, total: int,
             )
             if csv_path and bars:
                 bars = _merge_bars(csv_path, bars)
+            if period == "1min" and bars:
+                bars = _trim_to_trading_days(bars, _1MIN_MAX_RETAIN_DAYS)
             if period == "weekly":
                 result.weekly = bars
             elif period == "daily":
                 result.daily = bars
             elif period == "30min":
                 result.min30 = bars
-            else:
+            elif period == "5min":
                 result.min5 = bars
+            elif period == "1min":
+                result.min1 = bars
             bar_counts[label] = len(bars)
         except Exception as e:
             msg = f"{idx.etf_name} {label}: {e}"
@@ -1248,7 +1278,7 @@ def fetch_all_indices(indices: list[IndexConfig] = None,
         delay: seconds between API calls within each worker thread
         max_workers: number of concurrent download threads (default 8)
         force: bypass incremental mode, always full fetch
-        periods: list of periods to fetch (e.g. ["daily"] or ["daily","30min","5min"])
+        periods: list of periods to fetch (e.g. ["daily"] or ["daily","30min","5min","1min"])
     """
     _circuit_breaker.reset()
     if indices is None:
@@ -1487,7 +1517,7 @@ def save_fetch_results(results: list[FetchResult],
         fmt: "csv" for machine consumption, "md" for human-readable
 
     Returns:
-        dict mapping index_code -> {daily: path, min30: path, min5: path}
+        dict mapping index_code -> {daily: path, min30: path, min5: path, min1: path, ...}
     """
     if base_dir is None:
         base_dir = os.path.join(_PROJECT_ROOT, "data")
@@ -1505,6 +1535,7 @@ def save_fetch_results(results: list[FetchResult],
             ("daily", res.daily, "DF"),
             ("30min", res.min30, "30F"),
             ("5min", res.min5, "5F"),
+            ("1min", res.min1, "1F"),
         ]:
             if not bars:
                 continue
@@ -1533,11 +1564,11 @@ def save_fetch_results(results: list[FetchResult],
 
 def print_fetch_summary(results: list[FetchResult]):
     """Print a summary table of fetch results."""
-    print("\n" + "=" * 72)
+    print("\n" + "=" * 80)
     print("数据拉取汇总")
-    print("=" * 72)
-    print(f"{'指数':<10} {'ETF':<12} {'DF':>6} {'30F':>8} {'5F':>7} {'状态':<6}")
-    print("-" * 72)
+    print("=" * 80)
+    print(f"{'指数':<10} {'ETF':<12} {'DF':>6} {'30F':>8} {'5F':>7} {'1F':>7} {'状态':<6}")
+    print("-" * 80)
 
     for res in results:
         idx = res.index_cfg
@@ -1545,15 +1576,15 @@ def print_fetch_summary(results: list[FetchResult]):
         print(
             f"{idx.index_name:<10} {idx.etf_code:<12} "
             f"{len(res.daily):>6} {len(res.min30):>8} {len(res.min5):>7} "
-            f"{status:<6}"
+            f"{len(res.min1):>7} {status:<6}"
         )
         for err in res.errors:
             print(f"  ⚠ {err}")
 
     ok = sum(1 for r in results if r.is_complete)
-    print("-" * 72)
+    print("-" * 80)
     print(f"总计：{ok}/{len(results)} 个指数数据完整")
-    print("=" * 72)
+    print("=" * 80)
 
 
 # ════════════════════════════════════════════════════════════════════

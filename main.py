@@ -2,7 +2,7 @@
 """
 Chanlun Trading System v2 — Unified Entry Point.
 
-Four-level analysis: Weekly (macro) → Daily (direction) → 30min (buy/sell points) → 5min (timing).
+Five-level analysis: Weekly (macro) → Daily (direction) → 30min (buy/sell points) → 5min (timing) → 1min (interval nesting, max 5 days).
 
 Usage:
   python main.py fetch                    # Fetch K-line data for all indices
@@ -37,7 +37,7 @@ def cmd_fetch(args):
 
     print("=" * 60)
     print("缠论交易系统 v2 — 数据拉取")
-    print(f"级别：DF（方向）→ 30F（买卖点）→ 5F（择时）")
+    print(f"级别：DF（方向）→ 30F（买卖点）→ 5F（择时）→ 1F（区间套）")
     print(f"起始日期：{args.beg}  |  数据源：{_df.DATA_SOURCE_PRIMARY}")
     print("=" * 60)
 
@@ -110,6 +110,7 @@ def cmd_batch(args):
         ("daily", "daily.csv", "DF"),
         ("30min", "30min.csv", "30F"),
         ("5min", "5min.csv", "5F"),
+        ("1min", "1min.csv", "1F"),
     ]
 
     lines = []
@@ -330,7 +331,7 @@ def cmd_run(args):
         indices=filtered_indices, beg=args.beg,
         delay=args.delay, max_workers=args.workers,
         force=args.force,
-        periods=["30min", "5min"],
+        periods=["30min", "5min", "1min"],
     )
     save_fetch_results(intraday_results, fmt="csv")
     t_intraday = _time.perf_counter() - t0
@@ -397,7 +398,7 @@ def main():
     p_analyze = sub.add_parser("analyze", help="分析单个CSV文件")
     p_analyze.add_argument("csv_file", help="K线CSV文件路径")
     p_analyze.add_argument("--level", default="daily",
-                           choices=["daily", "30min", "5min"],
+                           choices=["daily", "30min", "5min", "1min"],
                            help="分析级别 (默认: daily)")
 
     # dashboard

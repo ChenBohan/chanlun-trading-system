@@ -5230,10 +5230,12 @@
     "direction_level": "daily",
     "operate_level": "30min",
     "precision_level": "5min",
+    "nesting_level": "1min",
     "data_periods": [
       "daily",
       "30min",
-      "5min"
+      "5min",
+      "1min"
     ],
     "data_start": "20100101",
     "datalen_daily": 5000,

@@ -339,8 +339,8 @@ def backfill_signal_snapshots(data_dir: str = None, max_workers: int = 8) -> int
         data_dir = os.path.join(_PROJECT_ROOT, "data")
 
     indices = load_index_watchlist()
-    level_labels = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F"}
-    step_sizes = {"weekly": 10, "daily": 20, "30min": 8, "5min": 48}
+    level_labels = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F", "1min": "1F"}
+    step_sizes = {"weekly": 10, "daily": 20, "30min": 8, "5min": 48, "1min": 120}
     min_bars = 200
 
     tasks = []
@@ -348,14 +348,15 @@ def backfill_signal_snapshots(data_dir: str = None, max_workers: int = 8) -> int
         sym_dir = os.path.join(data_dir, f"{idx.etf_code}_{idx.etf_name}")
         if not os.path.isdir(sym_dir):
             continue
-        for level_key in ["weekly", "daily", "30min", "5min"]:
+        for level_key in ["weekly", "daily", "30min", "5min", "1min"]:
             csv_path = os.path.join(sym_dir, f"{level_key}.csv")
             if os.path.isfile(csv_path):
                 tasks.append((idx.etf_code, idx.etf_name, level_key, csv_path,
                               step_sizes[level_key], min_bars))
 
-    print(f"Backfill: {len(tasks)} tasks ({len(indices)} symbols × 4 levels)")
-    print(f"Step sizes: WF={step_sizes['weekly']}, DF={step_sizes['daily']}, 30F={step_sizes['30min']}, 5F={step_sizes['5min']}")
+    print(f"Backfill: {len(tasks)} tasks ({len(indices)} symbols × 5 levels)")
+    print(f"Step sizes: WF={step_sizes['weekly']}, DF={step_sizes['daily']}, "
+          f"30F={step_sizes['30min']}, 5F={step_sizes['5min']}, 1F={step_sizes['1min']}")
 
     all_discovered: dict[str, dict] = {}
     done = 0
@@ -395,7 +396,7 @@ def _backfill_one(etf_code: str, etf_name: str, level_key: str,
     if len(bars) < min_bars:
         return []
 
-    level_cn = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F"}.get(level_key, level_key)
+    level_cn = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F", "1min": "1F"}.get(level_key, level_key)
     all_seen: dict[str, dict] = {}
 
     for end_idx in range(min_bars, len(bars) + 1, step):
@@ -1301,7 +1302,8 @@ def run_analysis_pipeline(data_dir: str = None,
     levels_cfg = [("weekly", "weekly.csv", "WF"),
                   ("daily", "daily.csv", "DF"),
                   ("30min", "30min.csv", "30F"),
-                  ("5min", "5min.csv", "5F")]
+                  ("5min", "5min.csv", "5F"),
+                  ("1min", "1min.csv", "1F")]
 
     total = len(indices) * len(levels_cfg)
     t0 = time.perf_counter()
@@ -1636,7 +1638,7 @@ def _split_trend_hubs(trend_hub_all: list[dict], idx_type_map: dict,
 # Data File I/O
 # ════════════════════════════════════════════════════════════════════
 
-_LEVEL_SUFFIXES = ("_daily", "_30min", "_5min")
+_LEVEL_SUFFIXES = ("_weekly", "_daily", "_30min", "_5min", "_1min")
 
 
 def _extract_code(key: str) -> str:
@@ -1776,7 +1778,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     _wl_codes_set_m = set(watchlist_codes_m)
 
     # Collect global signals for mobile (same logic as desktop)
-    level_labels_m = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F"}
+    level_labels_m = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F", "1min": "1F"}
     idx_name_map_m = {i.etf_code: i.etf_name for i in indices}
     idx_type_map_m = {i.etf_code: i.type for i in indices}
     mobile_global_signals: list[dict] = []
@@ -1861,7 +1863,7 @@ def generate_mobile_dashboard(data_dir: str = None,
 
     mobile_global_signals.sort(key=lambda x: x["dt"], reverse=True)
     mobile_type_limits = {"type1": 100, "type2": 100, "type3": 100}
-    mobile_levels = ["WF", "DF", "30F", "5F"]
+    mobile_levels = ["WF", "DF", "30F", "5F", "1F"]
 
     # Split mobile signals into stock vs ETF
     mobile_stock_by_level: dict[str, dict[str, list]] = {
@@ -1927,7 +1929,7 @@ def generate_mobile_dashboard(data_dir: str = None,
     mobile_watchlist_signals_json = json.dumps(mobile_wl_signals, ensure_ascii=False)
 
     # ── Market Thermometer data ──
-    thermo_levels = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F"}
+    thermo_levels = {"weekly": "WF", "daily": "DF", "30min": "30F", "5min": "5F", "1min": "1F"}
     thermo = {}
     total_stocks = len(indices)
     for lk, lv_label in thermo_levels.items():
@@ -2166,6 +2168,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
     <div class="level-tab" onclick="switchLevel('daily')">DF</div>
     <div class="level-tab active" onclick="switchLevel('30min')">30F</div>
     <div class="level-tab" onclick="switchLevel('5min')">5F</div>
+    <div class="level-tab" onclick="switchLevel('1min')">1F</div>
   </div>
   <div class="info-bar" id="infoBar"></div>
   <div id="loadingOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(13,17,23,0.7);z-index:999;align-items:center;justify-content:center"><span style="color:#58a6ff;font-size:15px">加载数据中...</span></div>
@@ -2332,7 +2335,7 @@ let mgsPending3bLv = 'all';
 let mgsCat = 'stock';
 function renderMobileGlobalSignals() {{
   const el = document.getElementById('mobileGlobalSignals');
-  const levels = ['WF', 'DF', '30F', '5F'];
+  const levels = ['WF', 'DF', '30F', '5F', '1F'];
   const categories = [
     {{id:'stock', label:'📊 个股'}},
     {{id:'etf', label:'📈 ETF'}},
@@ -2519,9 +2522,9 @@ function renderMobileGlobalSignals() {{
   // Pending 3B table with level tabs
   (function() {{
     if (gAllP3B.length === 0) return;
-    const lvMap = {{weekly:'WF',daily:'DF','30min':'30F','5min':'5F'}};
-    const lvReverse = {{'WF':'weekly','DF':'daily','30F':'30min','5F':'5min'}};
-    const p3bLevels = ['all', 'WF', 'DF', '30F', '5F'];
+    const lvMap = {{weekly:'WF',daily:'DF','30min':'30F','5min':'5F','1min':'1F'}};
+    const lvReverse = {{'WF':'weekly','DF':'daily','30F':'30min','5F':'5min','1F':'1min'}};
+    const p3bLevels = ['all', 'WF', 'DF', '30F', '5F', '1F'];
     const p3bFiltered = mgsPending3bLv === 'all' ? gAllP3B : gAllP3B.filter(p => lvMap[p.level] === mgsPending3bLv || p.level === mgsPending3bLv);
     const arrow = mgsPending3bOpen ? '▼' : '▶';
     let t = '<div style="margin-bottom:4px">';
@@ -2677,7 +2680,7 @@ function filterIdxTabs(query) {{
 async function switchLevel(level) {{
   currentLevel = level;
   document.querySelectorAll('.level-tab').forEach(t => t.classList.remove('active'));
-  const order = ['weekly', 'daily', '30min', '5min'];
+  const order = ['weekly', 'daily', '30min', '5min', '1min'];
   const tabs = document.querySelectorAll('.level-tab');
   const i = order.indexOf(level);
   if (i >= 0 && tabs[i]) tabs[i].classList.add('active');
@@ -3307,7 +3310,7 @@ function renderThermo() {{
   const el = document.getElementById('marketThermo');
   if (!MARKET_THERMO || !MARKET_THERMO.levels) {{ el.innerHTML = ''; return; }}
   const T = MARKET_THERMO;
-  const levels = ['WF', 'DF', '30F', '5F'];
+  const levels = ['WF', 'DF', '30F', '5F', '1F'];
 
   let h = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden">';
   h += '<div onclick="thermoExpanded=!thermoExpanded;renderThermo()" style="display:flex;align-items:center;padding:8px 10px;cursor:pointer;user-select:none">';
