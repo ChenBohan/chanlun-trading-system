@@ -447,6 +447,9 @@ def main():
                         help="主数据源 (默认: 代码中的配置)")
     p_run.add_argument("--full", action="store_true",
                         help="强制全量模式（重写主.js+baseline，默认收盘后自动触发）")
+    p_run.add_argument("--no-supplement", action="store_true",
+                        dest="no_supplement",
+                        help="跳过 Sina 深度补充（省 ~8 分钟，适合快速迭代）")
 
     # backfill
     p_backfill = sub.add_parser("backfill", help="回填历史信号快照")

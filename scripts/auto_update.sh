@@ -114,20 +114,9 @@ cd "$PROJECT_DIR"
     fi
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pipeline complete."
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 2/3: Git push..."
-    git add -A
-    git diff --cached --quiet && {
-        echo "No changes to commit."
-    } || {
-        git commit -m "bohan: auto-update $(date '+%Y-%m-%d %H:%M')"
-        git push
-        echo "Pushed to remote."
-    }
-
     # Deploy strategy:
     #   Full deploy (with --save-baseline): no baseline / post-close 15:06 / live.js > 20 MB
     #   Delta deploy (HTML + live.js only): every other run
-    # Use %-H/%-M to strip leading zeros (avoids bash octal interpretation of 08/09)
     HOUR=$(date +%-H)
     MINUTE=$(date +%-M)
     BASELINE_FILE="reports/data/.baseline.json"
@@ -148,11 +137,11 @@ cd "$PROJECT_DIR"
     fi
 
     if $need_full; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: FULL deploy ($full_reason)..."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 2/2: FULL deploy ($full_reason)..."
         timeout 300s python3 scripts/deploy_cloudflare.py --save-baseline 2>&1 \
             || echo "WARNING: Full deploy failed/timed out (non-fatal)"
     else
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 3/3: Delta deploy (live.js only)..."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Step 2/2: Delta deploy (live.js only)..."
         timeout 90s python3 scripts/deploy_cloudflare.py --delta 2>&1 \
             || echo "WARNING: Delta deploy failed (non-fatal)"
     fi
