@@ -496,7 +496,7 @@ def inclusion_processing(bars: list[RawBar]) -> list[MergedBar]:
 
         if has_inclusion:
             if len(merged) >= 2:
-                direction = 1 if last.high > merged[-2].high else -1
+                direction = 1 if last.high >= merged[-2].high else -1
             else:
                 direction = 1 if b.close >= b.open else -1
 
@@ -585,9 +585,12 @@ def find_strokes(fractals: list[Fractal], merged: list[MergedBar]) -> list[Strok
     for f in fractals[1:]:
         last = valid[-1]
         if f.type == last.type:
-            if f.type == "top" and f.high >= last.high:
+            # 77课: "对于顶，前面的低于后面的，只保留后面的；对于底，
+            # 前面的高于后面的，只保留后面的。不满足的（例如相等的），
+            # 都可以先保留。"  Use strict inequality per original text.
+            if f.type == "top" and f.high > last.high:
                 valid[-1] = f
-            elif f.type == "bottom" and f.low <= last.low:
+            elif f.type == "bottom" and f.low < last.low:
                 valid[-1] = f
         else:
             gap = abs(f.mk_idx - last.mk_idx)
@@ -599,12 +602,6 @@ def find_strokes(fractals: list[Fractal], merged: list[MergedBar]) -> list[Strok
                     ok = f.low < last.low
                 if ok:
                     valid.append(f)
-                else:
-                    if f.type == last.type:
-                        if f.type == "top" and f.high >= last.high:
-                            valid[-1] = f
-                        elif f.type == "bottom" and f.low <= last.low:
-                            valid[-1] = f
             else:
                 if f.type == "top" and f.high > last.high and last.type == "top":
                     valid[-1] = f
@@ -860,6 +857,12 @@ def _find_char_fractal(
     Returns None if no fractal is found.
 
     skip_ids: object ids of strokes to skip (for rejected type-2 fractals).
+
+    71课 constraint: when the fractal's middle element B is a merged
+    element (s_first != s_last), verify the fractal condition also holds
+    using B's first sub-stroke's raw values vs A.  This prevents
+    inclusion processing across the assumed turning point from creating
+    artificial fractals.
     """
     if len(std_seq) < 3:
         return None
@@ -871,10 +874,18 @@ def _find_char_fractal(
         if seg_dir == 1:
             if (B[0] > A[0] and B[0] > C[0] and
                     B[1] > A[1] and B[1] > C[1]):
+                if B[2] is not B[3]:
+                    raw_h, raw_l = _stroke_high_low(B[2])
+                    if raw_l <= A[1]:
+                        continue
                 return (B[2], B[3], _has_char_gap(A, B))
         else:
             if (B[1] < A[1] and B[1] < C[1] and
                     B[0] < A[0] and B[0] < C[0]):
+                if B[2] is not B[3]:
+                    raw_h, raw_l = _stroke_high_low(B[2])
+                    if raw_h >= A[0]:
+                        continue
                 return (B[2], B[3], _has_char_gap(A, B))
     return None
 

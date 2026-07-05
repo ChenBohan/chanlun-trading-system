@@ -2162,7 +2162,7 @@ canvas {{ display: block; width: 100%; background: #0d1117; border-radius: 4px; 
 <body>
 <div class="container">
 <h1>缠论交易系统 v2</h1>
-<div class="subtitle">移动版 · 数据 {data_time} · 生成 {gen_time} · DF→30F→5F · 股票池 {pool_selected}/{pool_total}（年线上方）</div>
+<div class="subtitle">移动版 · 数据 {data_time} · 生成 {gen_time} · DF→30F→5F · 股票池 {pool_selected}/{pool_total}</div>
 
 <div id="mobileGlobalSignals" style="margin-bottom:8px"></div>
 

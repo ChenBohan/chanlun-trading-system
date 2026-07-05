@@ -258,8 +258,8 @@ def _filter_by_ma250(indices, data_dir: str) -> tuple[list, dict]:
 
         ma250 = sum(closes[-MA_PERIOD:]) / MA_PERIOD
 
+        selected.append(idx)
         if latest_price >= ma250:
-            selected.append(idx)
             stats["above"].append((idx.etf_code, idx.etf_name, latest_price, ma250))
         else:
             stats["below"].append((idx.etf_code, idx.etf_name, latest_price, ma250))
@@ -326,8 +326,8 @@ def cmd_run(args):
     print(f"  总股票池: {filter_stats['total']} | "
           f"ETF直通: {filter_stats.get('etf_bypass', 0)} | "
           f"个股年线上方: {len(filter_stats['above'])} | "
-          f"个股年线下方（排除）: {len(filter_stats['below'])} | "
-          f"入选: {filter_stats['selected']}")
+          f"个股年线下方: {len(filter_stats['below'])} | "
+          f"入选: {filter_stats['selected']}（不过滤年线下方）")
 
     # Step 3: Fetch 30min + 5min + 1min for filtered stocks only
     print(f"\n[Step 3/5] 拉取入选标的分钟线（{filter_stats['selected']} 标的）...")
